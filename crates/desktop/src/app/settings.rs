@@ -74,7 +74,7 @@ impl DesktopApp {
         if matches!(settings.runtime.as_str(), "claude" | "codex") {
             self.ai_runtime = settings.runtime.clone();
         }
-        if matches!(settings.effort.as_str(), "low" | "medium" | "high" | "max") {
+        if matches!(settings.effort.as_str(), "minimal" | "low" | "medium" | "high" | "xhigh" | "max") {
             self.ai_effort = settings.effort.clone();
         }
         self.ai_model = settings.model.clone();

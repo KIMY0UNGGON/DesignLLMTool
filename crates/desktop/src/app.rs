@@ -60,6 +60,7 @@ mod tools;
 mod video_insert;
 mod thumbs;
 mod ui_channel;
+mod runner_models;
 mod figure_ai_attach;
 mod figure_close;
 mod figure_r07;
@@ -74,6 +75,7 @@ mod held_edit;
 mod host_link;
 pub(crate) use host_link::HostStarter;
 mod image_edit;
+mod inline_cell_nav;
 mod inline_text;
 mod jobs;
 mod messages;
@@ -120,6 +122,8 @@ mod held_edit_tests;
 #[cfg(test)]
 mod inline_table_cell_integrity_tests;
 #[cfg(test)]
+mod inline_table_cell_gui_tests;
+#[cfg(test)]
 mod inline_hit_test_integrity_tests;
 #[cfg(test)]
 mod image_replacement_tests;
@@ -141,6 +145,8 @@ mod dpi_tests;
 mod proposals_tests;
 #[cfg(test)]
 mod gui_check_64_tests;
+#[cfg(test)]
+mod panel_close_tests;
 
 use figure_ai_attach::{FigureAiAttachments, FigureAiRequest};
 use state::{AgentBatch, BoardMemoEditor, BoardMemoGesture, BoardMemoMutation, CoveredTableTextSelection, CsvImportDraft, DatasetCellEdit, DragState, ExportConfirmation, FigureForm, FlowFindCursor, FlowFindLookup, FlowFindPageRequest, FlowFindSearch, HeldEdit, HeldPdfEvidence, ImageCropEditor, ImageCropStage, ImageReplacementStage, InlineCellReadiness, InlineTextEdit, JobReservation, NodeClipboard, PdfEvidenceTarget, PendingAction, PendingImageReplacement, PendingPageReorderSelection, PendingRequest, PendingSaveNotice, PendingVideoInsert, Screen, SelectionRestoreGuard, TextTarget, UserReservation, VideoInsertStage, VideoPosterWorkerResult};
@@ -163,6 +169,10 @@ pub struct DesktopApp {
     requested_regions: HashMap<u32, (designllm_contracts::Rect, u32, u64)>,
     /// The view transform last sent to the core for each page (hit tests use it).
     page_transforms: HashMap<u32, ViewTransform>,
+    /// The id of the page transform the core holds for this view (it keeps one, for one page; board.rs `hit_test_page`).
+    core_transform_id: Option<String>,
+    /// A page transform the core refused: not sent again (`send_page_transform`) until the placement changes and makes a new one.
+    failed_transform_id: Option<String>,
     /// (dpi, revision) of the last render request per page, so that one is not sent twice.
     requested_pages: HashMap<u32, (u32, u64)>,
     /// Page sizes the core reported, for pages the board has not drawn yet.
@@ -249,6 +259,7 @@ pub struct DesktopApp {
     selected_node: Option<String>,
     selected_nodes: Vec<String>,
     covered_table_text_selection: Option<CoveredTableTextSelection>,
+    cell_nav: inline_cell_nav::CellNav,
     selected_board_memo: Option<String>,
     board_memo_editor: Option<BoardMemoEditor>,
     board_memo_mutation: Option<BoardMemoMutation>,
@@ -294,6 +305,8 @@ pub struct DesktopApp {
     ai_runtime: String,
     ai_model: String,
     ai_effort: String,
+    /// The runner menu's model lists, asked from each CLI once (`runner_models.rs`).
+    runner_models: runner_models::RunnerModels,
     job: Option<Job>,
     /// Figure AI jobs the window does not show: those of other documents, kept aside while those documents are not open (their
     /// status and warnings stay right, but they are neither shown nor cancelled from the open document), and a running job of
@@ -407,6 +420,8 @@ impl DesktopApp {
             region_textures: HashMap::new(),
             requested_regions: HashMap::new(),
             page_transforms: HashMap::new(),
+            core_transform_id: None,
+            failed_transform_id: None,
             requested_pages: HashMap::new(),
             known_sizes: HashMap::new(),
             editor_views: HashMap::new(),
@@ -474,6 +489,7 @@ impl DesktopApp {
             selected_node: None,
             selected_nodes: Vec::new(),
             covered_table_text_selection: None,
+            cell_nav: Default::default(),
             selected_board_memo: None,
             board_memo_editor: None,
             board_memo_mutation: None,
@@ -511,6 +527,7 @@ impl DesktopApp {
             ai_runtime: "claude".into(),
             ai_model: String::new(),
             ai_effort: "high".into(),
+            runner_models: Default::default(),
             job: None,
             parked_jobs: Vec::new(),
             awaited_starts: BTreeMap::new(),
@@ -830,11 +847,15 @@ impl eframe::App for DesktopApp {
             ));
             return;
         }
+        // Keys typed while a table cell's edit hands over to what follows it are held for that (inline_cell_nav.rs).
+        self.route_cell_follow_input(input);
         if self.inline_text_edit.is_some() {
             let cell_readiness = self.inline_text_edit.as_ref().filter(|session| session.reservation_node_ids.len() > 1)
                 .map(|session| (session.id, self.inline_table_cell_readiness(session)));
             if let Some((session_id, readiness)) = cell_readiness {
-                if !self.apply_inline_cell_readiness(session_id, readiness) {
+                // While the cell waits for the render of its own commit the editor stays on the shown frame and keeps
+                // taking input: it is queued and sent once the render is in (`start_next_inline_text_change`).
+                if !self.apply_inline_cell_readiness(session_id, readiness) && readiness != InlineCellReadiness::WaitingForRender {
                     let composing = self.inline_text_edit.as_ref().is_some_and(|session| session.composing)
                         || self.text_adapter.is_ime_active();
                     if composing {
@@ -865,6 +886,9 @@ impl eframe::App for DesktopApp {
             }
             let composing = self.inline_text_edit.as_ref().is_some_and(|session| session.composing);
             if self.inline_text_edit.as_ref().is_some_and(|session| session.conflict.is_some()) && !composing {
+                // Escape does nothing while the conflict notice shows (its buttons act): left in the input, the board's `Esc`
+                // shortcut would clear the selection under the kept draft.
+                input.events.retain(|event| !matches!(event, egui::Event::Key { key: egui::Key::Escape, pressed: true, .. }));
                 return;
             }
             let mut blocked = false;
@@ -888,7 +912,8 @@ impl eframe::App for DesktopApp {
             self.process_inline_text_adapter_input(ctx, input);
             return;
         }
-        if matches!(self.text_target.as_ref(), Some(TextTarget::Node { .. })) {
+        // A board memo or title editor owns the keyboard: the document text adapter must not take its IME.
+        if self.board_memo_editor_shown() || matches!(self.text_target.as_ref(), Some(TextTarget::Node { .. })) {
             return;
         }
         if self.text_target.as_ref().is_none_or(|target| !target.editable()) {

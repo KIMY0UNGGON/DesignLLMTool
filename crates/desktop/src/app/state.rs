@@ -738,6 +738,8 @@ pub(super) struct DragState {
     pub(super) reservation_id: Option<String>,
     pub(super) released: bool,
     pub(super) is_panel: bool,
+    /// The other selected objects of the page that move with `node_id` (id, stored bounds when the drag started).
+    pub(super) others: Vec<(String, designllm_contracts::Rect)>,
     /// The display scale (physical pixels per point) of the window when the drag started. The drop snaps within 8 physical
     /// pixels at that scale (`snap_free_move`).
     pub(super) pixels_per_point: f32,

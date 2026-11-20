@@ -174,6 +174,12 @@ fn a_click_on_the_error_key_checkbox_gives_the_figure_of_the_command() {
     let mut window = Window::open(&mut host, &clicked);
     window.step(&mut host, "select.node", json!({ "node_id": panel.clone() })).expect("the chart panel is selected");
     window.draw(&mut host, 1.0);
+    // The panel's head row (its close button, `chrome.rs`) puts the checkbox under the fold of the 800 px window: the panel is
+    // scrolled first, as a user would.
+    use eframe::egui::{Event, Modifiers, MouseWheelUnit, Pos2, Vec2};
+    let wheel = Event::MouseWheel { unit: MouseWheelUnit::Point, delta: Vec2::new(0.0, -120.0), modifiers: Modifiers::NONE };
+    window.frame(&mut host, 1.0, vec![Event::PointerMoved(Pos2::new(1180.0, 400.0)), wheel]);
+    window.draw(&mut host, 1.0);
     let position = drawn_at(&window, "오차 기준 표시");
     window.click(&mut host, 1.0, position, false);
     let by_click = host.artifact(&clicked);

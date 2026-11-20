@@ -116,7 +116,12 @@ impl DesktopApp {
                 .width_range(theme::PANEL_MIN..=max_width.min(theme::PANEL_MAX))
                 .default_width(view.right_width.min(max_width))
                 .frame(Frame::new().fill(palette.surface))
-                .show(ctx, |ui| self.draw_properties(ui, &palette));
+                .show(ctx, |ui| {
+                    // The panel has no head row of its own: one as tall as the sidebar's tab row holds its close button.
+                    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), theme::SIDEBAR_TABS_HEIGHT), Sense::hover());
+                    self.panel_close_button(ui, &palette, row, "panel-right", "nav.toggle_right");
+                    self.draw_properties(ui, &palette)
+                });
             // Only the left edge has a line (tokens `layout.panel.border`).
             let rect = shown.response.rect;
             ctx.layer_painter(egui::LayerId::background()).vline(rect.left() + 0.5, rect.y_range(), Stroke::new(theme::hairline(ctx), palette.line));
@@ -424,6 +429,7 @@ impl DesktopApp {
                 self.left_tab_to(value);
             }
         }
+        self.panel_close_button(ui, palette, row, "panel-left", "nav.toggle_left");
         match self.view_ref().left_tab {
             LeftTab::Layers => {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -436,6 +442,16 @@ impl DesktopApp {
             LeftTab::Ai => {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.draw_ai_tab(ui, palette));
             }
+        }
+    }
+
+    /// A panel's own close button at the right end of its head row `row`: the same icon (shown on) and command as the view
+    /// group's button for that panel.
+    fn panel_close_button(&mut self, ui: &mut Ui, palette: &theme::Palette, row: Rect, icon: &str, command: &str) {
+        let close = Rect::from_center_size(Pos2::new(row.right() - 8.0 - theme::ICON_BUTTON / 2.0, row.center().y), Vec2::splat(theme::ICON_BUTTON));
+        let mut close_ui = ui.new_child(egui::UiBuilder::new().max_rect(close).layout(Layout::left_to_right(Align::Center)));
+        if widgets::icon_button(&mut close_ui, palette, icon, &tooltip_for(command), true).clicked() {
+            self.invoke_ui(command, json!({}));
         }
     }
 

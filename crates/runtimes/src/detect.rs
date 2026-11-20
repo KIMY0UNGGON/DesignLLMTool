@@ -12,7 +12,7 @@
 use std::collections::BTreeSet;
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -159,6 +159,245 @@ pub const CODEX_EFFORTS: &[&str] = &["minimal", "low", "medium", "high", "xhigh"
 
 /// Effort values the mock agent accepts (the Claude Code scale).
 pub const MOCK_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
+/// Claude model IDs used when the CLI cannot be asked: the first four of its list, in its order (Claude Code 2.1.329, 2026-11-20).
+pub const CLAUDE_MODELS: &[&str] = &["claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5", "claude-haiku-5-5"];
+
+/// Codex model slugs used when `codex debug models --bundled` fails or lists nothing (checked 2026-11-20, codex-cli 0.170.0).
+pub const CODEX_MODELS_FALLBACK: &[&str] = &[
+    "gpt-6.2-sol",
+    "gpt-6.2-astra",
+    "gpt-6-astra",
+    "gpt-6.1-sol",
+    "gpt-6.1-terra",
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+];
+
+/// Time limit for the Claude `initialize` request.
+const CLAUDE_INIT_TIMEOUT: Duration = Duration::from_secs(20);
+/// Time limit for `codex debug models --bundled`.
+const CODEX_MODELS_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// A model the runner menu offers. `id` is the `--model` value, `display_name` the menu label, `efforts` the levels the
+/// model accepts (empty when the list did not say).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelInfo {
+    pub id: String,
+    pub display_name: String,
+    pub efforts: Vec<String>,
+}
+
+/// Where a model list came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelSource {
+    /// Read from the CLI at the time of the lookup.
+    Cli,
+    /// The fixed list of this crate: the CLI could not be asked or listed nothing.
+    Fallback,
+}
+
+/// The models of one runtime and where they came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelList {
+    pub models: Vec<ModelInfo>,
+    pub source: ModelSource,
+}
+
+fn plain_models(ids: &[&str]) -> Vec<ModelInfo> {
+    ids.iter().map(|id| ModelInfo { id: id.to_string(), display_name: id.to_string(), efforts: Vec::new() }).collect()
+}
+
+/// The fixed list of a runtime: Claude's first four, Codex's bundled eleven, none for the mock agent.
+pub fn fallback_models(kind: RuntimeKind) -> Vec<ModelInfo> {
+    match kind {
+        RuntimeKind::Claude => plain_models(CLAUDE_MODELS),
+        RuntimeKind::Codex => plain_models(CODEX_MODELS_FALLBACK),
+        RuntimeKind::Mock => Vec::new(),
+    }
+}
+
+/// The `slug`s of the bundled catalogue's `models[]` whose `visibility` is `list`, by ascending `priority`, with the
+/// `display_name` and the `supported_reasoning_levels[].effort` values. Text after the JSON value (a warning line) is not read.
+/// `None` when the JSON does not parse or no model is listed.
+pub fn parse_codex_models(json: &str) -> Option<Vec<ModelInfo>> {
+    let value = serde_json::Deserializer::from_str(json).into_iter::<serde_json::Value>().next()?.ok()?;
+    let mut rows: Vec<(i64, ModelInfo)> = value
+        .get("models")?
+        .as_array()?
+        .iter()
+        .filter(|model| model.get("visibility").and_then(serde_json::Value::as_str) == Some("list"))
+        .filter_map(|model| {
+            let id = model.get("slug")?.as_str()?.trim();
+            if id.is_empty() {
+                return None;
+            }
+            let priority = model.get("priority").and_then(serde_json::Value::as_i64).unwrap_or(i64::MAX);
+            let display_name = model.get("display_name").and_then(serde_json::Value::as_str).unwrap_or(id).to_owned();
+            let efforts = model
+                .get("supported_reasoning_levels")
+                .and_then(serde_json::Value::as_array)
+                .map(|levels| levels.iter().filter_map(|level| level.get("effort")?.as_str().map(str::to_owned)).collect())
+                .unwrap_or_default();
+            Some((priority, ModelInfo { id: id.to_owned(), display_name, efforts }))
+        })
+        .collect();
+    rows.sort_by_key(|(priority, _)| *priority);
+    (!rows.is_empty()).then(|| rows.into_iter().map(|(_, model)| model).collect())
+}
+
+/// The models of a Claude `control_response` line (`response.response.models[]`). `value == "default"` is left out and
+/// repeated `resolvedModel`s are kept once, in the CLI's order. `None` when the line has no usable model.
+pub fn parse_claude_models(line: &str) -> Option<Vec<ModelInfo>> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    let models = value.pointer("/response/response/models")?.as_array()?;
+    let mut out: Vec<ModelInfo> = Vec::new();
+    for model in models {
+        if model.get("value").and_then(serde_json::Value::as_str) == Some("default") {
+            continue;
+        }
+        let Some(id) = model.get("resolvedModel").and_then(serde_json::Value::as_str).map(str::trim).filter(|id| !id.is_empty()) else {
+            continue;
+        };
+        if out.iter().any(|known| known.id == id) {
+            continue;
+        }
+        let display_name = model.get("displayName").and_then(serde_json::Value::as_str).unwrap_or(id).to_owned();
+        let efforts = model
+            .get("supportedEffortLevels")
+            .and_then(serde_json::Value::as_array)
+            .map(|levels| levels.iter().filter_map(|level| level.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default();
+        out.push(ModelInfo { id: id.to_owned(), display_name, efforts });
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// The model list of `kind` read from the CLI's text (`text`), or `None` when it has no usable model.
+fn models_from_text(kind: RuntimeKind, text: &str) -> Option<Vec<ModelInfo>> {
+    match kind {
+        RuntimeKind::Claude => text.lines().find_map(parse_claude_models),
+        RuntimeKind::Codex => parse_codex_models(text).or_else(|| text.find('{').and_then(|start| parse_codex_models(&text[start..]))),
+        RuntimeKind::Mock => None,
+    }
+}
+
+/// The menu list of `kind` for the executable at `program`: what `lookup` reads from the CLI, else the fixed list.
+pub(crate) fn list_from_lookup(
+    kind: RuntimeKind,
+    program: &Path,
+    env: &[EnvChange],
+    lookup: &dyn Fn(&Path, &[EnvChange]) -> Option<String>,
+) -> ModelList {
+    match lookup(program, env).and_then(|text| models_from_text(kind, &text)) {
+        Some(models) => ModelList { models, source: ModelSource::Cli },
+        None => ModelList { models: fallback_models(kind), source: ModelSource::Fallback },
+    }
+}
+
+/// The runner menu's model list for `kind` under `config`. Asks the CLI (Claude `initialize` control request, Codex
+/// `debug models --bundled`) and falls back to the fixed list when the executable cannot be found or asked.
+pub fn model_list(kind: RuntimeKind, config: &RuntimeConfig) -> ModelList {
+    let lookup: &dyn Fn(&Path, &[EnvChange]) -> Option<String> = match kind {
+        RuntimeKind::Claude => &claude_init_text,
+        RuntimeKind::Codex => &codex_debug_text,
+        RuntimeKind::Mock => return ModelList { models: Vec::new(), source: ModelSource::Fallback },
+    };
+    let explicit = match kind {
+        RuntimeKind::Claude => config.claude_path.as_deref(),
+        RuntimeKind::Codex => config.codex_path.as_deref(),
+        RuntimeKind::Mock => None,
+    };
+    match resolve(kind, explicit) {
+        Ok((program, env)) => list_from_lookup(kind, &program, &env, lookup),
+        Err(_) => ModelList { models: fallback_models(kind), source: ModelSource::Fallback },
+    }
+}
+
+/// The `initialize` request sent to Claude Code, and the id its answer carries.
+const CLAUDE_INIT_REQUEST: &str = r#"{"type":"control_request","request_id":"r1","request":{"subtype":"initialize"}}"#;
+const CLAUDE_INIT_REQUEST_ID: &str = "r1";
+
+/// True for the `control_response` line that answers [`CLAUDE_INIT_REQUEST`], however its JSON is spaced.
+fn is_claude_init_answer(line: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(line).is_ok_and(|value| {
+        value.get("type").and_then(serde_json::Value::as_str) == Some("control_response")
+            && value.pointer("/response/request_id").and_then(serde_json::Value::as_str) == Some(CLAUDE_INIT_REQUEST_ID)
+    })
+}
+
+/// Sends the Claude `initialize` control request (no user message, so no model call) and returns its `control_response`
+/// line. Stdin is closed after the answer; the process is ended if it does not exit soon after. On Windows the process runs
+/// in a kill-on-close job object (`win.rs`), so ending it also ends the processes it started.
+fn claude_init_text(program: &Path, env: &[EnvChange]) -> Option<String> {
+    const ARGS: [&str; 6] = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"];
+    #[cfg(windows)]
+    let (mut child, job) = {
+        let args: Vec<String> = ARGS.iter().map(|arg| arg.to_string()).collect();
+        let (mut child, job) = crate::win::spawn_suspended_in_job_with_env(program, &args, &std::env::temp_dir(), env).ok()?;
+        if crate::win::resume_child(&child).is_err() {
+            let _ = job.terminate(1);
+            let _ = child.wait();
+            return None;
+        }
+        // The job's stderr is a pipe: it is read to the end so that the child never waits on a full pipe.
+        let stderr = child.stderr.take();
+        thread::spawn(move || read_all(stderr));
+        (child, job)
+    };
+    #[cfg(not(windows))]
+    let mut child = {
+        let mut command = Command::new(program);
+        command.args(ARGS).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+        apply_env(&mut command, env);
+        command.spawn().ok()?
+    };
+    let end = move |child: &mut std::process::Child| {
+        #[cfg(windows)]
+        let _ = job.terminate(1);
+        #[cfg(not(windows))]
+        let _ = child.kill();
+        let _ = child.wait();
+    };
+    let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        end(&mut child);
+        return None;
+    };
+    let _ = writeln!(stdin, "{CLAUDE_INIT_REQUEST}");
+    let _ = stdin.flush();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            if is_claude_init_answer(&line) {
+                let _ = sender.send(line);
+                break;
+            }
+        }
+    });
+    let answer = receiver.recv_timeout(CLAUDE_INIT_TIMEOUT).ok();
+    drop(stdin);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while matches!(child.try_wait(), Ok(None)) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+    }
+    // Ends the process if it is still there, and on Windows whatever it left running.
+    end(&mut child);
+    answer
+}
+
+/// The standard output of `codex debug models --bundled` (5 s, no window), `None` when the command fails. Its stderr (a
+/// warning) is not part of the JSON.
+fn codex_debug_text(program: &Path, env: &[EnvChange]) -> Option<String> {
+    match run_capture_streams(program, &["debug", "models", "--bundled"], env, CODEX_MODELS_TIMEOUT) {
+        Ok((0, stdout, _)) => Some(stdout),
+        _ => None,
+    }
+}
 
 /// Detects one runtime. Errors name the missing piece; nothing is silently substituted.
 pub fn detect(kind: RuntimeKind, config: &RuntimeConfig) -> DltResult<RuntimeInfo> {
@@ -309,6 +548,18 @@ pub(crate) fn run_capture(
     env: &[EnvChange],
     timeout: Duration,
 ) -> DltResult<(i32, String)> {
+    let (code, mut text, err) = run_capture_streams(program, args, env, timeout)?;
+    text.push_str(&err);
+    Ok((code, text))
+}
+
+/// [`run_capture`] with stdout and stderr apart: (exit code, stdout, stderr).
+fn run_capture_streams(
+    program: &Path,
+    args: &[&str],
+    env: &[EnvChange],
+    timeout: Duration,
+) -> DltResult<(i32, String, String)> {
     let mut command = Command::new(program);
     command.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     apply_env(&mut command, env);
@@ -339,9 +590,9 @@ pub(crate) fn run_capture(
             None => thread::sleep(Duration::from_millis(20)),
         }
     };
-    let mut text = out_reader.join().unwrap_or_default();
-    text.push_str(&err_reader.join().unwrap_or_default());
-    Ok((status.code().unwrap_or(-1), text))
+    let out = out_reader.join().unwrap_or_default();
+    let err = err_reader.join().unwrap_or_default();
+    Ok((status.code().unwrap_or(-1), out, err))
 }
 
 fn read_all<R: Read>(stream: Option<R>) -> String {
@@ -593,5 +844,94 @@ mod tests {
     fn mock_needs_an_explicit_program() {
         let err = detect(RuntimeKind::Mock, &RuntimeConfig::default()).unwrap_err();
         assert_eq!(err.code, ErrorCode::UnsupportedOperation);
+    }
+
+    const CODEX_CATALOG_FIXTURE: &str = r#"{"models":[{"slug":"gpt-6.2-astra","display_name":"GPT-6.2-Astra","visibility":"list","priority":2,"supported_reasoning_levels":[{"effort":"low","description":"x"},{"effort":"high","description":"y"}]},{"slug":"codex-auto-review","display_name":"Codex Auto Review","visibility":"hide","priority":12},{"slug":"gpt-6.2-sol","display_name":"GPT-6.2-Sol","visibility":"list","priority":1,"supported_reasoning_levels":[{"effort":"medium","description":"z"}]},{"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list"}]}"#;
+    const CLAUDE_INIT_FIXTURE: &str = r#"{"type":"control_response","response":{"subtype":"success","request_id":"r1","response":{"models":[{"value":"default","resolvedModel":"claude-opus-5-5","displayName":"Default (recommended)","supportedEffortLevels":["low","max"]},{"value":"opus","resolvedModel":"claude-opus-5-5","displayName":"Opus 5.5","supportedEffortLevels":["low","medium","high","xhigh","max"]},{"value":"sonnet","resolvedModel":"claude-sonnet-5-5","displayName":"Sonnet 5.5","supportedEffortLevels":["low","medium","high"]}]}}}"#;
+
+    #[test]
+    fn codex_models_are_the_listed_slugs_by_priority_with_their_efforts() {
+        let models = parse_codex_models(CODEX_CATALOG_FIXTURE).unwrap();
+        let ids: Vec<&str> = models.iter().map(|model| model.id.as_str()).collect();
+        assert_eq!(ids, vec!["gpt-6.2-sol", "gpt-6.2-astra", "gpt-5.5"]);
+        assert_eq!(models[0].display_name, "GPT-6.2-Sol");
+        assert_eq!(models[1].efforts, vec!["low", "high"]);
+        assert!(models[2].efforts.is_empty());
+    }
+
+    #[test]
+    fn codex_models_are_none_on_bad_or_empty_json() {
+        assert!(parse_codex_models("not json").is_none());
+        assert!(parse_codex_models(r#"{"models":[{"slug":"x","visibility":"hide","priority":1}]}"#).is_none());
+        assert!(parse_codex_models(r#"{"other":1}"#).is_none());
+    }
+
+    #[test]
+    fn claude_control_response_models_are_parsed_without_default() {
+        let models = parse_claude_models(CLAUDE_INIT_FIXTURE).unwrap();
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "claude-opus-5-5");
+        assert_eq!(models[0].display_name, "Opus 5.5");
+        assert_eq!(models[0].efforts, vec!["low", "medium", "high", "xhigh", "max"]);
+        assert_eq!(models[1].id, "claude-sonnet-5-5");
+        assert!(parse_claude_models("{}").is_none());
+    }
+
+    #[test]
+    fn a_lookup_that_reads_nothing_gives_the_fixed_list() {
+        let none = |_: &Path, _: &[EnvChange]| None;
+        let codex = list_from_lookup(RuntimeKind::Codex, Path::new("codex"), &[], &none);
+        assert_eq!(codex.source, ModelSource::Fallback);
+        assert_eq!(codex.models.len(), 11);
+        assert_eq!(codex.models[0].id, "gpt-6.2-sol");
+        let claude = list_from_lookup(RuntimeKind::Claude, Path::new("claude"), &[], &none);
+        assert_eq!(claude.source, ModelSource::Fallback);
+        assert_eq!(claude.models.len(), 4);
+        assert_eq!(claude.models[0].id, "claude-opus-5-5");
+    }
+
+    #[test]
+    fn a_lookup_that_reads_a_list_is_the_cli_list() {
+        let codex_text = |_: &Path, _: &[EnvChange]| Some(format!("warning: noise\n{CODEX_CATALOG_FIXTURE}"));
+        let codex = list_from_lookup(RuntimeKind::Codex, Path::new("codex"), &[], &codex_text);
+        assert_eq!(codex.source, ModelSource::Cli);
+        assert_eq!(codex.models.len(), 3);
+        let claude_text = |_: &Path, _: &[EnvChange]| Some(CLAUDE_INIT_FIXTURE.to_owned());
+        let claude = list_from_lookup(RuntimeKind::Claude, Path::new("claude"), &[], &claude_text);
+        assert_eq!(claude.source, ModelSource::Cli);
+        assert_eq!(claude.models[1].id, "claude-sonnet-5-5");
+    }
+
+    #[test]
+    fn a_missing_executable_gives_the_fixed_list_without_running_anything() {
+        let config = RuntimeConfig { codex_path: Some(PathBuf::from("definitely-missing-codex-binary")), ..RuntimeConfig::default() };
+        let list = model_list(RuntimeKind::Codex, &config);
+        assert_eq!(list.source, ModelSource::Fallback);
+        assert_eq!(list.models.len(), 11);
+        let mock = model_list(RuntimeKind::Mock, &RuntimeConfig::default());
+        assert!(mock.models.is_empty());
+    }
+
+    #[test]
+    fn a_warning_after_the_codex_json_does_not_hide_the_list() {
+        let text = format!("{CODEX_CATALOG_FIXTURE}\nwarning: a newer version is available\n");
+        let ids: Vec<String> = models_from_text(RuntimeKind::Codex, &text).unwrap().into_iter().map(|model| model.id).collect();
+        assert_eq!(ids, vec!["gpt-6.2-sol", "gpt-6.2-astra", "gpt-5.5"]);
+    }
+
+    #[test]
+    fn the_claude_answer_line_is_found_by_its_json_not_its_spacing() {
+        assert!(is_claude_init_answer(CLAUDE_INIT_FIXTURE));
+        let spaced = r#"{ "type": "control_response", "response": { "subtype": "success", "request_id": "r1", "response": {} } }"#;
+        assert!(is_claude_init_answer(spaced));
+        assert!(!is_claude_init_answer(r#"{"type":"control_response","response":{"request_id":"r2"}}"#), "another request's answer");
+        assert!(!is_claude_init_answer(r#"{"type":"system","subtype":"init","request_id":"r1"}"#));
+        assert!(!is_claude_init_answer("control_response r1"));
+    }
+
+    #[test]
+    fn the_fixed_claude_list_is_the_first_four_of_the_cli_order() {
+        let ids: Vec<String> = fallback_models(RuntimeKind::Claude).into_iter().map(|model| model.id).collect();
+        assert_eq!(ids, vec!["claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5", "claude-haiku-5-5"]);
     }
 }

@@ -721,7 +721,7 @@ impl DesktopApp {
             }
             let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), theme::LAYER_ROW), Sense::click_and_drag());
             placed.push(rect);
-            if response.drag_started() {
+            if response.drag_started_by(egui::PointerButton::Primary) {
                 if row.depth == 1 {
                     if let Some(id) = &row.node_id {
                         let grabbed = LayerDrag { node_id: id.clone(), page: row_page };
@@ -1873,3 +1873,84 @@ mod layer_drag_tests {
 #[cfg(test)]
 #[path = "ai_tab_tests.rs"]
 mod ai_tab_tests;
+
+/// Task 68 item 13 (U06): a rename names the node it was given (a layer row's `node_id`), or the selection without one.
+#[cfg(test)]
+mod layer_rename_tests {
+    use super::*;
+    use crate::app::{
+        link_flow_tests::canvas_with_three_boxes,
+        test_support::{Host, Window},
+    };
+    use eframe::egui::{Event, Key, Modifiers};
+
+    fn rectangle_id(host: &mut Host, canvas: &str) -> String {
+        let artifact = host.artifact(canvas);
+        let ArtifactBody::Canvas(document) = &artifact.body else {
+            panic!("a canvas");
+        };
+        let node = document.pages[0].nodes.iter().find(|node| matches!(node.kind, NodeKind::Rectangle)).expect("the rectangle is on the page");
+        node.id.clone()
+    }
+
+    fn name_of(host: &mut Host, canvas: &str, id: &str) -> Option<String> {
+        let artifact = host.artifact(canvas);
+        super::super::doc_tree::find_node(&artifact, id).and_then(|node| node.ext.name.clone())
+    }
+
+    /// A canvas with text boxes `a`, `b`, `c` and one rectangle, opened in a window.
+    fn opened_with_rectangle(host: &mut Host) -> (Window, String, String) {
+        let canvas = canvas_with_three_boxes(host, [0, 1_000_000, 2_000_000]);
+        let mut window = Window::open(host, &canvas);
+        window.step(host, "add.rect", json!({})).expect("a rectangle is added");
+        let rect = rectangle_id(host, &canvas);
+        (window, canvas, rect)
+    }
+
+    /// The layers tab's rename of row `key`: the field takes `name`, and Enter commits it.
+    fn rename_layer_row(window: &mut Window, host: &mut Host, key: &str, name: &str) {
+        window.app.layer_rename = Some(LayerRename { key: key.to_owned(), text: name.to_owned() });
+        window.draw(host, 1.0);
+        let enter = Event::Key { key: Key::Enter, physical_key: Some(Key::Enter), pressed: true, repeat: false, modifiers: Modifiers::default() };
+        window.frame(host, 1.0, vec![enter]);
+        window.settle(host);
+    }
+
+    #[test]
+    fn a_layer_rename_names_its_own_row_and_leaves_the_selected_text() {
+        let mut host = Host::start();
+        let (mut window, canvas, rect) = opened_with_rectangle(&mut host);
+        window.step(&mut host, "select.node", json!({ "node_id": "a" })).expect("the text is selected");
+
+        rename_layer_row(&mut window, &mut host, &rect, "테스트");
+
+        assert_eq!(name_of(&mut host, &canvas, &rect).as_deref(), Some("테스트"), "the rectangle row is renamed");
+        assert_eq!(name_of(&mut host, &canvas, "a"), None, "the selected text keeps its name");
+    }
+
+    #[test]
+    fn a_rename_without_a_node_id_names_the_selection() {
+        let mut host = Host::start();
+        let (mut window, canvas, rect) = opened_with_rectangle(&mut host);
+        window.step(&mut host, "select.node", json!({ "node_id": "a" })).expect("the text is selected");
+
+        window.step(&mut host, "edit.rename", json!({ "name": "선택 대상" })).expect("the selection is renamed");
+
+        assert_eq!(name_of(&mut host, &canvas, "a").as_deref(), Some("선택 대상"));
+        assert_eq!(name_of(&mut host, &canvas, &rect), None);
+    }
+
+    #[test]
+    fn a_rename_of_a_missing_node_is_refused_and_changes_nothing() {
+        let mut host = Host::start();
+        let (mut window, canvas, _rect) = opened_with_rectangle(&mut host);
+        window.step(&mut host, "select.node", json!({ "node_id": "a" })).expect("the text is selected");
+        let revision = host.artifact(&canvas).revision;
+
+        let result = window.step(&mut host, "edit.rename", json!({ "node_id": "missing", "name": "테스트" }));
+
+        assert!(result.is_err(), "a node that does not exist is refused");
+        assert_eq!(host.artifact(&canvas).revision, revision, "no change is applied");
+        assert_eq!(name_of(&mut host, &canvas, "a"), None, "the selection keeps its name");
+    }
+}

@@ -316,3 +316,38 @@ fn discarding_a_memo_change_takes_its_draft_out_of_the_file_and_a_change_on_its_
     assert!(app.board_memo_mutation.is_some(), "a change that is being saved is not discarded");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn memo_swatches_parse_and_the_default_is_one_of_them() {
+    for hex in super::MEMO_COLORS.iter().chain(super::TITLE_COLORS.iter()) {
+        assert!(crate::widgets::parse_hex(hex).is_some(), "{hex} is a valid #RRGGBB swatch");
+    }
+    assert!(super::MEMO_COLORS.contains(&super::DEFAULT_MEMO_COLOR), "the default memo colour has a swatch");
+    assert!(super::TITLE_COLORS.contains(&super::DEFAULT_TITLE_COLOR), "the default title colour has a swatch");
+    let picked = eframe::egui::Color32::from_rgb(0x2F, 0x64, 0xE0);
+    assert_eq!(super::hex_string(picked), "#2F64E0");
+    assert_eq!(crate::widgets::parse_hex(&super::hex_string(picked)), Some(picked));
+}
+
+#[test]
+fn the_colour_bar_takes_the_first_side_of_the_card_where_all_of_it_fits() {
+    use eframe::egui::{Pos2, Rect, Vec2};
+    let board = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0));
+    let bar = Vec2::new(360.0, 40.0);
+    let placed = |card: Rect| {
+        let (pivot, anchor) = super::bar_anchor(card, bar, board);
+        pivot.anchor_size(anchor, bar)
+    };
+    let middle = Rect::from_min_size(Pos2::new(100.0, 300.0), Vec2::new(160.0, 100.0));
+    assert_eq!(placed(middle).bottom(), middle.top() - super::BAR_GAP, "above the card when there is room");
+    let top = Rect::from_min_size(Pos2::new(100.0, 10.0), Vec2::new(160.0, 100.0));
+    assert_eq!(placed(top).top(), top.bottom() + super::BAR_GAP, "below a card at the board's top");
+    let tall = Rect::from_min_size(Pos2::new(100.0, 10.0), Vec2::new(160.0, 580.0));
+    assert_eq!(placed(tall).left(), tall.right() + super::BAR_GAP, "beside a card as tall as the board");
+    let right = Rect::from_min_size(Pos2::new(560.0, 10.0), Vec2::new(200.0, 580.0));
+    assert_eq!(placed(right).right(), right.left() - super::BAR_GAP, "on the left of a tall card at the right edge");
+    for card in [middle, top, tall, right] {
+        let rect = placed(card);
+        assert!(board.contains_rect(rect) && !rect.intersects(card), "{rect:?} is on the board and off the card {card:?}");
+    }
+}

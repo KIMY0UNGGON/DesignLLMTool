@@ -97,9 +97,14 @@ pub(super) fn toggle_id(ids: &[String], id: &str) -> Vec<String> {
     }
 }
 
-/// The ids whose frame touches the marquee.
-pub(super) fn marquee_hits(frames: &[(String, Rect)], marquee: Rect) -> Vec<String> {
-    frames.iter().filter(|(_, frame)| frame.intersects(marquee)).map(|(id, _)| id.clone()).collect()
+/// A node that holds others as one piece the user moves: a group, a table or a component instance (a shape with children is
+/// an object of its own).
+pub(super) fn is_container(node: &Node) -> bool {
+    node.kind == designllm_contracts::NodeKind::Group || node.ext.table.is_some() || node.ext.instance.is_some()
+}
+
+pub(super) fn is_locked(node: &Node) -> bool {
+    node.ext.locked == Some(true)
 }
 
 /// Shift or ctrl held: a click or a marquee adds to the selection instead of replacing it.
@@ -235,6 +240,10 @@ impl DesktopApp {
         if self.inline_text_edit.as_ref().is_some_and(|edit| ids.len() != 1 || ids[0] != edit.node_id) {
             return;
         }
+        // Objects and a board memo are not selected together: what was chosen last is what `Delete` removes.
+        if !ids.is_empty() {
+            self.selected_board_memo = None;
+        }
         self.selected_node = ids.first().cloned();
         self.selected_nodes = ids;
     }
@@ -272,6 +281,67 @@ impl DesktopApp {
             }
         }
         frames
+    }
+
+    /// The nodes of every page (Canvas and Slides), page by page.
+    fn page_node_lists(&self) -> Vec<&[Node]> {
+        match self.artifact.as_ref().map(|artifact| &artifact.body) {
+            Some(ArtifactBody::Canvas(document)) => document.pages.iter().map(|page| page.nodes.as_slice()).collect(),
+            Some(ArtifactBody::Slides(document)) => document.pages.iter().map(|page| page.nodes.as_slice()).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The nodes of page `page_index` whose empty part passes a press on to the board (`passes_press`), nested ones
+    /// included. One walk of the page, for the regions of one frame.
+    pub(super) fn pass_through_ids(&self, page_index: u32) -> std::collections::BTreeSet<String> {
+        fn walk(app: &DesktopApp, node: &Node, out: &mut std::collections::BTreeSet<String>) {
+            if app.passes_press(node) {
+                out.insert(node.id.clone());
+            }
+            node.children.iter().for_each(|child| walk(app, child, out));
+        }
+        let mut out = std::collections::BTreeSet::new();
+        if let Some(nodes) = self.page_node_lists().get(page_index as usize) {
+            nodes.iter().for_each(|node| walk(self, node, &mut out));
+        }
+        out
+    }
+
+    /// Whether a press on `node`'s own region (not on a child) is the board's: a locked node never moves, and a container
+    /// (group, table, component instance) that is not selected lets the drag draw a marquee. A selected container is
+    /// dragged as a whole.
+    pub(super) fn passes_press(&self, node: &Node) -> bool {
+        is_locked(node) || (is_container(node) && !self.selected_nodes.contains(&node.id))
+    }
+
+    /// What a marquee over `marquee` selects, in document order: a node it touches; a container only when it covers it
+    /// whole (else the children it touches), a table or component instance as one piece, a shape with children as itself;
+    /// never a locked node.
+    pub(super) fn marquee_selection(&self, frames: &[(String, Rect)], marquee: Rect) -> Vec<String> {
+        fn walk(node: &Node, frames: &BTreeMap<&str, Rect>, marquee: Rect, out: &mut Vec<String>) {
+            let Some(frame) = frames.get(node.id.as_str()).copied() else {
+                return;
+            };
+            let whole = node.ext.table.is_some() || node.ext.instance.is_some();
+            if is_locked(node) {
+                node.children.iter().for_each(|child| walk(child, frames, marquee, out));
+            } else if is_container(node) && !whole {
+                if marquee.contains_rect(frame) {
+                    out.push(node.id.clone());
+                } else if frame.intersects(marquee) {
+                    node.children.iter().for_each(|child| walk(child, frames, marquee, out));
+                }
+            } else if frame.intersects(marquee) {
+                out.push(node.id.clone());
+            }
+        }
+        let frames: BTreeMap<&str, Rect> = frames.iter().map(|(id, frame)| (id.as_str(), *frame)).collect();
+        let mut out = Vec::new();
+        for nodes in self.page_node_lists() {
+            nodes.iter().for_each(|node| walk(node, &frames, marquee, &mut out));
+        }
+        out
     }
 
     /// The selected nodes (copies) with their page and their shared parent. Nodes on different pages or under
@@ -376,10 +446,13 @@ impl DesktopApp {
     pub(super) fn marquee_input(&mut self, ctx: &Context, ui: &mut Ui, response: &Response, palette: &theme::Palette, origin: Pos2, zoom: f32) {
         let space = ctx.input(|input| input.key_down(egui::Key::Space));
         let select_tool = self.view_ref().tool == super::board::Tool::Select;
-        if self.marquee.is_none() && select_tool && !space && response.drag_started() {
+        if self.marquee.is_none() && select_tool && !space && response.drag_started_by(egui::PointerButton::Primary) {
             let press = ctx.input(|input| input.pointer.press_origin()).or_else(|| response.interact_pointer_pos());
             if let Some(start) = press {
-                if !self.node_frames(origin, zoom).iter().any(|(_, frame)| frame.contains(start)) {
+                // A press on a locked node or on the empty part of a container that is not selected still starts the marquee.
+                let passing: std::collections::BTreeSet<String> =
+                    (0..self.page_node_lists().len() as u32).flat_map(|page| self.pass_through_ids(page)).collect();
+                if !self.node_frames(origin, zoom).iter().any(|(id, frame)| frame.contains(start) && !passing.contains(id)) {
                     self.marquee = Some((start, start));
                 }
             }
@@ -388,12 +461,12 @@ impl DesktopApp {
             return;
         };
         let current = ctx.input(|input| input.pointer.hover_pos()).or_else(|| response.interact_pointer_pos()).unwrap_or(start);
-        if response.drag_stopped() {
+        if response.drag_stopped_by(egui::PointerButton::Primary) {
             self.marquee = None;
             let rect = Rect::from_two_pos(start, current);
             let additive = additive_modifier(ctx);
             let mut ids = if additive { self.selected_nodes.clone() } else { Vec::new() };
-            for id in marquee_hits(&self.node_frames(origin, zoom), rect) {
+            for id in self.marquee_selection(&self.node_frames(origin, zoom), rect) {
                 if !ids.contains(&id) {
                     ids.push(id);
                 }
@@ -416,7 +489,12 @@ impl DesktopApp {
             return;
         }
         let frames = self.node_frames(origin, zoom);
-        let picked: Vec<Rect> = frames.iter().filter(|(id, _)| self.selected_nodes.contains(id)).map(|(_, rect)| *rect).collect();
+        // A move under way, or a drop not drawn yet, shows the outlines with the moved pixels (board.rs `drag_shift`).
+        let picked: Vec<Rect> = frames
+            .iter()
+            .filter(|(id, _)| self.selected_nodes.contains(id))
+            .map(|(id, rect)| self.drag_shift(ctx, id).map_or(*rect, |(_, delta)| rect.translate(delta)))
+            .collect();
         let Some(shared) = picked.iter().copied().reduce(|a, b| a.union(b)) else {
             return;
         };
@@ -460,16 +538,6 @@ mod tests {
         let ids = vec!["a".to_owned(), "b".to_owned()];
         assert_eq!(toggle_id(&ids, "b"), ["a"]);
         assert_eq!(toggle_id(&ids, "c"), ["a", "b", "c"]);
-    }
-
-    #[test]
-    fn a_marquee_selects_each_frame_it_touches() {
-        let frames = [
-            ("a".to_owned(), Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::splat(10.0))),
-            ("b".to_owned(), Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::splat(10.0))),
-        ];
-        let marquee = Rect::from_two_pos(Pos2::new(5.0, 5.0), Pos2::new(50.0, 50.0));
-        assert_eq!(marquee_hits(&frames, marquee), ["a"]);
     }
 
     #[test]

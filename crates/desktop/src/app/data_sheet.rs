@@ -72,7 +72,7 @@ impl DesktopApp {
         // The top line is a handle: dragging it changes the height (160..480).
         let handle = Rect::from_min_max(Pos2::new(rect.left(), rect.top() - 3.0), Pos2::new(rect.right(), rect.top() + 3.0));
         let response = ui.interact(handle, ui.id().with("sheet-resize"), Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
-        if response.dragged() {
+        if response.dragged_by(egui::PointerButton::Primary) {
             let id = egui::Id::new("sheet-height");
             let height: f32 = ui.data(|data| data.get_temp(id)).unwrap_or(SHEET_DEFAULT);
             ui.data_mut(|data| data.insert_temp(id, (height - response.drag_delta().y).clamp(SHEET_MIN, SHEET_MAX)));

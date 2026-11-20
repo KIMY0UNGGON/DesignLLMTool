@@ -52,6 +52,13 @@ pub struct GraphemeAdapter {
     drag_anchor: Option<usize>,
     layout: Option<EditorLayout>,
     selection: Option<(usize, usize)>,
+    /// The last press the editor counted: its time, place and count in its run of clicks.
+    last_press: Option<(f64, Pos2, u8)>,
+    /// The drag in progress began with a press egui saw, so its release goes on to egui.
+    release_to_egui: bool,
+    /// The last primary release the window saw before this frame (time, place): the first click of a run may land before
+    /// this editor is on screen.
+    previous_click: Option<(f64, Pos2)>,
 }
 
 impl GraphemeAdapter {
@@ -143,6 +150,13 @@ impl GraphemeAdapter {
             }
         }
 
+        // A press within egui's double-click delay and click distance of the last click is the next click of a run (the
+        // first click of a run may have landed before this editor was on screen).
+        let (delay, distance) = ctx.options(|options| (options.input_options.max_double_click_delay, options.input_options.max_click_dist));
+        // The last click the window saw (`set_previous_click`), where and when it was released.
+        let now = input.time.unwrap_or_default();
+        let previous_click = self.previous_click.filter(|(time, _)| now - time < delay).map(|(_, at)| at);
+        let press_context = PressContext { now, delay, distance, previous_click };
         let mut forwarded = Vec::with_capacity(input.events.len());
         let mut changed_cursor = false;
         let mut focus_requested = false;
@@ -274,7 +288,7 @@ impl GraphemeAdapter {
                     pressed: true,
                     ..
                 } if !self.ime_active
-                    && self.handle_pointer_press(*pos, text, &mut primary, &mut secondary) =>
+                    && self.handle_pointer_press(*pos, &press_context, text, &mut primary, &mut secondary) =>
                 {
                     changed_cursor = true;
                     focus_requested = true;
@@ -294,6 +308,11 @@ impl GraphemeAdapter {
                     && self.handle_pointer_release(*pos, text, &mut primary, &mut secondary) =>
                 {
                     changed_cursor = true;
+                    // egui saw the press of a drag started outside the editor (`begin_pointer_drag`): it sees the release too, or
+                    // it would hold the button down.
+                    if std::mem::take(&mut self.release_to_egui) {
+                        forwarded.push(event.clone());
+                    }
                 }
                 _ => forwarded.push(event),
             }
@@ -457,6 +476,7 @@ impl GraphemeAdapter {
     fn handle_pointer_press(
         &mut self,
         position: Pos2,
+        press: &PressContext,
         text: &str,
         primary: &mut usize,
         secondary: &mut usize,
@@ -470,7 +490,27 @@ impl GraphemeAdapter {
         let Some(index) = self.pointer_cursor(position, text) else {
             return false;
         };
+        // The count of this press in its run of clicks: the second selects the word under the pointer, the third its line
+        // (no drag follows either).
+        let near = |at: Pos2| at.distance(position) <= press.distance;
+        let count = match self.last_press {
+            Some((time, at, count)) if press.now - time < press.delay && near(at) => count.saturating_add(1),
+            _ if press.previous_click.is_some_and(near) => 2,
+            _ => 1,
+        };
+        self.last_press = Some((press.now, position, count));
+        let range = match count {
+            2 => word_around(text, index),
+            3 => Some(line_around(text, index)),
+            _ => None,
+        };
+        if let Some((start, end)) = range {
+            *secondary = start;
+            *primary = end;
+            return true;
+        }
         self.drag_anchor = Some(index);
+        self.release_to_egui = false;
         *primary = index;
         *secondary = index;
         true
@@ -501,7 +541,8 @@ impl GraphemeAdapter {
         primary: &mut usize,
         secondary: &mut usize,
     ) -> bool {
-        let Some(anchor) = self.drag_anchor else {
+        // The release ends the drag even where the editor cannot place it (no layout yet).
+        let Some(anchor) = self.drag_anchor.take() else {
             return false;
         };
         let Some(index) = self.pointer_cursor(position, text) else {
@@ -509,9 +550,75 @@ impl GraphemeAdapter {
         };
         *primary = index;
         *secondary = anchor;
-        self.drag_anchor = None;
         true
     }
+
+    /// Starts a text drag at scalar `anchor` for a press that reached the board before this editor was on screen (a drag
+    /// that starts on a table cell opens the cell, 68 item 11). The pointer moves and the release extend the selection.
+    pub fn begin_pointer_drag(&mut self, anchor: usize) {
+        self.drag_anchor = Some(anchor);
+        self.release_to_egui = true;
+    }
+
+    /// The last primary release the window saw before this frame (egui time, place), for the count of the next press.
+    pub fn set_previous_click(&mut self, click: Option<(f64, Pos2)>) {
+        self.previous_click = click;
+    }
+
+    /// Selects the word of `text` around grapheme `index` (the second click of a double click that reached the board
+    /// before this editor was on screen).
+    pub fn select_word_at_grapheme(&mut self, ctx: &Context, editor_id: Id, text: &str, index: u32) {
+        let boundaries = grapheme_scalar_boundaries(text);
+        let scalar = boundaries.get(index as usize).copied().unwrap_or_else(|| text.chars().count());
+        let Some((start, end)) = word_around(text, scalar) else { return };
+        let mut state = TextEditState::load(ctx, editor_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(CCursorRange { primary: CCursor::new(end), secondary: CCursor::new(start), h_pos: None }));
+        state.store(ctx, editor_id);
+        self.selection = Some((end, start));
+    }
+
+    /// Whether the caret at scalar `index` is on the first and on the last row of the editor's last layout (rows as
+    /// drawn, wrapped lines included). `None` before the editor was laid out.
+    pub fn caret_row_edges(&self, index: usize) -> Option<(bool, bool)> {
+        let layout = self.layout.as_ref()?;
+        let row = layout.galley.layout_from_cursor(CCursor::new(index)).row;
+        Some((row == 0, row + 1 >= layout.galley.rows.len().max(1)))
+    }
+}
+
+/// What a press needs from its frame to count its place in a run of clicks.
+struct PressContext {
+    now: f64,
+    delay: f64,
+    distance: f32,
+    /// Where the last click was released, when it is within the double-click delay.
+    previous_click: Option<Pos2>,
+}
+
+/// The word (Unicode word bounds) at scalar index `index` of `text`, as a scalar range: the word `index` is in, else the
+/// word that ends at `index` (a press on the right half of a word's last letter). `None` on white space.
+fn word_around(text: &str, index: usize) -> Option<(usize, usize)> {
+    let mut start = 0;
+    let mut ending_here = None;
+    for word in text.split_word_bounds() {
+        let end = start + word.chars().count();
+        let is_word = !word.trim().is_empty();
+        if index < end {
+            return if is_word { Some((start, end)) } else { ending_here };
+        }
+        ending_here = (is_word && index == end).then_some((start, end));
+        start = end;
+    }
+    ending_here
+}
+
+/// The line (between line breaks) at scalar index `index` of `text`, as a scalar range without its line break.
+fn line_around(text: &str, index: usize) -> (usize, usize) {
+    let chars: Vec<char> = text.chars().collect();
+    let index = index.min(chars.len());
+    let start = chars[..index].iter().rposition(|c| *c == '\n').map_or(0, |at| at + 1);
+    let end = chars[index..].iter().position(|c| *c == '\n').map_or(chars.len(), |at| index + at);
+    (start, end)
 }
 
 pub fn scalar_range_to_grapheme_range(text: &str, range: Range<usize>) -> Option<Range<u32>> {
@@ -614,6 +721,19 @@ fn paragraph_position(text: &str, global: usize) -> (usize, usize) {
 mod tests {
     use super::*;
     use eframe::egui::TextEdit;
+
+    #[test]
+    fn a_double_press_selects_the_word_it_is_in_or_ends_and_a_triple_press_its_line() {
+        assert_eq!(word_around("abc def", 1), Some((0, 3)));
+        // The right half of the word's last letter places the caret after it: still that word.
+        assert_eq!(word_around("abc def", 3), Some((0, 3)));
+        assert_eq!(word_around("abc def", 7), Some((4, 7)));
+        assert_eq!(word_around("abc  def", 4), None, "white space selects nothing");
+        assert_eq!(word_around("가나 다", 1), Some((0, 2)));
+        assert_eq!(line_around("ab\ncd\nef", 4), (3, 5));
+        assert_eq!(line_around("ab\ncd", 0), (0, 2));
+        assert_eq!(line_around("ab\ncd", 5), (3, 5));
+    }
 
     fn test_input(events: Vec<Event>) -> RawInput {
         RawInput {

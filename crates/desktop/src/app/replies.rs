@@ -392,7 +392,13 @@ impl DesktopApp {
                         if self.inline_text_edit.as_ref().is_some_and(|session| {
                             session.page_index == *page_index && session.reservation_node_ids.len() > 1
                         }) {
-                            self.refresh_active();
+                            // A render of a revision that moved on is asked again once the document is read again; any
+                            // other failure keeps the cell's queued input as the draft (68 item 11).
+                            if matches!(error.code, ErrorCode::RevisionConflict | ErrorCode::StaleRender | ErrorCode::RenderPending) {
+                                self.refresh_active();
+                            } else {
+                                self.inline_cell_render_failed(*page_index);
+                            }
                         }
                     }
                     // A reserved node refuses the edit: the callout names the node, and the status line stays clear.
@@ -417,6 +423,7 @@ impl DesktopApp {
                     }
                     self.pdf_evidence_import_failed(&action, reply.ticket, &friendly);
                     self.release_drag_on_failure(&action);
+                    self.forget_core_transform_on_failure(&action);
                     if self.state_moved_on(&error, user_action) {
                         continue;
                     }

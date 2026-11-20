@@ -872,6 +872,7 @@ dependencies = [
  "designllm-hwp",
  "designllm-hwpx",
  "designllm-render",
+ "designllm-runtimes",
  "designllm-slides",
  "designllm-sources",
  "designllm-web-preview",

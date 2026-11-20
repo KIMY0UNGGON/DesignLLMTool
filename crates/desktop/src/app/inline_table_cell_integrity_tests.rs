@@ -591,7 +591,7 @@ fn install_populated_component_cover(harness: &mut Harness, root_locked: bool) {
     }
     let texture = harness.app.page_textures.get_mut(&0).expect("instance page texture");
     texture.frames.insert("instance::source-cell".into(), covered_bounds);
-    texture.page.source_map = vec![SourceRegion {
+    std::sync::Arc::make_mut(&mut texture.page).source_map = vec![SourceRegion {
         node_id: "instance::source-cell".into(),
         bounds: covered_bounds,
         logical_range: Some(designllm_contracts::TextRange { paragraph_id: "instance::source-cell".into(), start: 0, end: 19 }),

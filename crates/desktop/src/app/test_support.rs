@@ -401,8 +401,8 @@ impl ToolBackend for HostBackend {
 /// of its change set, and the reads after it are answered too.
 pub(super) struct Window {
     pub(super) app: DesktopApp,
-    replies: Sender<RpcReply>,
-    work: Receiver<Work>,
+    pub(super) replies: Sender<RpcReply>,
+    pub(super) work: Receiver<Work>,
     pub(super) ctx: Context,
     /// Whether the window reads its page previews back (its page textures); see `open_with_previews`.
     previews: bool,

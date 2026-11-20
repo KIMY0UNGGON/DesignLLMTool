@@ -4514,3 +4514,6 @@ mod page_reorder_race_tests {
             "page.remove's direct page-index change records the previous page's stable ID");
     }
 }
+
+#[path = "board_memo_edit_tests.rs"]
+mod board_memo_edit_tests;

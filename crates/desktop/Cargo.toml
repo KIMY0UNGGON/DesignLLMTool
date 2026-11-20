@@ -13,6 +13,7 @@ designllm-contracts.workspace = true
 designllm-bridge.workspace = true
 designllm-flow.workspace = true
 designllm-render.workspace = true
+designllm-runtimes.workspace = true
 designllm-web-preview.workspace = true
 serde.workspace = true
 serde_json.workspace = true

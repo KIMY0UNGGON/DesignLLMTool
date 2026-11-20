@@ -97,6 +97,16 @@ impl DesktopApp {
             (PendingAction::HitTest { snapshot_id, page_index, transform_id, additive, edit_text }, RpcPayload::Json(value)) => {
                 if self.hit_test_scene_current(&snapshot_id, page_index, &transform_id) {
                     self.hit_test_answered(ctx, page_index, additive, edit_text, value);
+                    self.cell_nav.text_drag = false;
+                    self.hit_answered();
+                } else if !self.retry_stale_hit() {
+                    // A click answered against a scene that moved on is sent once more (68 item 11); a second stale answer
+                    // is said for a double click, the gesture that opens a text.
+                    self.cell_nav.text_drag = false;
+                    if edit_text {
+                        self.set_error("화면이 바뀌는 사이의 클릭이라 편집을 열지 않았습니다. 다시 클릭하세요".into());
+                    }
+                    self.hit_answered();
                 }
             }
             (PendingAction::Selection, RpcPayload::Json(_)) => {
@@ -534,6 +544,13 @@ impl DesktopApp {
             return;
         };
         match serde_json::from_value::<Option<designllm_contracts::HitTestResult>>(hit) {
+            // A reply to a click sent before a text edit opened leaves the edit's selection alone (68 item 11).
+            Ok(Some(hit)) if self.inline_text_edit.is_some() => {
+                self.cell_nav.text_drag = false;
+                self.hit_while_editing(ctx, page_index, &hit.node_id, hit.position, edit_text);
+            }
+            // Empty space answered after the edit opened leaves the edit's selection alone too.
+            Ok(None) if self.inline_text_edit.is_some() => {}
             Ok(Some(hit)) => {
                 let covered_cell_anchor = self.artifact.as_ref()
                     .and_then(|artifact| canvas_table_anchor_for_covered_cell(artifact, page_index, &hit.node_id));
@@ -571,13 +588,21 @@ impl DesktopApp {
                 } else {
                     None
                 };
-                if edit_text && !additive {
+                // A table cell takes the caret on a single click (68 item 11), as a slide table does. Where text cannot be
+                // edited (read-only, an AI run on the view) a single click only selects; a double click says why.
+                let table_cell = covered_cell_anchor.is_none() && self.run_context.is_none() && self.feature_edit_supported(Feature::Text)
+                    && self.artifact.as_ref().zip(self.active.as_ref()).is_some_and(|(artifact, active)| {
+                        super::doc_tree::inline_text_target_node_ids(artifact, active.kind, page_index, &target_node_id).is_some_and(|ids| ids.len() > 1)
+                    });
+                if (edit_text || table_cell) && !additive {
                     match covered_cell_anchor.as_ref() {
                         Some((_, true)) => self.set_error("컴포넌트 인스턴스의 표 병합 구조는 원본 페이지에서 변경해야 합니다".into()),
                         Some((_, false)) => self.set_error("병합된 영역의 추가 텍스트는 바로 편집할 수 없습니다. 병합을 해제한 뒤 다시 선택하세요".into()),
                         None => { let _ = self.begin_inline_text_edit(ctx, &target_node_id, page_index, position); }
                     }
                 }
+                // A drag that started in the cell selects from the press.
+                self.seed_cell_text_drag(ctx);
             }
             Ok(None) if additive => {}
             Ok(None) => self.select_clear(),

@@ -349,6 +349,8 @@ impl DesktopApp {
         if self.host_lost() {
             return;
         }
+        // F2 opens the selected table's or text's text before `edit.rename` sees it (68 item 11).
+        self.take_f2_for_text_edit(ctx);
         let typing = ctx.wants_keyboard_input();
         for spec in COMMANDS {
             if !self.command_enabled_for_current_kind(spec.id) {
@@ -361,6 +363,10 @@ impl DesktopApp {
                 continue;
             }
             if typing && matches!(spec.id, "edit.copy" | "edit.paste" | "edit.copy_properties" | "edit.paste_properties") {
+                continue;
+            }
+            // Esc confirms the open board memo or title editor (`draw_editing_memo`), so it does not clear the selection.
+            if self.board_memo_editor_shown() && spec.id == "select.clear" {
                 continue;
             }
             if !self.shortcut_applies(spec) {
@@ -1000,8 +1006,16 @@ impl DesktopApp {
                 self.change(vec![Operation::SetGeometry { node_id: node.id, bounds }], &[Intent::Design])
             }
             "edit.rename" => {
-                let ids = self.selected_ids();
                 let name = text(args, "name").unwrap_or_default().to_owned();
+                // A layer row names its own node (`node_id`); without one, the selection is renamed.
+                let ids = match text(args, "node_id").filter(|id| !id.is_empty()) {
+                    Some(node_id) => {
+                        let artifact = self.artifact.as_ref().ok_or("선택한 요소를 찾지 못했습니다")?;
+                        super::doc_tree::find_node(artifact, node_id).ok_or("선택한 요소를 찾지 못했습니다")?;
+                        vec![node_id.to_owned()]
+                    }
+                    None => self.selected_ids(),
+                };
                 if ids.is_empty() {
                     return Err("이름을 바꿀 대상을 고르세요".into());
                 }
@@ -1558,7 +1572,9 @@ impl DesktopApp {
                 if self.screen_is_editor() && self.ai_job_wait().is_some() {
                     return Err("AI 작업이 진행 중이라 실행기를 바꿀 수 없습니다".into());
                 }
+                let mut runtime_changed = false;
                 if let Some(runtime) = text(args, "runtime") {
+                    runtime_changed = super::runner_models::runtime_kind(runtime) != super::runner_models::runtime_kind(&self.ai_runtime);
                     self.ai_runtime = runtime.to_owned();
                 }
                 if let Some(model) = text(args, "model") {
@@ -1567,6 +1583,9 @@ impl DesktopApp {
                 if let Some(effort) = text(args, "effort") {
                     self.ai_effort = effort.to_owned();
                 }
+                // A runtime change keeps the model only when the new runtime lists it (a model given in the same call is kept as
+                // given); the listed model's effort is fitted to it (`runner_models.rs`).
+                self.fit_runner(runtime_changed, text(args, "model").is_some(), text(args, "effort").is_some());
                 self.save_settings();
                 Ok(())
             }

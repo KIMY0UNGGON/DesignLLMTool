@@ -146,7 +146,7 @@ impl DesktopApp {
             return Some(reason);
         }
         if self.ai_model.trim().is_empty() {
-            return Some("실행기 메뉴에서 모델 ID를 적어 주세요");
+            return Some("실행기 메뉴에서 모델을 고르세요");
         }
         if prompt.trim().is_empty() {
             return Some("요청 내용을 적어 주세요");

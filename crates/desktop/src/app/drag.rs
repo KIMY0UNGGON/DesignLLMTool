@@ -45,6 +45,23 @@ impl DesktopApp {
         } else {
             Feature::Geometry
         };
+        // A drag of one of several selected objects moves the selected ones of its page with it (one change,
+        // `commit_drag_if_reserved`), the locked ones left out. A locked node's own region takes no drag
+        // (`multi::passes_press`); one started here anyway goes to the host, which refuses it.
+        let artifact_nodes = self.artifact.as_ref();
+        let others: Vec<(String, designllm_contracts::Rect)> = if !is_panel && self.selected_nodes.len() > 1 && self.selected_nodes.contains(&node_id) {
+            artifact_nodes.map_or_else(Vec::new, |artifact| {
+                self.selected_nodes
+                    .iter()
+                    .filter(|id| **id != node_id && super::board::node_page_index(artifact, id) == Some(page_index))
+                    .filter_map(|id| find_node(artifact, id))
+                    .filter(|node| !multi::is_locked(node))
+                    .map(|node| (node.id.clone(), node.bounds))
+                    .collect()
+            })
+        } else {
+            Vec::new()
+        };
         if !self.feature_edit_supported(feature) || self.drag.is_some() {
             return;
         }
@@ -66,11 +83,15 @@ impl DesktopApp {
             .get(&page_index)
             .filter(|texture| texture.revision == context.revision)
             .and_then(|texture| texture.frames.get(&node_id).copied());
-        self.set_selected_ids(vec![node_id.clone()]);
-        self.set_selection(Selection {
-            node_ids: vec![node_id.clone()],
-            text_range: None,
-        });
+        if others.is_empty() {
+            self.set_selected_ids(vec![node_id.clone()]);
+            self.set_selection(Selection {
+                node_ids: vec![node_id.clone()],
+                text_range: None,
+            });
+        }
+        let mut reserved = vec![node_id.clone()];
+        reserved.extend(others.iter().map(|(id, _)| id.clone()));
         let token = self.next_drag_token;
         self.next_drag_token += 1;
         self.drag = Some(DragState {
@@ -88,6 +109,7 @@ impl DesktopApp {
             reservation_id: None,
             released: false,
             is_panel,
+            others,
             pixels_per_point,
             zoom: self.view_ref().zoom,
         });
@@ -96,7 +118,7 @@ impl DesktopApp {
             expected_revision: context.revision,
             view_id: context.view_id.clone(),
             owner: "desktop".into(),
-            node_ids: vec![node_id],
+            node_ids: reserved,
         };
         match serde_json::to_value(request) {
             Ok(params) => {
@@ -155,8 +177,11 @@ impl DesktopApp {
         let target = self.page_drop_target(drop_position);
         let mut operations = Vec::new();
 
+        let other_page = target.as_ref().is_some_and(|(page_index, ..)| *page_index != drag.source_page_index);
         if page_kind && target.is_none() {
             self.set_error("페이지 안에 놓아 주세요".into());
+        } else if other_page && !drag.others.is_empty() {
+            self.set_error("여러 개체는 같은 페이지 안에서만 옮길 수 있습니다".into());
         } else if let Some((_, target_page_id, target_size, target_rect, target_node_count)) = target
             .filter(|(page_index, ..)| *page_index != drag.source_page_index)
         {
@@ -201,36 +226,30 @@ impl DesktopApp {
             } else {
                 self.set_error("이동할 개체의 페이지 위치를 확인하지 못했습니다".into());
             }
-        } else if drag.source_page_rect.width() <= 0.0 || drag.source_page_rect.height() <= 0.0 {
-            self.set_error("현재 페이지의 크기를 확인하지 못했습니다".into());
-        } else {
-            let dx = (drag.delta.x as f64 / f64::from(drag.source_page_rect.width()) * drag.page_size.width as f64).round() as i64;
-            let dy = (drag.delta.y as f64 / f64::from(drag.source_page_rect.height()) * drag.page_size.height as f64).round() as i64;
-            let bounds = designllm_contracts::Rect { x: drag.bounds.x.saturating_add(dx), y: drag.bounds.y.saturating_add(dy), ..drag.bounds };
+        } else if let Some((dx, dy, bounds)) = same_page_move(&drag) {
             // A child of a stack or grid is placed by the engine: the drop changes its index, not its stored frame.
-            let operation = if drag.is_panel {
-                Some(Operation::ArrangePanels { bounds: [(drag.node_id.clone(), bounds)].into_iter().collect() })
+            if drag.is_panel {
+                operations.push(Operation::ArrangePanels { bounds: [(drag.node_id.clone(), bounds)].into_iter().collect() });
             } else {
                 match self.drag_drop(&drag.node_id, dx, dy) {
                     multi::DragDrop::Free => {
-                        // The frame is relative to the node's parent, so the snap runs from the parent's place on the page. The move
-                        // was measured on the page as drawn when the drag started, so the snap window takes that zoom.
-                        let bounds = match drag.source_page_id.as_deref() {
-                            Some(page_id) => match self.parent_frame_origin(page_id, &drag.node_id) {
-                                Some(parent) => self.snap_free_move(page_id, parent, bounds, drag.zoom, drag.pixels_per_point),
-                                None => bounds,
-                            },
-                            None => bounds,
-                        };
-                        Some(Operation::SetGeometry { node_id: drag.node_id, bounds })
+                        let bounds = self.snapped_drop(&drag, bounds);
+                        // The other selected objects move by the same (snapped) step; one in a stack or grid stays.
+                        let (step_x, step_y) = (bounds.x - drag.bounds.x, bounds.y - drag.bounds.y);
+                        operations.push(Operation::SetGeometry { node_id: drag.node_id.clone(), bounds });
+                        for (id, other) in &drag.others {
+                            if matches!(self.drag_drop(id, dx, dy), multi::DragDrop::Free) {
+                                let bounds = designllm_contracts::Rect { x: other.x.saturating_add(step_x), y: other.y.saturating_add(step_y), ..*other };
+                                operations.push(Operation::SetGeometry { node_id: id.clone(), bounds });
+                            }
+                        }
                     }
-                    multi::DragDrop::Unchanged => None,
-                    multi::DragDrop::Reorder(operation) => Some(operation),
+                    multi::DragDrop::Unchanged => {}
+                    multi::DragDrop::Reorder(operation) => operations.push(operation),
                 }
-            };
-            if let Some(operation) = operation {
-                operations.push(operation);
             }
+        } else {
+            self.set_error("현재 페이지의 크기를 확인하지 못했습니다".into());
         }
 
         if !operations.is_empty() {
@@ -245,4 +264,48 @@ impl DesktopApp {
             );
         }
     }
+
+    /// `bounds` of the dragged node (relative to its parent) snapped to the guides of its page. The frame is relative to the
+    /// node's parent, so the snap runs from the parent's place on the page. The move was measured on the page as drawn when
+    /// the drag started, so the snap window takes that zoom.
+    fn snapped_drop(&self, drag: &DragState, bounds: designllm_contracts::Rect) -> designllm_contracts::Rect {
+        match drag.source_page_id.as_deref() {
+            Some(page_id) => match self.parent_frame_origin(page_id, &drag.node_id) {
+                Some(parent) => self.snap_free_move(page_id, parent, bounds, drag.zoom, drag.pixels_per_point),
+                None => bounds,
+            },
+            None => bounds,
+        }
+    }
+
+    /// The screen step at which a drag's nodes are drawn now (board.rs `draw_drag_previews`): where the drop would put them,
+    /// so a drop on its own page shows the guide snap it will make; on another page, the pointer's step.
+    pub(super) fn drag_preview_delta(&self, drag: &DragState) -> Vec2 {
+        if drag.is_panel || !self.view_ref().snap_guides {
+            return drag.delta;
+        }
+        if self.page_drop_target(drag.start + drag.delta).is_some_and(|(page_index, ..)| page_index != drag.source_page_index) {
+            return drag.delta;
+        }
+        let Some((_, _, bounds)) = same_page_move(drag) else {
+            return drag.delta;
+        };
+        let snapped = self.snapped_drop(drag, bounds);
+        let to_screen = |emu: i64, page_emu: i64, page_points: f32| (emu as f64 / page_emu.max(1) as f64 * f64::from(page_points)) as f32;
+        Vec2::new(
+            to_screen(snapped.x - drag.bounds.x, drag.page_size.width, drag.source_page_rect.width()),
+            to_screen(snapped.y - drag.bounds.y, drag.page_size.height, drag.source_page_rect.height()),
+        )
+    }
+}
+
+/// The page EMU step of a drag on its own page (measured on the page as drawn when it started), and the dragged node's
+/// bounds moved by it, before any snap. `None` when the page had no size on screen.
+fn same_page_move(drag: &DragState) -> Option<(i64, i64, designllm_contracts::Rect)> {
+    if drag.source_page_rect.width() <= 0.0 || drag.source_page_rect.height() <= 0.0 {
+        return None;
+    }
+    let dx = (drag.delta.x as f64 / f64::from(drag.source_page_rect.width()) * drag.page_size.width as f64).round() as i64;
+    let dy = (drag.delta.y as f64 / f64::from(drag.source_page_rect.height()) * drag.page_size.height as f64).round() as i64;
+    Some((dx, dy, designllm_contracts::Rect { x: drag.bounds.x.saturating_add(dx), y: drag.bounds.y.saturating_add(dy), ..drag.bounds }))
 }

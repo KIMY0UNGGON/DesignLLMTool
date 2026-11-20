@@ -105,6 +105,13 @@ impl DesktopApp {
     }
 
     pub(super) fn process_inline_text_adapter_input(&mut self, ctx: &Context, input: &mut egui::RawInput) {
+        // A key that moves a table cell's edit to another cell ends this edit: the rest of the frame's input is not this cell's.
+        if self.take_inline_cell_navigation(ctx, input) {
+            input.events.retain(|event| !matches!(event,
+                egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Ime(_) | egui::Event::Cut | egui::Event::Key { pressed: true, .. }
+            ));
+            return;
+        }
         let _ = self.text_adapter.raw_input_hook(ctx, input, self.text_editor_id, &mut self.text_draft);
         let ime_started = self.text_adapter.take_ime_started();
         let ime_finished = self.text_adapter.take_ime_finished();
@@ -733,7 +740,12 @@ impl DesktopApp {
         page_index: u32,
         position: Option<designllm_contracts::TextPosition>,
     ) -> bool {
-        if self.inline_text_edit.is_some() || self.run_context.is_some() {
+        if self.inline_text_edit.is_some() {
+            return false;
+        }
+        // Every refusal below says why: a silent refusal looks like a click that did nothing.
+        if self.run_context.is_some() {
+            self.set_error("AI 작업이 화면을 쓰는 동안에는 텍스트를 편집할 수 없습니다".into());
             return false;
         }
         let covered_origin = self.covered_table_text_selection.as_ref().filter(|selection| {
@@ -763,18 +775,27 @@ impl DesktopApp {
                 }
             }
         }
-        let (Some(active), Some(artifact), Some(context)) = (&self.active, &self.artifact, &self.context) else { return false };
-        if !matches!(active.kind, ArtifactKind::Canvas | ArtifactKind::Slides)
-            || active.id != artifact.id || artifact.id != context.artifact_id
+        let (Some(active), Some(artifact), Some(context)) = (&self.active, &self.artifact, &self.context) else {
+            self.set_error("문서를 읽는 중입니다. 잠시 뒤 다시 시도하세요".into());
+            return false;
+        };
+        if !matches!(active.kind, ArtifactKind::Canvas | ArtifactKind::Slides) {
+            return false;
+        }
+        if active.id != artifact.id || artifact.id != context.artifact_id
             || active.revision != context.revision || artifact.revision != context.revision
         {
+            self.set_error("문서의 새 내용을 읽는 중입니다. 잠시 뒤 다시 시도하세요".into());
             return false;
         }
         if board::node_page_index(artifact, node_id) != Some(page_index) {
             self.set_error("편집하려는 텍스트가 요청한 페이지에 없습니다".into());
             return false;
         }
-        let Some(node) = find_node(artifact, node_id) else { return false };
+        let Some(node) = find_node(artifact, node_id) else {
+            self.set_error("편집하려는 텍스트를 찾지 못했습니다".into());
+            return false;
+        };
         let Some(reservation_node_ids) = inline_text_target_node_ids(artifact, active.kind, page_index, node_id) else {
             self.set_error("이 텍스트 또는 표 셀은 편집할 수 없습니다".into());
             return false;
@@ -983,7 +1004,9 @@ impl DesktopApp {
         let readiness = self.inline_table_cell_readiness(session);
         if !self.apply_inline_cell_readiness(session_id, readiness) { return; }
         if self.inline_text_edit.as_ref().is_some_and(|session| {
-            session.id == session_id && session.in_flight.is_none() && !session.queue.is_empty() && session.conflict.is_none()
+            // An edit asked to end (Escape, Tab) while its last change waited for this render ends now.
+            session.id == session_id && session.in_flight.is_none() && (!session.queue.is_empty() || session.finish_requested)
+                && session.conflict.is_none()
         }) {
             self.start_next_inline_text_change();
         }

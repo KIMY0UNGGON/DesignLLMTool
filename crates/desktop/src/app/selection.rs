@@ -1,7 +1,10 @@
 //! Selection on the board (GUI_DESIGN §5.4, §9.3, §11): the outline and corner handles of the
 //! selected node, its floating toolbar, and the explanation of a refused edit next to it.
 
-use designllm_contracts::{ArtifactBody, Node};
+use designllm_contracts::{
+    layout_guides::{ActiveEdge, EmuRect, ResizeHandle},
+    ArtifactBody, Node,
+};
 use eframe::egui::{self, Align2, Color32, Context, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::json;
 
@@ -228,7 +231,13 @@ impl DesktopApp {
             .unwrap_or_else(|| frame_on_screen(node.bounds, page, zoom));
         // A refused node keeps its selection, drawn in `danger` (mockup `state-refused`: `.refused`, `.hd.dg`).
         let refused = self.refusal.is_some() && (self.refusal_ids.is_empty() || self.refusal_ids.contains(&node.id));
-        paint_selection_box(ui.painter(), rect, if refused { palette.danger } else { palette.accent });
+        let outline = self.resize_handles(ui, &node, rect, page, page_index);
+        // A move under way, or a drop not drawn yet, shows the outline with the moved pixels (board.rs `drag_shift`).
+        let outline = match self.drag_shift(ctx, &node.id) {
+            Some((_, delta)) => outline.translate(delta),
+            None => outline,
+        };
+        paint_selection_box(ui.painter(), outline, if refused { palette.danger } else { palette.accent });
         if let Some(text) = self.refusal.clone().filter(|_| self.refusal_ids.is_empty()) {
             let fixes = self.refusal_fixes.clone();
             let (_, _, _, _, fixed) = refusal_callout_with(ctx, palette, self.board_rect, rect, &text, None, &fixes, None, None, None);
@@ -260,6 +269,110 @@ impl DesktopApp {
                 self.draw_lint_warnings(ctx, palette, board_rect, rect, toolbar, &node.id, kind);
             }
         }
+    }
+
+    /// The resized bounds snapped to the page guides, as a move is (`page_guides::resize_snap`): only the edges the dragged
+    /// corner lies on move. Only a canvas with guides shown snaps.
+    fn snap_resize_bounds(&self, page_index: u32, bounds: designllm_contracts::Rect, handle: ResizeHandle, zoom: f32, pixels_per_point: f32) -> designllm_contracts::Rect {
+        if !self.view_ref().snap_guides {
+            return bounds;
+        }
+        let Some(ArtifactBody::Canvas(document)) = self.artifact.as_ref().map(|artifact| &artifact.body) else {
+            return bounds;
+        };
+        let Some(page) = document.pages.get(page_index as usize) else {
+            return bounds;
+        };
+        let Some(layout) = super::page_guides::page_guide_layout(document, page) else {
+            return bounds;
+        };
+        let frame = EmuRect { x_emu: bounds.x, y_emu: bounds.y, width_emu: bounds.width, height_emu: bounds.height };
+        match super::page_guides::resize_snap(Some(&layout), frame, handle, zoom, pixels_per_point) {
+            Ok(snap) => designllm_contracts::Rect { x: snap.rect.x_emu, y: snap.rect.y_emu, width: snap.rect.width_emu, height: snap.rect.height_emu },
+            Err(_) => bounds,
+        }
+    }
+
+    /// Where a corner resize under way would put the node: resized, turned over if the corner passed the opposite one, and
+    /// snapped as the drop will be. `None` when it would have no size.
+    fn resize_result(&self, gesture: &ResizeGesture, pixels_per_point: f32) -> Option<designllm_contracts::Rect> {
+        let (bounds, handle) = resized_bounds(gesture.start, gesture.corner, gesture.delta, gesture.page_rect, gesture.page_size)?;
+        Some(self.snap_resize_bounds(gesture.page_index, bounds, handle, self.view_ref().zoom, pixels_per_point))
+    }
+
+    /// The corner handles of a selected page-level node resize it: the dragged corner moves, the opposite one stays,
+    /// and the drop is one change (one undo step). The handles are interacted after the node regions, so they take
+    /// a press on a corner before the body's move; on a small node they shrink to a third of its side, so its body
+    /// stays draggable. A locked node has none, and while the board pans they take no press. Returns the outline to
+    /// draw (where the drop would put the node while a resize is under way).
+    fn resize_handles(&mut self, ui: &mut Ui, node: &NodeProperties, rect: Rect, page: Rect, page_index: u32) -> Rect {
+        let Some((page_nodes, page_size)) = self.artifact.as_ref().and_then(|artifact| page_nodes_and_size(&artifact.body, page_index)) else {
+            return rect;
+        };
+        let Some(page_node) = page_nodes.iter().find(|candidate| candidate.id == node.id) else {
+            return rect;
+        };
+        let gesture_id = egui::Id::new("selection-resize");
+        if super::multi::is_locked(page_node) || self.board_pan_mode(ui.ctx()) {
+            ui.data_mut(|data| data.remove::<ResizeGesture>(gesture_id));
+            return rect;
+        }
+        // A gesture of another node (the selection moved on) is over.
+        let mut gesture: Option<ResizeGesture> = ui.data(|data| data.get_temp::<ResizeGesture>(gesture_id)).filter(|gesture| gesture.node_id == node.id);
+        let pixels_per_point = ui.ctx().pixels_per_point();
+        let side = (rect.width().min(rect.height()) / 3.0).clamp(4.0, 12.0);
+        let corners = [rect.left_top(), rect.right_top(), rect.left_bottom(), rect.right_bottom()];
+        for (index, corner) in corners.into_iter().enumerate() {
+            let hit = Rect::from_center_size(corner, Vec2::splat(side));
+            let response = ui.interact(hit, egui::Id::new(("selection-handle", node.id.as_str(), index)), Sense::drag());
+            super::board::note_board_press(ui.ctx(), &response);
+            if response.drag_started_by(egui::PointerButton::Primary) {
+                let press = ui.input(|input| input.pointer.press_origin()).unwrap_or(corner);
+                gesture = Some(ResizeGesture {
+                    node_id: node.id.clone(),
+                    page_index,
+                    corner: index,
+                    start: node.bounds,
+                    press,
+                    delta: Vec2::ZERO,
+                    page_rect: page,
+                    page_size,
+                });
+                self.region_clicked = true;
+                // A resize on another page makes it current, as a click there does.
+                self.focus_page(page_index);
+            }
+            if response.dragged_by(egui::PointerButton::Primary) {
+                if let (Some(current), Some(pointer)) = (gesture.as_mut(), response.interact_pointer_pos()) {
+                    if current.corner == index {
+                        current.delta = pointer - current.press;
+                    }
+                }
+            }
+            if response.drag_stopped_by(egui::PointerButton::Primary) && gesture.as_ref().is_some_and(|g| g.corner == index) {
+                if let Some(done) = gesture.take() {
+                    if let Some(bounds) = self.resize_result(&done, pixels_per_point).filter(|bounds| *bounds != done.start) {
+                        let operation = designllm_contracts::Operation::SetGeometry { node_id: done.node_id, bounds };
+                        if let Err(message) = self.change(vec![operation], &[designllm_contracts::Intent::Design]) {
+                            self.set_error(message);
+                        }
+                    }
+                }
+            }
+        }
+        // A release the handle did not see (the window lost the pointer) ends the gesture without a change.
+        if gesture.is_some() && !ui.input(|input| input.pointer.primary_down()) {
+            gesture = None;
+        }
+        let outline = gesture
+            .as_ref()
+            .and_then(|current| self.resize_result(current, pixels_per_point))
+            .map_or(rect, |bounds| super::page_to_screen(bounds, page_size, page));
+        ui.data_mut(|data| match gesture {
+            Some(current) => data.insert_temp(gesture_id, current),
+            None => data.remove::<ResizeGesture>(gesture_id),
+        });
+        outline
     }
 
     /// The design-check warning callout (tokens `component.lint-warning.callout`): the warnings of the one selected
@@ -977,6 +1090,53 @@ fn menu(response: &egui::Response, add: impl FnOnce(&mut Ui)) {
             ui.set_width(240.0);
             add(ui);
         });
+}
+
+/// A corner-handle resize under way: the node, the corner (0 left-top, 1 right-top, 2 left-bottom, 3 right-bottom),
+/// its bounds when the press began, and the pointer's move since then (screen points).
+#[derive(Clone)]
+struct ResizeGesture {
+    node_id: String,
+    page_index: u32,
+    corner: usize,
+    start: designllm_contracts::Rect,
+    press: Pos2,
+    delta: Vec2,
+    page_rect: Rect,
+    page_size: designllm_contracts::Size,
+}
+
+fn page_nodes_and_size(body: &ArtifactBody, page_index: u32) -> Option<(&[Node], designllm_contracts::Size)> {
+    match body {
+        ArtifactBody::Canvas(document) => document.pages.get(page_index as usize).map(|page| (page.nodes.as_slice(), page.size)),
+        ArtifactBody::Slides(document) => document.pages.get(page_index as usize).map(|page| (page.nodes.as_slice(), page.size)),
+        _ => None,
+    }
+}
+
+/// The bounds after a corner moved by `delta` (screen points on a page drawn `page_rect` wide): the opposite corner stays.
+/// A corner dragged past the opposite one turns the box over, so the result is normalised, with the edges the moved corner
+/// now lies on (for the guide snap). `None` when the result would have no size.
+fn resized_bounds(start: designllm_contracts::Rect, corner: usize, delta: Vec2, page_rect: Rect, page_size: designllm_contracts::Size) -> Option<(designllm_contracts::Rect, ResizeHandle)> {
+    if page_rect.width() <= 0.0 || page_rect.height() <= 0.0 {
+        return None;
+    }
+    let dx = (f64::from(delta.x) * page_size.width as f64 / f64::from(page_rect.width())).round() as i64;
+    let dy = (f64::from(delta.y) * page_size.height as f64 / f64::from(page_rect.height())).round() as i64;
+    let (left, top, right, bottom) = (start.x, start.y, start.x + start.width, start.y + start.height);
+    let (moved_x, fixed_x) = if corner % 2 == 0 { (left + dx, right) } else { (right + dx, left) };
+    let (moved_y, fixed_y) = if corner < 2 { (top + dy, bottom) } else { (bottom + dy, top) };
+    let bounds = designllm_contracts::Rect {
+        x: moved_x.min(fixed_x),
+        y: moved_y.min(fixed_y),
+        width: (moved_x - fixed_x).abs(),
+        height: (moved_y - fixed_y).abs(),
+    };
+    let handle = ResizeHandle {
+        x: Some(if moved_x < fixed_x { ActiveEdge::Start } else { ActiveEdge::End }),
+        y: Some(if moved_y < fixed_y { ActiveEdge::Start } else { ActiveEdge::End }),
+    };
+    (bounds.width >= 1 && bounds.height >= 1).then_some((bounds, handle))
 }
 
 /// The selection outline (§5.4): 1.5 px on the frame and four 8 px white handles centred on its corners.

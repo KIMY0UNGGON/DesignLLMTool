@@ -334,7 +334,7 @@ fn the_editor_runner_shows_the_home_words_and_saves_the_typed_model_once_when_th
 fn type_runner_model(harness: &mut AiTabHarness, model: &str) {
     let first = harness.draw_ai_tab(screen(1.0, 1000.0, 800.0));
     let opened = harness.click_then_settle(find_text_center(&first, "Claude · 모델 선택 · 높음"));
-    let _ = harness.click_then_settle(find_text_center(&opened, "모델 ID"));
+    let _ = harness.click_then_settle(find_text_center(&opened, "직접 입력…"));
     for key in model.chars() {
         let mut input = screen(1.0, 1000.0, 800.0);
         input.events = vec![Event::Text(key.to_string())];
@@ -523,7 +523,7 @@ fn a_request_without_a_model_or_a_prompt_is_refused_with_its_reason() {
     let mut harness = AiTabHarness::new(ArtifactKind::Canvas);
     harness.app.ai_prompt = "제목 수정".into();
     harness.app.ai_model.clear();
-    assert_eq!(harness.app.ai_request_block("제목 수정"), Some("실행기 메뉴에서 모델 ID를 적어 주세요"));
+    assert_eq!(harness.app.ai_request_block("제목 수정"), Some("실행기 메뉴에서 모델을 고르세요"));
     assert!(harness.app.invoke("ai.request", json!({ "prompt": "제목 수정" })).is_err(), "no model, no request");
     assert!(harness.sent().is_empty());
 

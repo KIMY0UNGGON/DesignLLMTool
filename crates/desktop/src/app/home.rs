@@ -20,6 +20,8 @@ const COLUMN: f32 = 840.0;
 pub(super) const HOME_RUNNER_DRAFT: &str = "home-runner-model-draft";
 pub(super) const AI_RUNNER_DRAFT: &str = "ai-runner-model-draft";
 const RUNNER_DRAFTS: [&str; 2] = [HOME_RUNNER_DRAFT, AI_RUNNER_DRAFT];
+/// The effort rows of the runner menu: the value sent to `home.runner` (`runner_models::RUNNER_EFFORTS`), and its label.
+const EFFORT_ITEMS: [(&str, &str); 6] = [("minimal", "최소"), ("low", "낮음"), ("medium", "보통"), ("high", "높음"), ("xhigh", "매우 높음"), ("max", "최대")];
 /// Grid view cells (§3): a 240 × 180 thumbnail with the title row under it.
 const GRID_CELL: Vec2 = Vec2::new(240.0, 180.0);
 
@@ -781,11 +783,13 @@ impl DesktopApp {
     }
 
     /// Saves a runner model draft (`runner_popover`) whose menu was not drawn in the last frame, as when a tab or a screen change
-    /// takes the menu away while it is open, and every draft when the window is asked to close. Runs at the start of each frame,
-    /// before either menu is drawn (`draw_home`, `draw_frame`).
+    /// takes the menu away while it is open, and every draft when the window is asked to close; then fits the runner to a model
+    /// list that has just come in (`settle_runner_models`). Runs at the start of each frame, before either menu is drawn
+    /// (`draw_home`, `draw_frame`).
     pub(super) fn settle_runner_drafts(&mut self, ctx: &egui::Context) {
         let closing = ctx.input(|input| input.viewport().close_requested());
         self.save_runner_drafts(ctx, closing);
+        self.settle_runner_models(ctx);
     }
 
     /// Saves the runner model drafts: every one with `all`, else those whose menu was not drawn in the last frame. The app's
@@ -813,6 +817,8 @@ impl DesktopApp {
     pub(super) fn runner_popover(&self, ui: &mut Ui, palette: &theme::Palette, response: &Response, model_draft_id: egui::Id) -> Vec<Value> {
         let mut picked = Vec::new();
         let mut left_field = false;
+        let typing_id = model_draft_id.with("typing");
+        let kind = super::runner_models::runtime_kind(&self.ai_runtime);
         popover(response, 220.0, |ui| {
             for (id, label) in [("claude", "Claude"), ("codex", "Codex")] {
                 if crate::widgets::menu_item(ui, palette, None, label, "", self.ai_runtime == id || (id == "claude" && self.ai_runtime != "codex")).clicked() {
@@ -821,16 +827,54 @@ impl DesktopApp {
                 }
             }
             crate::widgets::menu_separator(ui, palette);
-            let mut model = ui.data(|data| data.get_temp::<String>(model_draft_id)).unwrap_or_else(|| self.ai_model.clone());
-            let width = ui.available_width();
-            let field = crate::widgets::text_field(ui, palette, &mut model, "모델 ID", width);
-            if field.changed() {
-                ui.data_mut(|data| data.insert_temp(model_draft_id, model.clone()));
+            // The first opening asks the CLI in the background; until the answer, the fixed list is shown.
+            self.runner_models.request(kind, ui.ctx());
+            let (list, awaiting) = self.runner_models.shown(kind);
+            let current = self.ai_model.as_str();
+            // A saved model the list does not name stays selected at the top.
+            if !current.is_empty() && !list.models.iter().any(|model| model.id == current) && crate::widgets::menu_item(ui, palette, None, current, "", true).clicked() {
+                ui.close();
             }
-            left_field |= field.lost_focus();
+            for model in &list.models {
+                if crate::widgets::menu_item(ui, palette, None, &model.display_name, "", model.id == current).clicked() {
+                    picked.push(json!({ "model": model.id }));
+                    ui.close();
+                }
+            }
+            if awaiting {
+                ui.label(egui::RichText::new("목록 불러오는 중").color(palette.ink_3));
+            }
+            let typing = ui.data(|data| data.get_temp::<bool>(typing_id)).unwrap_or(false);
+            // The field takes the focus when it opens: in the click's frame and in the next one (the pending mark).
+            let focus_id = model_draft_id.with("focus");
+            let pending = ui.data_mut(|data| data.remove_temp::<bool>(focus_id)).unwrap_or(false);
+            let mut focus = false;
+            if crate::widgets::menu_item(ui, palette, None, "직접 입력…", "", typing).clicked() {
+                ui.data_mut(|data| {
+                    data.insert_temp(typing_id, true);
+                    data.insert_temp(focus_id, true);
+                });
+                focus = true;
+            }
+            if typing || focus {
+                let mut model = ui.data(|data| data.get_temp::<String>(model_draft_id)).unwrap_or_else(|| self.ai_model.clone());
+                let width = ui.available_width();
+                let field = crate::widgets::text_field(ui, palette, &mut model, "모델 ID", width);
+                if focus || pending {
+                    field.request_focus();
+                }
+                if field.changed() {
+                    ui.data_mut(|data| data.insert_temp(model_draft_id, model.clone()));
+                }
+                left_field |= field.lost_focus();
+            }
             crate::widgets::menu_separator(ui, palette);
-            for (id, label) in [("low", "낮음"), ("medium", "보통"), ("high", "높음"), ("max", "최대")] {
-                if crate::widgets::menu_item(ui, palette, None, label, "", self.effort_label() == label).clicked() {
+            // The efforts the chosen model's list says it accepts; the default four when its list names none of them.
+            let accepted: &[String] = list.models.iter().find(|model| model.id == current).map_or(&[], |model| model.efforts.as_slice());
+            let any_accepted = EFFORT_ITEMS.iter().any(|(id, _)| accepted.iter().any(|level| level == id));
+            for (id, label) in EFFORT_ITEMS {
+                let shown = if any_accepted { accepted.iter().any(|level| level == id) } else { super::runner_models::DEFAULT_EFFORTS.contains(&id) };
+                if shown && crate::widgets::menu_item(ui, palette, None, label, "", self.effort_label() == label).clicked() {
                     picked.push(json!({ "effort": id }));
                     ui.close();
                 }
@@ -839,6 +883,10 @@ impl DesktopApp {
         let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(response));
         // The mark tells the next frame's start that this menu was drawn (`settle_runner_drafts`).
         ui.data_mut(|data| data.insert_temp(model_draft_id.with("drawn"), true));
+        // The typed field opens with `직접 입력…` and closes with the menu.
+        if !open {
+            ui.data_mut(|data| data.remove_temp::<bool>(typing_id));
+        }
         let mut changes = Vec::new();
         if left_field || !open {
             if let Some(model) = ui.data_mut(|data| data.remove_temp::<String>(model_draft_id)) {
@@ -857,8 +905,10 @@ impl DesktopApp {
 
     fn effort_label(&self) -> &'static str {
         match self.ai_effort.as_str() {
+            "minimal" => "최소",
             "low" => "낮음",
             "medium" => "보통",
+            "xhigh" => "매우 높음",
             "max" => "최대",
             _ => "높음",
         }
@@ -1560,7 +1610,8 @@ mod template_refusal_tests {
         let initial = draw(ctx, app, frame(Vec::new()));
         draw(ctx, app, frame(click(text_center(&initial, "모델 선택 · 높음"))));
         let opened = draw(ctx, app, frame(Vec::new()));
-        draw(ctx, app, frame(click(text_center(&opened, "모델 ID"))));
+        draw(ctx, app, frame(click(text_center(&opened, "직접 입력…"))));
+        draw(ctx, app, frame(Vec::new()));
         draw(ctx, app, frame(vec![Event::Text(typed.into())]))
     }
 
@@ -1599,7 +1650,7 @@ mod template_refusal_tests {
     }
 
     #[test]
-    fn a_click_on_a_runtime_keeps_the_typed_model_and_applies_the_click() {
+    fn a_runtime_switch_clears_a_model_the_new_runtime_does_not_list() {
         let root = std::env::temp_dir().join(format!("designllm-home-runner-runtime-{}", new_id()));
         let mut app = app().with_workspace(&root);
         let ctx = Context::default();
@@ -1607,12 +1658,237 @@ mod template_refusal_tests {
         let typed = type_model_draft(&ctx, &mut app, "gpt-example");
         draw(&ctx, &mut app, frame(click(text_center(&typed, "Codex"))));
         draw(&ctx, &mut app, frame(Vec::new()));
-        // The draft is saved before the click and the click is applied after it: both reach the window and the file.
-        assert_eq!(app.ai_model, "gpt-example");
+        // The draft is saved before the click; the switch to Codex then clears a model Codex does not list.
         assert_eq!(app.ai_runtime, "codex");
-        assert_eq!(saved_settings(&root)["model"], "gpt-example");
+        assert_eq!(app.ai_model, "", "a model outside the new runtime's list is cleared");
+        assert_eq!(saved_settings(&root)["model"], "");
         assert_eq!(saved_settings(&root)["runtime"], "codex");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_runtime_switch_keeps_a_model_the_new_runtime_lists() {
+        let mut app = app();
+        app.ai_model = "claude-haiku-5-5".into();
+        assert_eq!(app.invoke("home.runner", json!({ "runtime": "codex" })), Ok(()));
+        assert_eq!(app.ai_model, "", "claude-haiku-5-5 is not a Codex model");
+        app.ai_model = "gpt-5.5".into();
+        assert_eq!(app.invoke("home.runner", json!({ "runtime": "claude" })), Ok(()));
+        assert_eq!(app.ai_model, "", "gpt-5.5 is not a Claude model");
+        app.ai_model = "claude-sonnet-5-5".into();
+        assert_eq!(app.invoke("home.runner", json!({ "runtime": "claude" })), Ok(()));
+        assert_eq!(app.ai_model, "claude-sonnet-5-5", "no runtime change, no clearing");
+        assert_eq!(app.invoke("home.runner", json!({ "runtime": "codex", "model": "gpt-5.5" })), Ok(()));
+        assert_eq!(app.ai_model, "gpt-5.5", "a model named in the same call is kept");
+    }
+
+    #[test]
+    fn a_menu_item_click_sets_the_model_once() {
+        let root = std::env::temp_dir().join(format!("designllm-home-runner-item-{}", new_id()));
+        let mut app = app().with_workspace(&root);
+        let ctx = Context::default();
+        theme::install(&ctx);
+        let initial = draw(&ctx, &mut app, frame(Vec::new()));
+        draw(&ctx, &mut app, frame(click(text_center(&initial, "모델 선택 · 높음"))));
+        let opened = draw(&ctx, &mut app, frame(Vec::new()));
+        draw(&ctx, &mut app, frame(click(text_center(&opened, "claude-sonnet-5-5"))));
+        draw(&ctx, &mut app, frame(Vec::new()));
+        assert_eq!(app.ai_model, "claude-sonnet-5-5");
+        assert_eq!(saved_settings(&root)["model"], "claude-sonnet-5-5");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_saved_model_outside_the_list_is_shown_at_the_top_and_the_list_shows_display_names() {
+        let mut app = app();
+        app.ai_model = "gpt-example".into();
+        app.runner_models.answer(
+            designllm_runtimes::detect::RuntimeKind::Claude,
+            designllm_runtimes::detect::ModelList {
+                models: vec![designllm_runtimes::detect::ModelInfo { id: "claude-opus-5-5".into(), display_name: "Opus 5.5".into(), efforts: vec!["low".into(), "high".into()] }],
+                source: designllm_runtimes::detect::ModelSource::Cli,
+            },
+        );
+        let ctx = Context::default();
+        theme::install(&ctx);
+        let initial = draw(&ctx, &mut app, frame(Vec::new()));
+        draw(&ctx, &mut app, frame(click(text_center(&initial, "gpt-example · 높음"))));
+        let opened = draw(&ctx, &mut app, frame(Vec::new()));
+        let texts = drawn_texts(&opened);
+        let stored = texts.iter().position(|text| text == "gpt-example").expect("the saved model is listed");
+        let listed = texts.iter().position(|text| text == "Opus 5.5").expect("the CLI's display name is listed");
+        assert!(stored < listed, "the saved model comes first: {texts:?}");
+        assert!(!texts.iter().any(|text| text == "claude-opus-5-5"), "the id is not the label: {texts:?}");
+        draw(&ctx, &mut app, frame(click(text_center(&opened, "Opus 5.5"))));
+        draw(&ctx, &mut app, frame(Vec::new()));
+        assert_eq!(app.ai_model, "claude-opus-5-5");
+    }
+
+    #[test]
+    fn the_effort_menu_offers_only_the_efforts_of_the_chosen_model() {
+        let mut app = app();
+        app.ai_model = "claude-opus-5-5".into();
+        app.runner_models.answer(
+            designllm_runtimes::detect::RuntimeKind::Claude,
+            designllm_runtimes::detect::ModelList {
+                models: vec![designllm_runtimes::detect::ModelInfo { id: "claude-opus-5-5".into(), display_name: "Opus 5.5".into(), efforts: vec!["low".into(), "high".into()] }],
+                source: designllm_runtimes::detect::ModelSource::Cli,
+            },
+        );
+        let ctx = Context::default();
+        theme::install(&ctx);
+        let initial = draw(&ctx, &mut app, frame(Vec::new()));
+        draw(&ctx, &mut app, frame(click(text_center(&initial, "claude-opus-5-5 · 높음"))));
+        let opened = draw(&ctx, &mut app, frame(Vec::new()));
+        let texts = drawn_texts(&opened);
+        assert!(texts.iter().any(|text| text == "낮음") && texts.iter().any(|text| text == "높음"), "{texts:?}");
+        assert!(!texts.iter().any(|text| text == "보통" || text == "최대"), "{texts:?}");
+    }
+
+    #[test]
+    fn minimal_and_xhigh_are_offered_only_where_the_model_lists_them() {
+        use designllm_runtimes::detect::{ModelInfo, ModelList, ModelSource, RuntimeKind};
+        fn opened_texts(app: &mut DesktopApp, label: &str) -> Vec<String> {
+            let ctx = Context::default();
+            theme::install(&ctx);
+            let initial = draw(&ctx, app, frame(Vec::new()));
+            draw(&ctx, app, frame(click(text_center(&initial, label))));
+            drawn_texts(&draw(&ctx, app, frame(Vec::new())))
+        }
+        let levels = |values: &[&str]| values.iter().map(|value| value.to_string()).collect::<Vec<_>>();
+        // Claude lists xhigh and max but no minimal.
+        let mut app = app();
+        app.ai_model = "claude-opus-5-5".into();
+        let efforts = levels(&["low", "medium", "high", "xhigh", "max"]);
+        app.runner_models.answer(RuntimeKind::Claude, ModelList { models: vec![ModelInfo { id: "claude-opus-5-5".into(), display_name: "Opus 5.5".into(), efforts }], source: ModelSource::Cli });
+        let texts = opened_texts(&mut app, "claude-opus-5-5 · 높음");
+        assert!(texts.iter().any(|text| text == "매우 높음") && texts.iter().any(|text| text == "최대"), "{texts:?}");
+        assert!(!texts.iter().any(|text| text == "최소"), "{texts:?}");
+        // The command takes xhigh (`commands.rs` schema).
+        assert_eq!(app.invoke("home.runner", json!({ "effort": "xhigh" })), Ok(()));
+        assert_eq!(app.ai_effort, "xhigh");
+        // Codex lists minimal and xhigh but no max.
+        let mut app = app_codex(levels(&["minimal", "low", "medium", "high", "xhigh"]));
+        let texts = opened_texts(&mut app, "gpt-6.2-sol · 높음");
+        assert!(texts.iter().any(|text| text == "최소") && texts.iter().any(|text| text == "매우 높음"), "{texts:?}");
+        assert!(!texts.iter().any(|text| text == "최대"), "{texts:?}");
+        assert_eq!(app.invoke("home.runner", json!({ "effort": "minimal" })), Ok(()));
+        assert_eq!(app.ai_effort, "minimal");
+        // A model whose list says nothing about efforts gets the default four.
+        let mut app = app_codex(Vec::new());
+        let texts = opened_texts(&mut app, "gpt-6.2-sol · 높음");
+        assert!(["낮음", "보통", "높음", "최대"].iter().all(|label| texts.iter().any(|text| text == label)), "{texts:?}");
+        assert!(!texts.iter().any(|text| text == "최소" || text == "매우 높음"), "{texts:?}");
+
+        fn app_codex(efforts: Vec<String>) -> DesktopApp {
+            let mut app = self::app();
+            app.ai_runtime = "codex".into();
+            app.ai_model = "gpt-6.2-sol".into();
+            app.runner_models.answer(RuntimeKind::Codex, ModelList { models: vec![ModelInfo { id: "gpt-6.2-sol".into(), display_name: "GPT-6.2-Sol".into(), efforts }], source: ModelSource::Cli });
+            app
+        }
+    }
+
+    #[test]
+    fn the_cli_list_is_asked_once_in_the_background_and_then_kept() {
+        fn answer(kind: designllm_runtimes::detect::RuntimeKind) -> designllm_runtimes::detect::ModelList {
+            let _ = kind;
+            designllm_runtimes::detect::ModelList {
+                models: vec![designllm_runtimes::detect::ModelInfo { id: "claude-fable-5-2".into(), display_name: "Fable 5.2".into(), efforts: Vec::new() }],
+                source: designllm_runtimes::detect::ModelSource::Cli,
+            }
+        }
+        let mut app = app();
+        app.runner_models = super::super::runner_models::RunnerModels::with_lookup(answer);
+        let ctx = Context::default();
+        theme::install(&ctx);
+        let initial = draw(&ctx, &mut app, frame(Vec::new()));
+        draw(&ctx, &mut app, frame(click(text_center(&initial, "모델 선택 · 높음"))));
+        let mut texts = Vec::new();
+        for _ in 0..200 {
+            let opened = draw(&ctx, &mut app, frame(Vec::new()));
+            texts = drawn_texts(&opened);
+            if texts.iter().any(|text| text == "Fable 5.2") {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(texts.iter().any(|text| text == "Fable 5.2"), "the background answer reaches the open menu: {texts:?}");
+        let (list, awaiting) = app.runner_models.shown(designllm_runtimes::detect::RuntimeKind::Claude);
+        assert!(!awaiting);
+        assert_eq!(list.source, designllm_runtimes::detect::ModelSource::Cli);
+    }
+
+    #[test]
+    fn a_chosen_model_takes_the_nearest_effort_it_accepts() {
+        use designllm_runtimes::detect::{ModelInfo, ModelList, ModelSource, RuntimeKind};
+        let mut app = app();
+        app.runner_models.answer(
+            RuntimeKind::Claude,
+            ModelList {
+                models: vec![ModelInfo { id: "claude-sonnet-5-5".into(), display_name: "Sonnet 5.5".into(), efforts: vec!["low".into(), "medium".into(), "high".into()] }],
+                source: ModelSource::Cli,
+            },
+        );
+        app.ai_effort = "max".into();
+        assert_eq!(app.invoke("home.runner", json!({ "model": "claude-sonnet-5-5" })), Ok(()));
+        assert_eq!(app.ai_effort, "high", "max is not accepted: the nearest accepted effort");
+        assert_eq!(app.invoke("home.runner", json!({ "model": "claude-sonnet-5-5", "effort": "max" })), Ok(()));
+        assert_eq!(app.ai_effort, "max", "an effort named in the same call is kept as given");
+    }
+
+    #[test]
+    fn a_runtime_switch_before_the_list_is_in_checks_the_model_against_the_answer() {
+        use designllm_runtimes::detect::{ModelInfo, ModelList, ModelSource, RuntimeKind};
+        fn answer(kind: RuntimeKind) -> ModelList {
+            let id = if kind == RuntimeKind::Codex { "gpt-cli-only" } else { "claude-cli-only" };
+            ModelList { models: vec![ModelInfo { id: id.into(), display_name: id.into(), efforts: vec!["low".into(), "medium".into()] }], source: ModelSource::Cli }
+        }
+        fn settle_until_in(ctx: &Context, app: &mut DesktopApp, kind: RuntimeKind) {
+            for _ in 0..200 {
+                if !app.runner_models.shown(kind).1 {
+                    break;
+                }
+                draw(ctx, app, frame(Vec::new()));
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert!(!app.runner_models.shown(kind).1, "the answer came in");
+            draw(ctx, app, frame(Vec::new()));
+        }
+        let root = std::env::temp_dir().join(format!("designllm-home-runner-recheck-{}", new_id()));
+        let mut app = app().with_workspace(&root);
+        app.runner_models = super::super::runner_models::RunnerModels::with_lookup(answer);
+        let ctx = Context::default();
+        theme::install(&ctx);
+        // Only the Codex CLI names this model: the fixed list does not clear it while the answer is awaited.
+        app.ai_model = "gpt-cli-only".into();
+        assert_eq!(app.invoke("home.runner", json!({ "runtime": "codex" })), Ok(()));
+        assert_eq!(app.ai_model, "gpt-cli-only");
+        settle_until_in(&ctx, &mut app, RuntimeKind::Codex);
+        assert_eq!(app.ai_model, "gpt-cli-only", "the answer names it");
+        assert_eq!(app.ai_effort, "medium", "high is not accepted: the nearest accepted effort");
+        assert_eq!(saved_settings(&root)["effort"], "medium");
+        // The Claude answer does not name it: the waiting check clears it once the answer is in, and saves that.
+        assert_eq!(app.invoke("home.runner", json!({ "runtime": "claude" })), Ok(()));
+        assert_eq!(app.ai_model, "gpt-cli-only", "kept while the Claude answer is awaited");
+        settle_until_in(&ctx, &mut app, RuntimeKind::Claude);
+        assert_eq!(app.ai_model, "");
+        assert_eq!(saved_settings(&root)["model"], "");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// The text drawn in the frame, in order.
+    fn drawn_texts(output: &egui::FullOutput) -> Vec<String> {
+        fn collect(shape: &Shape, out: &mut Vec<String>) {
+            match shape {
+                Shape::Text(text) => out.push(text.galley.text().to_owned()),
+                Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        output.shapes.iter().for_each(|clipped| collect(&clipped.shape, &mut out));
+        out
     }
 
     #[test]
@@ -1655,7 +1931,8 @@ mod template_refusal_tests {
         let initial = draw(&ctx, &mut app, frame(Vec::new()));
         draw(&ctx, &mut app, frame(click(text_center(&initial, "gpt-example · 높음"))));
         let opened = draw(&ctx, &mut app, frame(Vec::new()));
-        draw(&ctx, &mut app, frame(click(text_center(&opened, "gpt-example"))));
+        draw(&ctx, &mut app, frame(click(text_center(&opened, "직접 입력…"))));
+        draw(&ctx, &mut app, frame(Vec::new()));
         let press = |key: Key| Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE };
         draw(&ctx, &mut app, frame(vec![press(Key::End)]));
         draw(&ctx, &mut app, frame((0..11).map(|_| press(Key::Backspace)).collect()));

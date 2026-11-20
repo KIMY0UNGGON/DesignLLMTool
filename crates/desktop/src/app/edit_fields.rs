@@ -169,8 +169,8 @@ impl DesktopApp {
         );
     }
 
-    /// Outline, hover, drag and click handling of one clickable region of the preview. Returns the
-    /// pointer position when the region was clicked (and not dragged).
+    /// `interact_with_region_passing` for a region whose node takes its own presses.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn interact_with_region(
         &mut self,
         ui: &mut Ui,
@@ -182,25 +182,61 @@ impl DesktopApp {
         page_size: Size,
         rect: Rect,
     ) -> Option<RegionClick> {
-        let response = ui.interact(rect, key, Sense::click_and_drag());
+        self.interact_with_region_passing(ui, key, page_index, page_rect, node_id, bounds, page_size, rect, false)
+    }
+
+    /// Outline, hover, drag and click handling of one clickable region of the preview. Returns the
+    /// pointer position when the region was clicked (and not dragged). A region that passes presses on
+    /// (`multi::passes_press`: locked, or a container not selected) clicks but leaves its drag to the board (the
+    /// marquee). While the board pans (Space or the hand tool) a region takes no press at all.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn interact_with_region_passing(
+        &mut self,
+        ui: &mut Ui,
+        key: Id,
+        page_index: u32,
+        page_rect: Rect,
+        node_id: &str,
+        bounds: designllm_contracts::Rect,
+        page_size: Size,
+        rect: Rect,
+        pass_through: bool,
+    ) -> Option<RegionClick> {
+        let sense = if self.board_pan_mode(ui.ctx()) {
+            Sense::hover()
+        } else if pass_through {
+            Sense::click()
+        } else {
+            Sense::click_and_drag()
+        };
+        let response = ui.interact(rect, key, sense);
+        super::board::note_board_press(ui.ctx(), &response);
         // The outline of a node is drawn from its frame (selection.rs). A text-bearing shape has its text
         // lines as regions too; those regions must not draw outlines of their own.
 
-        if response.drag_started() {
+        if response.drag_started_by(egui::PointerButton::Primary) {
             // The drag starts where the press began. `interact_pointer_pos` is where egui recognised the drag (after the
             // click distance is passed), so the pointer's first move would be lost from the node's movement.
             let screen = ui.input(|input| input.pointer.press_origin()).or(response.interact_pointer_pos()).unwrap_or(rect.center());
-            self.start_drag_at_scale(node_id.to_owned(), page_index, bounds, page_size, page_rect, screen, ui.ctx().pixels_per_point());
-        }
-        if response.dragged() {
-            if let Some(drag) = self.drag.as_mut() {
-                if drag.node_id == node_id {
-                    let current = response.interact_pointer_pos().unwrap_or(drag.start);
-                    drag.delta = current - drag.start;
-                }
+            // A drag on another page makes it current, as a click there does.
+            self.focus_page(page_index);
+            if self.drags_cell_text(node_id, page_index) {
+                // Inside a table cell a drag selects its text, the table selected or not (68 item 11); the table's border
+                // band moves it (`draw_table_border_bands`).
+                self.start_cell_text_drag(page_index, screen, ui.ctx().pixels_per_point());
+            } else {
+                let target = self.drag_target(node_id);
+                self.start_drag_at_scale(target, page_index, bounds, page_size, page_rect, screen, ui.ctx().pixels_per_point());
             }
         }
-        if response.drag_stopped() && self.drag.as_ref().is_some_and(|drag| drag.node_id == node_id) {
+        let dragging_here = |app: &Self| app.drag.as_ref().is_some_and(|drag| drag.node_id == app.drag_target(node_id));
+        if response.dragged_by(egui::PointerButton::Primary) && dragging_here(self) {
+            if let Some(drag) = self.drag.as_mut() {
+                let current = response.interact_pointer_pos().unwrap_or(drag.start);
+                drag.delta = current - drag.start;
+            }
+        }
+        if response.drag_stopped_by(egui::PointerButton::Primary) && dragging_here(self) {
             let current = response.interact_pointer_pos().unwrap_or(rect.center());
             if let Some(drag) = self.drag.as_mut() {
                 drag.delta = current - drag.start;
@@ -216,5 +252,24 @@ impl DesktopApp {
         } else {
             None
         }
+    }
+
+    /// What a drag that starts on `node_id` moves: the selected container that holds it (a selected group moves as a
+    /// whole, whichever part of it is pressed), else the node itself.
+    pub(super) fn drag_target(&self, node_id: &str) -> String {
+        let holder = self.artifact.as_ref().and_then(|artifact| {
+            self.selected_nodes.iter().find(|id| {
+                id.as_str() != node_id
+                    && find_node(artifact, id).is_some_and(|node| {
+                        super::multi::is_container(node) && super::doc_tree::find_node_in_node(node, node_id).is_some()
+                    })
+            })
+        });
+        holder.map_or_else(|| node_id.to_owned(), String::clone)
+    }
+
+    /// Whether a primary press pans the board instead of acting on what is under it: Space held, or the hand tool.
+    pub(super) fn board_pan_mode(&self, ctx: &egui::Context) -> bool {
+        self.view_ref().tool == super::board::Tool::Hand || ctx.input(|input| input.key_down(egui::Key::Space))
     }
 }
