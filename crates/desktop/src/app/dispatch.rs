@@ -370,6 +370,10 @@ impl DesktopApp {
             if self.board_memo_editor_shown() && spec.id == "select.clear" {
                 continue;
             }
+            // Esc closes an open menu (a node's or a table's right-click menu, 68 item 16), whose items act on the selection.
+            if spec.id == "select.clear" && eframe::egui::Popup::is_any_open(ctx) {
+                continue;
+            }
             // Esc ends the open inline text edit (`draw_inline_text_editor`; an IME's Esc there cancels the composition), so
             // `select.clear` does not take it first. egui takes the text field's focus on Esc, so `typing` above is false here and
             // the bare-key guard does not stop it. An edit the editor cannot end on Esc (a conflict, a target that changed, a page

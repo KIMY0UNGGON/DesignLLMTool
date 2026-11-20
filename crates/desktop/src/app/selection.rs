@@ -11,7 +11,7 @@ use serde_json::json;
 use super::{properties::NodeProperties, DesktopApp};
 use crate::{board, commands, frame, icons, theme, widgets};
 
-fn layer_state_commands(kind: designllm_contracts::ArtifactKind, hidden: bool, locked: bool) -> Vec<&'static str> {
+pub(super) fn layer_state_commands(kind: designllm_contracts::ArtifactKind, hidden: bool, locked: bool) -> Vec<&'static str> {
     if kind != designllm_contracts::ArtifactKind::Canvas {
         return Vec::new();
     }
@@ -897,40 +897,8 @@ impl DesktopApp {
             Action::Group if response.clicked() => self.invoke_ui("edit.group", json!({})),
             Action::Ai if response.clicked() => self.invoke_ui("nav.ai", json!({})),
             Action::More => {
-                let many = self.selected_nodes.len() > 1;
-                let group = node.kind == designllm_contracts::NodeKind::Group;
-                let locked = node.locked == Some(true);
-                let hidden = node.hidden == Some(true);
-                let kind = self.active.as_ref().map_or(designllm_contracts::ArtifactKind::Canvas, |item| item.kind);
-                menu(response, |ui| {
-                    let mut entries: Vec<Option<&str>> = Vec::new();
-                    if !many {
-                        entries.push(Some("edit.duplicate"));
-                    }
-                    entries.extend([Some("edit.copy"), Some("edit.paste"), Some("edit.copy_properties"), Some("edit.paste_properties"), None]);
-                    entries.extend([Some("edit.group"), Some("edit.ungroup"), Some("edit.stack"), None]);
-                    if !many {
-                        entries.extend([Some("edit.order_forward"), Some("edit.order_backward"), Some("edit.order_front"), Some("edit.order_back"), None]);
-                    }
-                    entries.extend(layer_state_commands(kind, hidden, locked).into_iter().map(Some));
-                    entries.extend([None, Some("edit.delete")]);
-                    for entry in entries {
-                        let Some(command) = entry else {
-                            ui.separator();
-                            continue;
-                        };
-                        if !commands::available(command) || (command == "edit.ungroup" && !group) || (command == "edit.group" && !many && group) {
-                            continue;
-                        }
-                        let Some(spec) = commands::find(command) else {
-                            continue;
-                        };
-                        if widgets::menu_item(ui, palette, None, spec.label, spec.shortcut, false).clicked() {
-                            self.invoke_ui(command, json!({}));
-                            ui.close();
-                        }
-                    }
-                });
+                let node_id = node.id.clone();
+                menu(response, |ui| self.draw_node_menu(ui, palette, &node_id));
             }
             _ => {}
         }

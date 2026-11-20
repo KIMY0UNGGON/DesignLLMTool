@@ -1242,3 +1242,297 @@ fn table_merge_menu_only_for_the_topmost_table_reselects_a_mixed_selection_and_c
     app.click(&mut window, &mut host, item);
     assert_eq!(changes_sent_since(&app, sent), 0);
 }
+
+/// Height (EMU) of `node`'s frame on page 0, as the core laid it out and the board drew it.
+fn frame_height(window: &Window, node: &str) -> i64 {
+    let page = window.app.page_textures.get(&0).expect("page 0 is drawn");
+    page.frames.get(node).unwrap_or_else(|| panic!("the render has a frame for {node}")).height
+}
+
+#[test]
+fn table_row_grows_with_its_text_past_its_minimum_and_a_merged_anchor_keeps_both_lines_in_view() {
+    let mut host = Host::start();
+    let (canvas, mut window, _table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    let mut app = Driver::at_once();
+    let ids: Vec<Vec<String>> = table_of(&mut host, &canvas).rows.iter().map(|row| row.cell_ids.clone()).collect();
+    let (first, second) = (ids[1][0].clone(), ids[1][1].clone());
+    let minimum = frame_height(&window, &first);
+
+    // Two lines in one cell make its row taller than the minimum (PowerPoint: the row follows its text).
+    set_cell_text(&mut host, &mut window, &canvas, &first, "가\n나");
+    app.idle(&mut window, &mut host, 2);
+    let two_lines = frame_height(&window, &first);
+    assert!(two_lines > minimum, "two lines grow the row ({two_lines} > {minimum}); notice: {:?}", window.message());
+
+    // One line again gives the minimum back, not less.
+    set_cell_text(&mut host, &mut window, &canvas, &first, "가");
+    app.idle(&mut window, &mut host, 2);
+    let one_line = frame_height(&window, &first);
+    assert!(one_line >= minimum && one_line < two_lines, "one line returns to at least the minimum ({one_line}, minimum {minimum})");
+
+    // A merged anchor with two lines (the covered cell's text joins it) keeps both lines inside the merged frame.
+    set_cell_text(&mut host, &mut window, &canvas, &first, "가\n나");
+    app.idle(&mut window, &mut host, 2);
+    window.app.set_selected_ids(vec![first.clone(), second.clone()]);
+    window.app.run_span_action(window.app.canvas_table_span_command(false));
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(table_of(&mut host, &canvas).cell_spans.get(&first), Some(&designllm_contracts::CanvasTableSpan { row_span: 1, column_span: 2 }), "the 1 × 2 merge is made");
+    assert!(frame_height(&window, &first) >= two_lines, "the merged anchor is at least two lines tall ({} >= {two_lines})", frame_height(&window, &first));
+}
+
+// The right-click menus of nodes, layer rows and page rows (68 item 16), through `App::update` with the UI-test recording on:
+// the last frame's layer rows and controls (`ui.layout`) say where to press, and an item is pressed as a person presses it.
+
+/// A window on a new canvas whose frames record their layer rows and controls.
+fn menu_window(host: &mut Host, title: &str) -> (String, Window) {
+    let canvas = host.create("canvas", title);
+    let mut window = Window::open_with_previews(host, &canvas);
+    window.app.screen = super::Screen::Editor;
+    window.app.ui_test = Some(super::ui_test_input::UiTestInput::default());
+    window.draw(host, 1.0);
+    (canvas, window)
+}
+
+fn rectangle(id: &str, x: i64, children: Vec<Node>) -> Node {
+    let kind = if children.is_empty() { "rectangle" } else { "group" };
+    let mut node: Node = serde_json::from_value(json!({
+        "id": id, "kind": kind, "bounds": { "x": x, "y": 1_000_000, "width": 1_500_000, "height": 1_000_000 },
+    })).expect("a node");
+    node.children = children;
+    node
+}
+
+fn page_ids(host: &mut Host, canvas: &str) -> Vec<String> {
+    let ArtifactBody::Canvas(document) = host.artifact(canvas).body else { panic!("a canvas") };
+    document.pages.iter().map(|page| page.id.clone()).collect()
+}
+
+fn pages_json(host: &mut Host, canvas: &str) -> serde_json::Value {
+    let ArtifactBody::Canvas(document) = host.artifact(canvas).body else { panic!("a canvas") };
+    serde_json::to_value(&document.pages).expect("the pages")
+}
+
+fn has_node(host: &mut Host, canvas: &str, id: &str) -> bool {
+    let artifact = host.artifact(canvas);
+    super::doc_tree::find_node(&artifact, id).is_some()
+}
+
+/// The centre of the item labelled `label` (its command's label) in the menu opened at `at`: of the controls the last frame
+/// drew with that label, the one nearest `at` in the menu's column (a menu opens beside its anchor), so a panel's control of
+/// the same label is not taken.
+fn control(window: &Window, label: &str, at: Pos2) -> Option<Pos2> {
+    window.app.ui_test.as_ref()?.last_controls().into_iter()
+        .filter(|(shown, rect)| shown == label && rect.expand(8.0).x_range().contains(at.x))
+        .min_by(|(_, a), (_, b)| a.distance_to_pos(at).total_cmp(&b.distance_to_pos(at)))
+        .map(|(_, rect)| rect.center())
+}
+
+fn row(window: &Window, node: Option<&str>, page: Option<u32>) -> Pos2 {
+    window
+        .app
+        .ui_test
+        .as_ref()
+        .and_then(|test| test.last_row_centre(node, page))
+        .unwrap_or_else(|| panic!("the layer row of {node:?} / page {page:?} is drawn"))
+}
+
+fn sorted(mut ids: Vec<String>) -> Vec<String> {
+    ids.sort();
+    ids
+}
+
+#[test]
+fn node_menu_on_the_board_and_on_layer_rows_selects_keeps_a_selection_and_runs_its_items() {
+    let mut host = Host::start();
+    let (canvas, mut window) = menu_window(&mut host, "우클릭 메뉴");
+    add_node(&mut host, &mut window, &canvas, rectangle("r1", 500_000, vec![]));
+    add_node(&mut host, &mut window, &canvas, rectangle("r2", 2_500_000, vec![]));
+    add_node(&mut host, &mut window, &canvas, rectangle("g1", 4_500_000, vec![rectangle("k1", 4_500_000, vec![])]));
+    let mut app = Driver::at_once();
+    app.idle(&mut window, &mut host, 3);
+
+    // The board: a right click on a node that is not selected selects it and opens its menu.
+    let at = centre(&window, "r1");
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(window.app.selected_nodes, vec!["r1".to_owned()], "the right press selects the node");
+    for label in ["복제", "복사", "붙여넣기", "삭제"] {
+        assert!(control(&window, label, at).is_some(), "the node menu shows {label}");
+    }
+    app.keys(&mut window, &mut host, vec![key(Key::Escape)]);
+    assert!(control(&window, "복제", at).is_none(), "Escape closes the menu");
+
+    // Two selected nodes: a right click on one keeps both, the menu is for both (no 복제), and 삭제 removes both.
+    window.app.select_ids(vec!["r1".into(), "r2".into()]);
+    app.idle(&mut window, &mut host, 2);
+    let at = centre(&window, "r2");
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(sorted(window.app.selected_nodes.clone()), ["r1", "r2"], "a right click inside the selection keeps it");
+    assert!(control(&window, "복제", at).is_none(), "복제 is for one node");
+    let item = control(&window, "삭제", at).expect("the menu shows 삭제");
+    app.click(&mut window, &mut host, item);
+    app.idle(&mut window, &mut host, 3);
+    assert!(!has_node(&mut host, &canvas, "r1") && !has_node(&mut host, &canvas, "r2"), "삭제 removes both; notice: {:?}", window.message());
+    window.app.invoke("edit.undo", json!({})).expect("undo the removal");
+    app.idle(&mut window, &mut host, 4);
+    assert!(has_node(&mut host, &canvas, "r1") && has_node(&mut host, &canvas, "r2"), "one undo brings both back");
+
+    // A layer row two levels down (a group's child): its right click selects it, and 삭제 removes it.
+    window.app.select_ids(vec!["g1".into()]);
+    app.idle(&mut window, &mut host, 2);
+    let at = row(&window, Some("k1"), None);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(window.app.selected_nodes, vec!["k1".to_owned()], "the right press on the row selects its node");
+    let item = control(&window, "삭제", at).expect("the row's menu shows 삭제");
+    app.click(&mut window, &mut host, item);
+    app.idle(&mut window, &mut host, 3);
+    assert!(!has_node(&mut host, &canvas, "k1"), "삭제 from the row's menu removes the child; notice: {:?}", window.message());
+    assert!(has_node(&mut host, &canvas, "g1"));
+
+    // A locked node: its row's menu offers 잠금 해제, which unlocks it.
+    window.app.select_ids(vec!["r2".into()]);
+    window.app.invoke("edit.lock", json!({})).expect("lock r2");
+    app.idle(&mut window, &mut host, 3);
+    window.app.select_ids(Vec::new());
+    app.idle(&mut window, &mut host, 2);
+    let at = row(&window, Some("r2"), None);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(window.app.selected_nodes, vec!["r2".to_owned()], "a locked node's row selects it");
+    let item = control(&window, "잠금 해제", at).expect("a locked node's menu offers 잠금 해제");
+    app.click(&mut window, &mut host, item);
+    app.idle(&mut window, &mut host, 3);
+    let artifact = host.artifact(&canvas);
+    let locked = super::doc_tree::find_node(&artifact, "r2").and_then(|node| node.ext.locked);
+    assert_ne!(locked, Some(true), "잠금 해제 unlocks it; notice: {:?}", window.message());
+}
+
+#[test]
+fn table_members_take_the_table_menu_from_the_board_and_from_their_layer_rows() {
+    let mut host = Host::start();
+    let (canvas, mut window, table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    window.app.ui_test = Some(super::ui_test_input::UiTestInput::default());
+    let mut app = Driver::at_once();
+    app.idle(&mut window, &mut host, 2);
+    let table_id = table_node(&mut host, &canvas).id;
+    let cell = table.rows[1].cell_ids[1].clone();
+
+    // The board: a cell's right click opens the table menu, not the node menu.
+    let at = centre(&window, &cell);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert!(window.app.table_merge.menu_items.is_some(), "the table menu opens on the cell");
+    assert!(control(&window, "복제", at).is_none(), "no node menu on a table cell");
+    // A right click on another cell (one the open menu does not cover) while the menu is open opens it there; egui would
+    // close it on that click.
+    let menu = window.ctx.memory(|memory| memory.area_rect(egui::Id::new("table-cell-menu"))).expect("the menu's area");
+    let other = table.rows.iter().flat_map(|row| row.cell_ids.iter()).find(|id| **id != cell && !menu.contains(centre(&window, id)))
+        .expect("a cell beside the menu").clone();
+    let at = centre(&window, &other);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(window.app.selected_nodes, vec![other.clone()], "the second right press selects its cell");
+    assert!(window.app.table_merge.menu_items.is_some(), "the menu opens again on the other cell");
+    app.keys(&mut window, &mut host, vec![key(Key::Escape)]);
+    assert!(window.app.table_merge.menu_items.is_none(), "Escape closes the table menu");
+
+    // The table's layer row: the table menu for the table, not the node menu.
+    window.app.select_ids(Vec::new());
+    app.idle(&mut window, &mut host, 2);
+    let at = row(&window, Some(&table_id), None);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(window.app.selected_nodes, vec![table_id.clone()], "the row's right press selects the table");
+    assert!(window.app.table_merge.menu_items.is_some(), "the table menu opens from the table's row");
+    assert!(control(&window, "복제", at).is_none() && control(&window, "셀 병합", at).is_some(), "the table menu, not the node menu");
+    app.keys(&mut window, &mut host, vec![key(Key::Escape)]);
+    assert!(window.app.table_merge.menu_items.is_none(), "Escape closes it");
+
+    // A cell's layer row (shown under the selected table): the cell is selected as the board's press does, and the menu
+    // says why one cell cannot merge.
+    let at = row(&window, Some(&cell), None);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(window.app.selected_nodes, vec![cell.clone()], "the cell row's right press selects the cell");
+    assert!(menu_reason(&window, 0).is_some_and(|reason| reason.contains("두 칸")), "one cell has nothing to merge");
+    assert!(control(&window, "복제", at).is_none());
+}
+
+#[test]
+fn figure_diagram_rows_open_no_node_menu() {
+    use super::figure_tools::{connection, new_diagram_panel, node_addition, panel_additions};
+    let mut host = Host::start();
+    let figure_id = host.create_figure();
+    let (figure, _) = host.figure(&figure_id);
+    host.apply(&figure_id, panel_additions(&figure, new_diagram_panel(&figure)), [Intent::Content, Intent::Design].into_iter().collect())
+        .expect("a diagram panel");
+    for _ in 0..2 {
+        let (figure, _) = host.figure(&figure_id);
+        let operation = node_addition(&figure, &figure.panels[0].id, designllm_contracts::NodeKind::Rectangle).expect("room for a node");
+        host.apply(&figure_id, vec![operation], [Intent::Content].into_iter().collect()).expect("a box");
+    }
+    let (figure, _) = host.figure(&figure_id);
+    let designllm_contracts::PanelBody::Diagram(diagram) = &figure.panels[0].body else { panic!("a diagram") };
+    let boxes: Vec<String> = diagram.nodes.iter().map(|node| node.id.clone()).collect();
+    let edge = connection(&figure.panels[0].id, &boxes[0], &boxes[1]);
+    let Operation::ConnectDiagram { edge: designllm_contracts::Edge { id: edge_id, .. }, .. } = &edge else { unreachable!() };
+    let edge_id = edge_id.clone();
+    host.apply(&figure_id, vec![edge], [Intent::Content].into_iter().collect()).expect("a connector");
+    let mut window = Window::open_with_previews(&mut host, &figure_id);
+    window.app.screen = super::Screen::Editor;
+    window.app.ui_test = Some(super::ui_test_input::UiTestInput::default());
+    let mut app = Driver::at_once();
+    app.idle(&mut window, &mut host, 4);
+
+    for id in [boxes[0].as_str(), edge_id.as_str()] {
+        let at = row(&window, Some(id), None);
+        right_click(&mut app, &mut window, &mut host, at);
+        assert!(!egui::Popup::is_any_open(&window.ctx), "no node menu on the figure row {id}");
+        assert!(control(&window, "복제", at).is_none());
+    }
+}
+
+#[test]
+fn page_row_menu_removes_the_page_it_opened_for_and_one_undo_restores_the_page_and_its_nodes() {
+    let mut host = Host::start();
+    let (canvas, mut window) = menu_window(&mut host, "페이지 메뉴");
+    window.app.invoke("add.page", json!({})).expect("a second page");
+    window.settle(&mut host);
+    let pages = page_ids(&mut host, &canvas);
+    assert_eq!(pages.len(), 2);
+    host.apply(
+        &canvas,
+        vec![Operation::AddNode { page_id: pages[1].clone(), parent_id: None, node: rectangle("p2-node", 500_000, vec![]) }],
+        [Intent::Content, Intent::Design].into_iter().collect(),
+    )
+    .expect("a node on page 2");
+    window.app.refresh_active();
+    window.settle(&mut host);
+    let mut app = Driver::at_once();
+    app.idle(&mut window, &mut host, 3);
+    let before = pages_json(&mut host, &canvas);
+
+    // 페이지 삭제 on page 2's row removes page 2 with its node; one undo restores both as they were.
+    let at = row(&window, None, Some(1));
+    right_click(&mut app, &mut window, &mut host, at);
+    assert!(control(&window, "페이지 추가", at).is_some(), "the page menu shows 페이지 추가");
+    let item = control(&window, "페이지 삭제", at).expect("the page menu shows 페이지 삭제");
+    app.click(&mut window, &mut host, item);
+    app.idle(&mut window, &mut host, 3);
+    assert_eq!(page_ids(&mut host, &canvas), vec![pages[0].clone()], "page 2 is removed; notice: {:?}", window.message());
+    assert!(!has_node(&mut host, &canvas, "p2-node"));
+    window.app.invoke("edit.undo", json!({})).expect("undo the removal");
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(pages_json(&mut host, &canvas), before, "one undo restores the page, its place and its node exactly");
+
+    // The menu keeps its page by id: the pages are reordered while it is open, and 페이지 삭제 still removes that page.
+    let at = row(&window, None, Some(1));
+    right_click(&mut app, &mut window, &mut host, at);
+    assert!(control(&window, "페이지 삭제", at).is_some(), "the page menu is open on page 2");
+    host.apply(&canvas, vec![Operation::ReorderPages { page_ids: vec![pages[1].clone(), pages[0].clone()] }], [Intent::Content, Intent::Design].into_iter().collect())
+        .expect("the pages are reordered");
+    window.app.refresh_active();
+    window.settle(&mut host);
+    app.idle(&mut window, &mut host, 2);
+    assert_eq!(page_ids(&mut host, &canvas), vec![pages[1].clone(), pages[0].clone()]);
+    let item = control(&window, "페이지 삭제", at).expect("the menu stays open on its row");
+    app.click(&mut window, &mut host, item);
+    app.idle(&mut window, &mut host, 3);
+    assert_eq!(page_ids(&mut host, &canvas), vec![pages[0].clone()], "the page the menu opened for is removed (now first); notice: {:?}", window.message());
+}

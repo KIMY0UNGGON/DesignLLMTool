@@ -368,15 +368,10 @@ impl GridPlan {
     }
 }
 
-fn has_cell_content(cell: &Node) -> bool {
-    !cell.text.is_empty() || cell.asset.is_some() || !cell.children.is_empty()
-}
-
-fn fit_empty_table_rows(kids: &[&Node], cols: usize, spanned_content: &[bool], heights: &mut [i64]) {
-    for ((cells, &spanned), height) in kids.chunks_exact(cols).zip(spanned_content).zip(heights) {
-        if spanned || cells.iter().any(|cell| has_cell_content(cell)) {
-            continue;
-        }
+/// Each table row is at least each hug cell's own height in it (its minimum, as made), so text that shrinks back gives the
+/// minimum back (68 item 16). A merge keeps the cells' heights, so a merged span is at least the heights its rows had.
+fn fit_table_row_minimums(kids: &[&Node], cols: usize, heights: &mut [i64]) {
+    for (cells, height) in kids.chunks_exact(cols).zip(heights) {
         for cell in cells {
             if let Some(spec) = cell.layout.as_ref().filter(|spec| spec.height_mode == "hug") {
                 *height = (*height).max(clamp(cell.bounds.height, spec.min_height, spec.max_height));
@@ -885,9 +880,7 @@ impl<'a, 'b> Painter<'a, 'b> {
                 row_span_heights.push((cell.row, cell.row_span, h));
             }
         }
-        let mut rows_with_spanned_content = Vec::new();
         if let Some(spans) = &table_grid {
-            rows_with_spanned_content.resize(rows, false);
             let mut anchors_with_covered_text = BTreeSet::new();
             for (child, position) in spans.cells.iter().enumerate() {
                 let super::model::TableCellPosition::Covered { anchor_index } = position else { continue };
@@ -909,9 +902,6 @@ impl<'a, 'b> Painter<'a, 'b> {
             }
             for cell in &cells {
                 let has_covered_text = anchors_with_covered_text.contains(&cell.child);
-                if has_covered_text || ((cell.span > 1 || cell.row_span > 1) && has_cell_content(kids[cell.child])) {
-                    rows_with_spanned_content[cell.row..cell.row + cell.row_span].fill(true);
-                }
                 if !has_covered_text {
                     continue;
                 }
@@ -936,6 +926,10 @@ impl<'a, 'b> Painter<'a, 'b> {
                 row_h[r] = fill_h[r];
             }
         }
+        // Before the spans take their share, so a span grows only by what its content needs past its rows' minimums.
+        if table.is_some() {
+            fit_table_row_minimums(kids, cols, &mut row_h);
+        }
         for (row, row_span, required) in row_span_heights {
             let end = row.checked_add(row_span).filter(|end| row_span > 0 && *end <= row_h.len())
                 .ok_or_else(|| DltError::invalid("grid row span is out of range"))?;
@@ -953,9 +947,6 @@ impl<'a, 'b> Painter<'a, 'b> {
                 let last = &mut row_h[end - 1];
                 *last = (*last).checked_add(delta).ok_or_else(|| DltError::invalid("grid row height overflows EMU"))?;
             }
-        }
-        if table.is_some() {
-            fit_empty_table_rows(kids, cols, &rows_with_spanned_content, &mut row_h);
         }
         Ok(GridPlan { cells, col_x, col_w, row_h, row_gap: eff.row_gap })
     }
@@ -1806,8 +1797,74 @@ mod tests {
         for id in ["c11", "c12"] {
             assert_eq!(output.frames.get(id).map(|frame| frame.height), Some(row_height), "empty cell {id} keeps its height");
         }
-        assert_eq!(output.frames["c22"].height, 1200, "the populated row hugs its one line");
-        assert_eq!(output.frames["table"].height, row_height + 1200);
+        assert_eq!(output.frames["c22"].height, row_height, "the populated row keeps its minimum (the cell height as made) with one line (68 item 16)");
+        assert_eq!(output.frames["table"].height, 2 * row_height);
+    }
+
+    /// A 2 × 2 table of hug cells `cell_height` tall with the given texts (row-major) and spans.
+    fn minimum_table(cell_height: i64, texts: [&str; 4], spans: &[(&str, u32, u32)]) -> CanvasDocument {
+        use designllm_contracts::{CanvasTableRow, CanvasTableSpan, Page};
+        let ids = ["c11", "c12", "c21", "c22"];
+        let children = ids.iter().zip(texts).map(|(id, text)| Node {
+            id: (*id).into(), kind: NodeKind::Rectangle, bounds: Rect { x: 0, y: 0, width: 200_000, height: cell_height },
+            text: text.into(), style: Style::default(), asset: None, children: vec![],
+            layout: Some(LayoutSpec { width_mode: "fill".into(), height_mode: "hug".into(), ..Default::default() }),
+            interactions: vec![], variants: BTreeMap::new(), ext: Default::default(),
+        }).collect();
+        let table = Node {
+            id: "table".into(), kind: NodeKind::Group, bounds: Rect { x: 0, y: 0, width: 400_000, height: 2 * cell_height },
+            text: String::new(), style: Style::default(), asset: None, children,
+            layout: Some(LayoutSpec { mode: "grid".into(), height_mode: "hug".into(), grid_columns: Some(2), gap: 0, row_gap: Some(0), ..Default::default() }),
+            interactions: vec![], variants: Default::default(),
+            ext: designllm_contracts::NodeExt { table: Some(CanvasTable {
+                rows: vec![
+                    CanvasTableRow { id: "r1".into(), cell_ids: vec!["c11".into(), "c12".into()] },
+                    CanvasTableRow { id: "r2".into(), cell_ids: vec!["c21".into(), "c22".into()] },
+                ],
+                header_row_id: None, column_widths: None,
+                cell_spans: spans.iter().map(|(id, row_span, column_span)| ((*id).to_owned(), CanvasTableSpan { row_span: *row_span, column_span: *column_span })).collect(),
+            }), ..Default::default() },
+        };
+        CanvasDocument { pages: vec![Page { nodes: vec![table], ..Page::new("p", Size::slide()) }], ..Default::default() }
+    }
+
+    /// 68 item 16: a merged span of one line is as tall as the rows it covers were (their minimums), not one line.
+    #[test]
+    fn a_one_line_merge_keeps_the_heights_of_the_rows_it_covers() {
+        let row = 36 * designllm_contracts::EMU_PER_CSS_PX;
+        let across = layout_pages(&minimum_table(row, ["A", "", "", ""], &[("c11", 1, 2)]), &UnitRenderer, None).unwrap();
+        assert_eq!((across.frames["c11"].height, across.frames["table"].height), (row, 2 * row), "a 1 × 2 merge keeps its row");
+        let down = layout_pages(&minimum_table(row, ["A", "", "", ""], &[("c11", 2, 1)]), &UnitRenderer, None).unwrap();
+        assert_eq!((down.frames["c11"].height, down.frames["table"].height), (2 * row, 2 * row), "a 2 × 1 merge keeps both rows");
+        let all = layout_pages(&minimum_table(row, ["A", "", "", ""], &[("c11", 2, 2)]), &UnitRenderer, None).unwrap();
+        assert_eq!((all.frames["c11"].height, all.frames["table"].height), (2 * row, 2 * row), "a 2 × 2 merge keeps both rows");
+    }
+
+    /// 68 item 16: a merged span grows past its rows' minimums only by what its text needs (UnitRenderer: 1,200 EMU a line).
+    #[test]
+    fn a_merged_span_grows_past_its_rows_minimums_by_its_text_alone() {
+        let down = layout_pages(&minimum_table(1_000, ["a\nb\nc", "", "", ""], &[("c11", 2, 1)]), &UnitRenderer, None).unwrap();
+        assert_eq!((down.frames["c11"].height, down.frames["table"].height), (3_600, 3_600), "three lines over two 1,000 EMU rows");
+        let across = layout_pages(&minimum_table(1_000, ["a\nb", "", "", ""], &[("c11", 1, 2)]), &UnitRenderer, None).unwrap();
+        assert_eq!((across.frames["c11"].height, across.frames["table"].height), (2_400, 3_400), "two lines in row 1, row 2 keeps 1,000");
+    }
+
+    /// 68 item 16, the other direction: a table whose cells are taller than their text (an existing document's table) opens
+    /// at its cells' heights. Before 68 item 16 a row with text hugged its text (one line, 1,200 EMU) below its cells'
+    /// height; text taller than the cells still sizes the row as before.
+    #[test]
+    fn an_existing_table_whose_cells_are_taller_than_their_text_opens_at_the_cell_heights() {
+        let tall = 60 * designllm_contracts::EMU_PER_CSS_PX;
+        let document = minimum_table(tall, ["A", "B", "", ""], &[]);
+        let reopened: CanvasDocument = serde_json::from_str(&serde_json::to_string(&document).unwrap()).unwrap();
+        for (name, document) in [("as made", &document), ("saved and reopened", &reopened)] {
+            let output = layout_pages(document, &UnitRenderer, None).unwrap();
+            assert_eq!(output.frames["c11"].height, tall, "{name}: a one-line row is its cells' height, not 1,200 EMU");
+            assert_eq!(output.frames["table"].height, 2 * tall, "{name}");
+        }
+        assert_eq!(reopened.pages[0].nodes[0].children[0].bounds.height, tall, "layout does not rewrite the stored cell height");
+        let short = layout_pages(&minimum_table(1_000, ["a\nb", "", "", ""], &[]), &UnitRenderer, None).unwrap();
+        assert_eq!((short.frames["c11"].height, short.frames["table"].height), (2_400, 3_400), "text past the cells' height sizes its row");
     }
 
     fn populated_span_document(
@@ -1921,13 +1978,13 @@ mod tests {
         }
         document.pages[0].nodes[0].children[0].text = "A".into();
         let merged = layout_pages(&document, &UnitRenderer, None).unwrap();
-        assert_eq!(merged.frames["table"].height, 1200, "the anchor text occupies both rows of the span");
+        assert_eq!(merged.frames["table"].height, 2 * 36 * designllm_contracts::EMU_PER_CSS_PX, "the one-line span keeps the 36 px minimums of both its rows (68 item 16)");
 
         let table = &mut document.pages[0].nodes[0];
         table.ext.table.as_mut().unwrap().cell_spans.clear();
         table.children[2].text = "B".into();
         let unmerged = layout_pages(&document, &UnitRenderer, None).unwrap();
-        assert_eq!(unmerged.frames["table"].height, 2400, "each unmerged row contains one line");
+        assert_eq!(unmerged.frames["table"].height, 2 * 36 * designllm_contracts::EMU_PER_CSS_PX, "each unmerged row keeps its 36 px minimum with one line (68 item 16)");
     }
 
     #[test]

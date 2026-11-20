@@ -161,7 +161,6 @@ fn grid_node(spec: LayoutSpec) -> NodeProperties {
         image_crop_pixel_rect: None,
         alt: None,
         locked: None,
-        hidden: None,
     }
 }
 

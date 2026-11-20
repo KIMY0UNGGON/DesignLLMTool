@@ -51,6 +51,7 @@ mod kind_commands;
 mod lint;
 mod links;
 mod multi;
+mod object_menu;
 mod properties;
 mod repeat_groups;
 mod selection;

@@ -189,6 +189,19 @@ impl UiTestInput {
         self.last_controls.iter().filter(|control| control.human_only).map(|control| (control.label.clone(), control.id)).collect()
     }
 
+    /// Tests: the centre of the layer row of `node_id` (`None`: the row of page `page_index`) the last frame drew.
+    #[cfg(test)]
+    pub(super) fn last_row_centre(&self, node_id: Option<&str>, page_index: Option<u32>) -> Option<Pos2> {
+        let row = self.last_rows.iter().find(|row| row.node_id.as_deref() == node_id && (node_id.is_some() || row.page_index == page_index))?;
+        Some(Pos2::new(row.rect.x + row.rect.width / 2.0, row.rect.y + row.rect.height / 2.0))
+    }
+
+    /// Tests: the labels and rectangles of the controls the last frame drew.
+    #[cfg(test)]
+    pub(super) fn last_controls(&self) -> Vec<(String, Rect)> {
+        self.last_controls.iter().map(|control| (control.label.clone(), control.rect)).collect()
+    }
+
     /// Whether a run is playing or settling.
     pub(super) fn busy(&self) -> bool {
         self.playing.is_some()

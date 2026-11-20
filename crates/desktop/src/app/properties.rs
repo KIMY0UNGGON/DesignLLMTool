@@ -73,7 +73,6 @@ pub(super) struct NodeProperties {
     pub(super) image_crop_pixel_rect: Option<designllm_contracts::PixelRect>,
     pub(super) alt: Option<String>,
     pub(super) locked: Option<bool>,
-    pub(super) hidden: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -124,7 +123,6 @@ impl NodeProperties {
             image_crop_pixel_rect: node.ext.image_crop_pixel_rect,
             alt: node.ext.alt.clone(),
             locked: node.ext.locked,
-            hidden: node.ext.hidden,
         }
     }
 }

@@ -36,6 +36,9 @@ const TABLE_CELL_HEIGHT: i64 = 36 * designllm_contracts::EMU_PER_CSS_PX;
 
 type SpanCommand = Result<(&'static str, Value), String>;
 
+/// The popup of the table menu, opened from the board or from a layer row.
+const TABLE_MENU: &str = "table-cell-menu";
+
 /// The right-click menu, a merge that waits for an edit to be stored, and the panel's last answer.
 #[derive(Default)]
 pub(super) struct TableMergeState {
@@ -43,6 +46,9 @@ pub(super) struct TableMergeState {
     menu: Option<[SpanCommand; 2]>,
     /// Where the open menu drew its two items (screen), as laid out last frame.
     pub(super) menu_items: Option<[Rect; 2]>,
+    /// The menu opens at the pointer in the board's next pass: a layer row opened it (`open_table_menu_for`), or it was open
+    /// when a right click opened it again.
+    open_next: bool,
     /// A window merge or unmerge sent while a cell was edited: it runs once the edit is stored.
     after_edit: Option<AfterEdit>,
     /// A node a right click outside the edited cell selects once that edit is stored: (edit session, document, node).
@@ -572,12 +578,14 @@ impl DesktopApp {
         }
     }
 
-    /// The open menu's 셀 병합 and 병합 해제, as made when it opened.
+    /// The open menu's 셀 병합 and 병합 해제, as made when it opened (tests read them).
+    #[cfg(test)]
     pub(super) fn table_menu_commands(&self) -> Option<&[SpanCommand; 2]> {
         self.table_merge.menu.as_ref()
     }
 
-    /// Whether a window merge waits for a cell's edit to be stored.
+    /// Whether a window merge waits for a cell's edit to be stored (tests read it).
+    #[cfg(test)]
     pub(super) fn span_waits_for_edit(&self) -> bool {
         self.table_merge.after_edit.is_some()
     }
@@ -723,11 +731,41 @@ impl DesktopApp {
         Some(self.selected_nodes.clone())
     }
 
+    /// A right click on the layer row of a table or one of its cells (`node_id`, on page `page_index`; 68 item 16): the
+    /// board's table menu at the pointer, for that table and cell (a covered cell gives its merged cell's anchor), with the
+    /// board's selection rules (`table_menu_cells`). The board draws the open menu (`table_cell_context_menu`).
+    pub(super) fn open_table_menu_for(&mut self, node_id: &str, page_index: u32) {
+        let target = (|| {
+            let ArtifactBody::Canvas(document) = &self.artifact.as_ref()?.body else { return None };
+            let mut found = None;
+            walk(&document.pages.get(page_index as usize)?.nodes, &mut |node| {
+                let Some(table) = node.ext.table.as_ref().filter(|_| found.is_none()) else { return };
+                if node.id == node_id {
+                    found = Some((node.id.clone(), None));
+                    return;
+                }
+                let positions = cell_positions(table);
+                if let Some(&at) = positions.get(node_id) {
+                    let cell = region_at(table, &positions, at).map_or(node_id, |(anchor, _)| anchor);
+                    found = Some((node.id.clone(), Some(cell.to_owned())));
+                }
+            });
+            found
+        })();
+        let Some((table_id, cell)) = target else { return };
+        self.focus_page(page_index);
+        self.table_merge.menu = None;
+        if let Some(cells) = self.table_menu_cells(&table_id, cell) {
+            self.table_merge.menu = Some([false, true].map(|unmerge| self.span_command_for(&table_id, &cells, unmerge)));
+            self.table_merge.open_next = true;
+        }
+    }
+
     /// The board's right-click menu of a Canvas table: 셀 병합 and 병합 해제, an item that cannot run disabled with its reason.
     /// `pressed`: where a right click on the board landed this frame (page, point, the page's screen rectangle). The menu
     /// opens only when the topmost thing pressed is a table (`right_click_target`); its commands are made then.
     pub(super) fn table_cell_context_menu(&mut self, ctx: &egui::Context, response: &egui::Response, pressed: Option<(u32, Pos2, Rect)>) {
-        let mut opened = false;
+        let mut opened = std::mem::take(&mut self.table_merge.open_next);
         if let Some((page_index, position, page_rect)) = pressed {
             let clicked = ctx.interaction_snapshot(|interaction| interaction.clicked);
             self.table_merge.menu = None;
@@ -743,11 +781,19 @@ impl DesktopApp {
             self.table_merge.menu_items = None;
             return;
         };
+        // egui closes a popup that was shown last frame on any click, the right click that opens it again included: a menu
+        // opened while it is open is opened in the next pass instead.
+        if opened && ctx.read_response(Id::new(TABLE_MENU)).is_some() && ctx.input(|input| input.pointer.any_click()) {
+            egui::Popup::close_id(ctx, Id::new(TABLE_MENU));
+            self.table_merge.open_next = true;
+            self.table_merge.menu_items = None;
+            return;
+        }
         let palette = theme::palette(ctx);
         let mut chosen = None;
         let mut rects = [Rect::NOTHING; 2];
         let shown = egui::Popup::context_menu(response)
-            .id(Id::new("table-cell-menu"))
+            .id(Id::new(TABLE_MENU))
             .open_memory(opened.then_some(egui::SetOpenCommand::Bool(true)))
             .show(|ui| {
                 for (index, (action, (icon, label))) in items.iter().zip([("add", "셀 병합"), ("minus", "병합 해제")]).enumerate() {

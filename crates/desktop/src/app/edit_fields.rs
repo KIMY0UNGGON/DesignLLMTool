@@ -211,6 +211,8 @@ impl DesktopApp {
         };
         let response = ui.interact(rect, key, sense);
         super::board::note_board_press(ui.ctx(), &response);
+        // The right click menu of the node (68 item 16); a table's nodes keep the table menu.
+        self.node_region_menu(ui.ctx(), &response, page_index, node_id);
         // The outline of a node is drawn from its frame (selection.rs). A text-bearing shape has its text
         // lines as regions too; those regions must not draw outlines of their own.
 

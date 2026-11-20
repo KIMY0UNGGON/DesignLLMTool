@@ -831,6 +831,18 @@ impl DesktopApp {
             // click. A double click here is two clicks on this row's own area within the system's double-click time, with no
             // other click between them (an icon, the twisty, another row, the board); the click that makes one is no first half
             // of another, so a third click is a single one.
+            // The right click menus (68 item 16): the row of a Canvas or Slides node (any depth) its node's menu, a Canvas page
+            // row the page menu. Each menu is the row's own (its key), so it stays with its node or page when the rows move.
+            let menu_id = ui.id().with(("layer-row-menu", key.as_str()));
+            if let (Some(node_id), Some(owner)) = (row.node_id.as_deref(), row.owner_page) {
+                if row.paragraph_text.is_none() && row.search_result.is_none() {
+                    self.node_row_menu(ui.ctx(), &response, menu_id, node_id, owner);
+                }
+            } else if let Some(index) = row.page_index.filter(|_| row.depth == 0 && row.section_id.is_none() && row.search_result.is_none()) {
+                if self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::Canvas) {
+                    self.page_row_menu(ui.ctx(), &response, menu_id, index);
+                }
+            }
             let now = ui.input(|input| input.time);
             let row_clicked = response.clicked() && !state_action_clicked;
             let double_clicked = row_clicked
@@ -1697,7 +1709,7 @@ struct PageRowDrag {
     page_ids: Vec<String>,
 }
 
-fn page_ids_for_body(body: &ArtifactBody) -> Option<Vec<String>> {
+pub(super) fn page_ids_for_body(body: &ArtifactBody) -> Option<Vec<String>> {
     match body {
         ArtifactBody::Canvas(document) => Some(document.pages.iter().map(|page| page.id.clone()).collect()),
         ArtifactBody::Slides(document) => Some(document.pages.iter().map(|page| page.id.clone()).collect()),
