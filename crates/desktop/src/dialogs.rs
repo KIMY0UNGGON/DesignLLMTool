@@ -16,6 +16,31 @@ pub fn set_headless(on: bool) {
     HEADLESS.store(on, Ordering::SeqCst);
 }
 
+thread_local! {
+    /// Task 69: the paths a UI-test run queued for the open dialogs (`ui.input` `dialog_answers`, already checked by the agent
+    /// path rules); None outside such a run. The window opens its dialogs on its own thread.
+    static TEST_ANSWERS: std::cell::RefCell<Option<std::collections::VecDeque<PathBuf>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Installs (Some) or removes (None) the stand-in of a UI-test run; returns how many answers the removed queue still held.
+pub fn set_test_answers(answers: Option<std::collections::VecDeque<PathBuf>>) -> usize {
+    TEST_ANSWERS.with(|queue| std::mem::replace(&mut *queue.borrow_mut(), answers)).map_or(0, |left| left.len())
+}
+
+/// The stand-in's answer while a UI-test run plays: Some(the next queued path, or None = cancelled when none is left).
+/// None when no stand-in is installed: the native dialog (or its headless refusal) answers.
+fn test_answer() -> Option<Option<PathBuf>> {
+    let answer = TEST_ANSWERS.with(|queue| queue.borrow_mut().as_mut().map(std::collections::VecDeque::pop_front))?;
+    // Checked again when the dialog would return it (the run checked it when it started): a path changed since is cancelled.
+    Some(answer.filter(|path| match designllm_contracts::local_path::agent_file_refusal(&path.to_string_lossy()) {
+        None => true,
+        Some(reason) => {
+            eprintln!("designllm-desktop: test dialog answer refused: {reason}");
+            false
+        }
+    }))
+}
+
 /// Whether native windows are refused now: in a headless run, and always in tests.
 pub fn headless() -> bool {
     cfg!(test) || HEADLESS.load(Ordering::SeqCst)
@@ -111,6 +136,9 @@ pub fn open_document(owner: Option<isize>) -> Option<PathBuf> {
 }
 
 fn show_open(owner: Option<isize>, filters: &[(&str, &str)]) -> Option<PathBuf> {
+    if let Some(answer) = test_answer() {
+        return answer;
+    }
     // A headless run (smoke, tests) never opens a window on the user's screen: the dialog counts as cancelled.
     if refused("open dialog") {
         return None;
@@ -196,6 +224,33 @@ mod tests {
         assert!(!IMAGE_REPLACEMENT_FILTERS[0].1.contains("gif"));
         assert!(!IMAGE_REPLACEMENT_FILTERS[0].1.contains("webp"));
         assert!(IMAGE_FILTERS[0].1.contains("gif") && IMAGE_FILTERS[0].1.contains("webp"), "adding a replacement picker does not narrow ordinary image insertion");
+    }
+
+    /// Task 69: outside a UI-test run the open dialog is the native one (refused in tests, as in a headless run); a run's
+    /// stand-in answers in queue order, then counts as cancelled, and removing it reports what was not taken.
+    #[test]
+    fn the_test_stand_in_answers_only_while_installed() {
+        assert_eq!(open_image(None), None, "no stand-in: the native dialog, refused in tests");
+        let dir = std::env::temp_dir().join(format!("designllm-stand-in-{}", designllm_contracts::new_id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let [a, b, c] = ["a.png", "b.jpg", "c.gif"].map(|name| dir.join(name));
+        for file in [&a, &b, &c] {
+            std::fs::write(file, b"x").expect("a file");
+        }
+        let queue = [a.clone(), b.clone(), c].into_iter().collect();
+        assert_eq!(set_test_answers(Some(queue)), 0);
+        assert_eq!(open_image(None), Some(a));
+        assert_eq!(open_video(None), Some(b.clone()), "the queue is shared by every open dialog");
+        assert_eq!(set_test_answers(None), 1, "one answer was not taken");
+        assert_eq!(open_image(None), None, "removed: the native path again");
+        assert_eq!(set_test_answers(Some(Default::default())), 0);
+        assert_eq!(open_image(None), None, "an empty queue cancels");
+        // A queued file that is gone by the time the dialog would return it is not returned.
+        std::fs::remove_file(&b).expect("removed");
+        set_test_answers(Some([b].into_iter().collect()));
+        assert_eq!(open_image(None), None, "checked again when it is taken");
+        set_test_answers(None);
+        std::fs::remove_dir_all(dir).expect("cleaned");
     }
 
     #[test]

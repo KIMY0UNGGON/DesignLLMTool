@@ -87,7 +87,8 @@ pub(super) enum CellEditFollow {
     /// Edit another cell, the caret at `position` (`None`: at its end).
     Cell { artifact_id: String, page_index: u32, cell_id: String, position: Option<TextPosition> },
     /// Handle a board click again (`None`: the click was off every page).
-    Click { artifact_id: String, at: Option<(u32, Pos2)>, pixels_per_point: f32 },
+    /// `additive`: Shift was held, so the click adds its cell to the selection (68 item 14).
+    Click { artifact_id: String, at: Option<(u32, Pos2)>, pixels_per_point: f32, additive: bool },
     /// The click was sent again: the keys wait for its reply (it may open a cell).
     AwaitHit { artifact_id: String },
     /// Select the table.
@@ -376,7 +377,8 @@ impl DesktopApp {
             if let Some((page_index, ..)) = at {
                 self.focus_page(page_index);
             }
-            self.set_cell_follow(ctx, CellEditFollow::Click { artifact_id, at: at.map(|(page, position, _)| (page, position)), pixels_per_point });
+            let additive = super::multi::additive_modifier(ctx);
+            self.set_cell_follow(ctx, CellEditFollow::Click { artifact_id, at: at.map(|(page, position, _)| (page, position)), pixels_per_point, additive });
         }
         self.finish_inline_text_edit();
     }
@@ -572,8 +574,8 @@ impl DesktopApp {
                     self.drop_cell_follow();
                 }
             }
-            CellEditFollow::Click { artifact_id, at: Some((page_index, position)), pixels_per_point } => {
-                self.hit_test_page(page_index, position, pixels_per_point, false, false);
+            CellEditFollow::Click { artifact_id, at: Some((page_index, position)), pixels_per_point, additive } => {
+                self.hit_test_page(page_index, position, pixels_per_point, additive, false);
                 // The reply may open a cell: the keys wait for it.
                 self.cell_nav.follow = Some(Follow { kind: CellEditFollow::AwaitHit { artifact_id }, since: now, view: follow.view });
             }

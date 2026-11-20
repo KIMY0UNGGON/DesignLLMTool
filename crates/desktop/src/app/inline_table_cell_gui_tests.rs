@@ -100,11 +100,13 @@ struct Driver {
     time: f64,
     /// Every call method the window sent, oldest first.
     sent: Vec<String>,
+    /// The keyboard modifiers each frame's input carries (egui reads Shift from here, not from the pointer event).
+    modifiers: Modifiers,
 }
 
 impl Driver {
     fn at_once() -> Self {
-        Self { latency: None, call_frames: 1, renders_held: false, frame: 0, time: 100.0, sent: Vec::new() }
+        Self { latency: None, call_frames: 1, renders_held: false, frame: 0, time: 100.0, sent: Vec::new(), modifiers: Modifiers::NONE }
     }
 
     fn slow() -> Self {
@@ -117,6 +119,7 @@ impl Driver {
         self.time += 0.016;
         let mut input = super::test_support::screen(1.0, 1280.0, 800.0);
         input.time = Some(self.time);
+        input.modifiers = self.modifiers;
         input.events = events;
         eframe::App::raw_input_hook(&mut window.app, &window.ctx, &mut input);
         let mut frame = eframe::Frame::_new_kittest();
@@ -377,6 +380,8 @@ fn table_cell_arrow_keys_on_the_edge_rows_move_to_the_cell_beside_wrapped_rows_s
     let mut app = Driver::at_once();
     let (top_left, top_right, bottom_left) =
         (table.rows[0].cell_ids[0].clone(), table.rows[0].cell_ids[1].clone(), table.rows[1].cell_ids[0].clone());
+    // The arrows are the cell editor's: they never move the table (68 item 15).
+    let table_bounds = table_node(&mut host, &canvas).bounds;
 
     let at = centre(&window, &top_left);
     app.click(&mut window, &mut host, at);
@@ -413,6 +418,7 @@ fn table_cell_arrow_keys_on_the_edge_rows_move_to_the_cell_beside_wrapped_rows_s
     app.keys(&mut window, &mut host, vec![key(Key::ArrowDown)]);
     app.idle(&mut window, &mut host, 1);
     assert_eq!(editing(&window).as_deref(), Some(top_right.as_str()), "ArrowDown on a wrapped first row stays in the cell");
+    assert_eq!(table_node(&mut host, &canvas).bounds, table_bounds, "no arrow moved the table");
 }
 
 #[test]
@@ -748,4 +754,491 @@ fn table_cell_a_handle_of_the_selected_table_resizes_before_its_border_band_move
     let after = table_node(&mut host, &canvas).bounds;
     assert_eq!((after.x, after.y), (table.bounds.x, table.bounds.y), "the corner keeps the table in place: {:?} -> {after:?}", table.bounds);
     assert!(after.width > table.bounds.width, "the corner handle widens the table: {:?} -> {after:?}", table.bounds);
+}
+
+/// A click with Shift held (the press and the release carry the modifier).
+fn shift_click(app: &mut Driver, window: &mut Window, host: &mut Host, cell: &str) {
+    let at = centre(window, cell);
+    let shift = Modifiers::SHIFT;
+    app.modifiers = shift;
+    app.frame(window, host, vec![Event::PointerMoved(at), Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: shift }]);
+    app.frame(window, host, vec![Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: shift }]);
+    app.modifiers = Modifiers::NONE;
+    app.idle(window, host, 3);
+    app.time += 0.5;
+}
+
+/// A new table's first row is a header, and a header cell cannot span into the body: the merges here turn it off first.
+fn header_off(window: &mut Window, host: &mut Host, canvas: &str) {
+    let id = table_node(host, canvas).id;
+    window.app.invoke("canvas.table.set_header", json!({ "table_id": id, "enabled": false })).expect("the header is off");
+    window.settle(host);
+    window.draw(host, 1.0);
+}
+
+#[test]
+fn table_merge_shift_clicked_cells_merge_types_into_the_merged_cell_and_unmerge_and_undo_step_back() {
+    let mut host = Host::start();
+    let (canvas, mut window, table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    let mut app = Driver::at_once();
+    let (c10, c11) = (table.rows[1].cell_ids[0].clone(), table.rows[1].cell_ids[1].clone());
+
+    // The first click opens c10; Shift+click on c11 adds it to the selection (the edit ends on the first). The header row
+    // keeps its own cell style, so a merge over it is refused (TABLE_SPAN_HIDDEN_DATA); the body row is merged.
+    let at = centre(&window, &c10);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(editing(&window).as_deref(), Some(c10.as_str()));
+    shift_click(&mut app, &mut window, &mut host, &c11);
+    let mut selected = window.app.selected_nodes.clone();
+    selected.sort();
+    let mut expected = vec![c10.clone(), c11.clone()];
+    expected.sort();
+    assert_eq!(selected, expected, "Shift+click adds each cell to the selection; notice: {:?}", window.message());
+
+    // 셀 병합 (the panel and the menu run this): one merged 2 × 2 cell anchored at c00.
+    let action = window.app.canvas_table_span_command(false);
+    assert!(action.is_ok(), "the 2 × 2 selection is a merge: {action:?}");
+    window.app.run_span_action(action);
+    app.idle(&mut window, &mut host, 4);
+    let spans = table_of(&mut host, &canvas).cell_spans;
+    assert_eq!(spans.len(), 1, "one merged region");
+    assert_eq!(spans.get(&c10), Some(&designllm_contracts::CanvasTableSpan { row_span: 1, column_span: 2 }));
+
+    // Typing goes into the merged cell through its anchor.
+    let at = centre(&window, &c10);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(editing(&window).as_deref(), Some(c10.as_str()), "the merged cell opens at its anchor");
+    app.keys(&mut window, &mut host, vec![Event::Text("가나".into())]);
+    app.keys(&mut window, &mut host, vec![key(Key::Escape)]);
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(cell_text(&mut host, &canvas, &c10), "가나", "the typed text is stored in the merged cell");
+
+    // 병합 해제 by a cell of the region, then one undo brings the merge back.
+    let table_id = table_node(&mut host, &canvas).id;
+    window.app.invoke("table.unmerge_cell", json!({ "table_id": table_id, "row": 1, "column": 1 })).expect("the region unmerges");
+    app.idle(&mut window, &mut host, 4);
+    assert!(table_of(&mut host, &canvas).cell_spans.is_empty(), "unmerge removes the span");
+    window.app.invoke("edit.undo", json!({})).expect("undo the unmerge");
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(table_of(&mut host, &canvas).cell_spans.len(), 1, "undo restores the merged region");
+}
+
+#[test]
+fn table_merge_a_diagonal_selection_and_a_single_cell_are_refused_with_a_reason() {
+    let mut host = Host::start();
+    let (canvas, mut window, table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    let mut app = Driver::at_once();
+    let (c00, c01, c10, c11) = (
+        table.rows[0].cell_ids[0].clone(),
+        table.rows[0].cell_ids[1].clone(),
+        table.rows[1].cell_ids[0].clone(),
+        table.rows[1].cell_ids[1].clone(),
+    );
+    let at = centre(&window, &c00);
+    app.click(&mut window, &mut host, at);
+    shift_click(&mut app, &mut window, &mut host, &c11);
+    let diagonal = window.app.canvas_table_span_command(false);
+    assert!(diagonal.as_ref().err().is_some_and(|message| message.contains("직사각형")), "diagonal: {diagonal:?}");
+    assert!(window.app.canvas_table_span_operation().is_none(), "the planner refuses it too");
+
+    shift_click(&mut app, &mut window, &mut host, &c01);
+    shift_click(&mut app, &mut window, &mut host, &c10);
+    assert!(window.app.canvas_table_span_operation().is_some_and(|(unmerge, _)| !unmerge), "all four make a 2 × 2 merge");
+    // The first row keeps the header's cell style: the check the command runs refuses it before it is offered.
+    let rectangle = window.app.canvas_table_span_command(false);
+    assert!(rectangle.as_ref().err().is_some_and(|message| message.contains("서식")), "header style under the merge: {rectangle:?}");
+    // A single selected cell cannot merge.
+    window.app.set_selected_ids(vec![c00.clone()]);
+    let single = window.app.canvas_table_span_command(false);
+    assert!(single.as_ref().err().is_some_and(|message| message.contains("두 칸")), "single: {single:?}");
+}
+
+#[test]
+fn table_merge_moves_the_covered_text_to_the_anchor_and_one_undo_restores_each_merge() {
+    let mut host = Host::start();
+    let (canvas, mut window, _table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    // The first row keeps the header's cell style, so the merges use the body rows, which share one style: a third body row.
+    let table_id = table_node(&mut host, &canvas).id;
+    window.app.invoke("canvas.table.add_row", json!({ "table_id": table_id, "index": 2 })).expect("a third row is added");
+    window.settle(&mut host);
+    window.draw(&mut host, 1.0);
+    let mut app = Driver::at_once();
+    let ids: Vec<Vec<String>> = table_of(&mut host, &canvas).rows.iter().map(|row| row.cell_ids.clone()).collect();
+    for (cell, text) in [(&ids[1][0], "가"), (&ids[1][1], "나"), (&ids[2][0], "다"), (&ids[2][1], "라")] {
+        set_cell_text(&mut host, &mut window, &canvas, cell, text);
+    }
+    app.idle(&mut window, &mut host, 2);
+
+    // 2 × 2 over the body rows: the four texts become one anchor text, one per line; the others are emptied.
+    window.app.set_selected_ids(vec![ids[1][0].clone(), ids[1][1].clone(), ids[2][0].clone(), ids[2][1].clone()]);
+    window.app.run_span_action(window.app.canvas_table_span_command(false));
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(table_of(&mut host, &canvas).cell_spans.get(&ids[1][0]), Some(&designllm_contracts::CanvasTableSpan { row_span: 2, column_span: 2 }), "the 2 × 2 merge is made; notice: {:?}", window.message());
+    assert_eq!(cell_text(&mut host, &canvas, &ids[1][0]), "가\n나\n다\n라", "the texts join the anchor");
+    assert_eq!(cell_text(&mut host, &canvas, &ids[1][1]), "", "the covered cells are emptied");
+    window.app.invoke("edit.undo", json!({})).expect("undo the 2 × 2 merge");
+    app.idle(&mut window, &mut host, 4);
+    assert!(table_of(&mut host, &canvas).cell_spans.is_empty(), "one undo removes the merge");
+    assert_eq!(cell_text(&mut host, &canvas, &ids[1][0]), "가", "one undo restores the anchor text");
+    assert_eq!(cell_text(&mut host, &canvas, &ids[2][1]), "라", "one undo restores the covered texts");
+
+    // 1 × 2 on the last row: the two texts join the first cell, and one undo restores both.
+    window.app.set_selected_ids(vec![ids[2][0].clone(), ids[2][1].clone()]);
+    window.app.run_span_action(window.app.canvas_table_span_command(false));
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(cell_text(&mut host, &canvas, &ids[2][0]), "다\n라", "the 1 × 2 merge joins the row's texts");
+    assert_eq!(cell_text(&mut host, &canvas, &ids[2][1]), "");
+    window.app.invoke("table.unmerge_cell", json!({ "table_id": table_id, "row": 2, "column": 1 })).expect("unmerge");
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(cell_text(&mut host, &canvas, &ids[2][0]), "다\n라", "unmerge keeps the joined text at the anchor");
+    window.app.invoke("edit.undo", json!({})).expect("undo the unmerge");
+    app.idle(&mut window, &mut host, 4);
+    assert!(table_of(&mut host, &canvas).cell_spans.get(&ids[2][0]).is_some(), "one undo restores the 1 × 2 merge");
+    window.app.invoke("edit.undo", json!({})).expect("undo the 1 × 2 merge");
+    app.idle(&mut window, &mut host, 4);
+    assert!(table_of(&mut host, &canvas).cell_spans.is_empty());
+    assert_eq!(cell_text(&mut host, &canvas, &ids[2][0]), "다", "one undo restores the body text");
+    assert_eq!(cell_text(&mut host, &canvas, &ids[2][1]), "라", "one undo restores the covered body text");
+}
+
+/// A right click (press and release in two frames), then a pause.
+fn right_click(app: &mut Driver, window: &mut Window, host: &mut Host, at: Pos2) {
+    let button = |pressed| Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Modifiers::NONE };
+    app.frame(window, host, vec![Event::PointerMoved(at), button(true)]);
+    app.frame(window, host, vec![button(false)]);
+    app.idle(window, host, 2);
+    app.time += 0.5;
+}
+
+/// The centre of the open table menu's item `index` (0: 셀 병합, 1: 병합 해제), as the menu laid it out.
+fn menu_item(window: &Window, index: usize) -> Pos2 {
+    window.app.table_merge.menu_items.expect("the table menu is open")[index].center()
+}
+
+fn changes_sent_since(app: &Driver, since: usize) -> usize {
+    app.sent[since..].iter().filter(|method| *method == "changes.apply").count()
+}
+
+/// Why the open menu's item `index` is disabled (`None`: it is offered).
+fn menu_reason(window: &Window, index: usize) -> Option<String> {
+    window.app.table_menu_commands().expect("the table menu is open")[index].as_ref().err().cloned()
+}
+
+/// Frames until `done` holds (at most `frames`); whether it did.
+fn until(app: &mut Driver, window: &mut Window, host: &mut Host, frames: u32, done: impl Fn(&Window) -> bool) -> bool {
+    for _ in 0..frames {
+        if done(window) {
+            return true;
+        }
+        app.frame(window, host, Vec::new());
+    }
+    done(window)
+}
+
+fn tables(host: &mut Host, canvas: &str) -> Vec<Node> {
+    let artifact = host.artifact(canvas);
+    let ArtifactBody::Canvas(document) = &artifact.body else { panic!("a canvas") };
+    document.pages[0].nodes.iter().filter(|node| node.ext.table.is_some()).cloned().collect()
+}
+
+fn add_node(host: &mut Host, window: &mut Window, canvas: &str, node: Node) {
+    let page_id = match &host.artifact(canvas).body { ArtifactBody::Canvas(document) => document.pages[0].id.clone(), _ => unreachable!() };
+    host.apply(canvas, vec![Operation::AddNode { page_id, parent_id: None, node }], [Intent::Content, Intent::Design].into_iter().collect())
+        .expect("the node is added");
+    window.app.refresh_active();
+    window.settle(host);
+}
+
+#[test]
+fn table_merge_right_click_selects_the_pressed_cell_and_the_menu_merges_and_unmerges_only_on_a_table() {
+    let mut host = Host::start();
+    let (canvas, mut window, table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    let mut app = Driver::at_once();
+    let (c10, c11) = (table.rows[1].cell_ids[0].clone(), table.rows[1].cell_ids[1].clone());
+
+    // Off the table the right click opens no menu and leaves the selection.
+    let page = window.app.page_rect.expect("page 0 is drawn");
+    let selection = window.app.selected_nodes.clone();
+    right_click(&mut app, &mut window, &mut host, Pos2::new(page.left() + 6.0, page.bottom() - 6.0));
+    assert!(window.app.table_merge.menu_items.is_none(), "no menu off a table");
+    assert_eq!(window.app.selected_nodes, selection, "a right click off a table leaves the selection");
+
+    // On a cell that is not selected the press selects it first. One cell has nothing to merge: 셀 병합 is disabled and a
+    // click on it sends nothing.
+    let at = centre(&window, &c11);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(window.app.selected_nodes, vec![c11.clone()], "the right press selects the pressed cell; notice: {:?}", window.message());
+    assert!(menu_reason(&window, 0).is_some_and(|reason| reason.contains("두 칸")));
+    let sent = app.sent.len();
+    let at = menu_item(&window, 0);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(changes_sent_since(&app, sent), 0, "a disabled 셀 병합 sends no change");
+    assert!(table_of(&mut host, &canvas).cell_spans.is_empty());
+
+    // Two selected cells (the click opens c10, Shift+click adds c11). A right click inside the selected range keeps it, and
+    // 셀 병합 merges it.
+    let at = centre(&window, &c10);
+    app.click(&mut window, &mut host, at);
+    shift_click(&mut app, &mut window, &mut host, &c11);
+    let at = centre(&window, &c11);
+    right_click(&mut app, &mut window, &mut host, at);
+    let mut selected = window.app.selected_nodes.clone();
+    selected.sort();
+    let mut both = vec![c10.clone(), c11.clone()];
+    both.sort();
+    assert_eq!(selected, both, "a right click inside the selected range keeps it");
+    let sent = app.sent.len();
+    let at = menu_item(&window, 0);
+    app.click(&mut window, &mut host, at);
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(changes_sent_since(&app, sent), 1, "셀 병합 sends one change; notice: {:?}", window.message());
+    assert!(window.app.table_merge.menu_items.is_none(), "the menu closes after its choice");
+    assert_eq!(table_of(&mut host, &canvas).cell_spans.get(&c10), Some(&designllm_contracts::CanvasTableSpan { row_span: 1, column_span: 2 }));
+
+    // On the merged cell: 셀 병합 is disabled, 병합 해제 splits it, and one undo merges it again.
+    let at = centre(&window, &c10);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert!(menu_reason(&window, 0).is_some(), "a merged cell offers no merge");
+    let at = menu_item(&window, 1);
+    app.click(&mut window, &mut host, at);
+    app.idle(&mut window, &mut host, 4);
+    assert!(table_of(&mut host, &canvas).cell_spans.is_empty(), "병합 해제 removes the span; notice: {:?}", window.message());
+    window.app.invoke("edit.undo", json!({})).expect("undo the unmerge");
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(table_of(&mut host, &canvas).cell_spans.len(), 1, "one undo restores the merged cell");
+}
+
+#[test]
+fn table_merge_while_a_cell_is_edited_the_window_stores_the_edit_first_and_an_agent_is_refused() {
+    let mut host = Host::start();
+    let (canvas, mut window, table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    let mut app = Driver::at_once();
+    let (c10, c11) = (table.rows[1].cell_ids[0].clone(), table.rows[1].cell_ids[1].clone());
+    let table_id = table_node(&mut host, &canvas).id;
+    set_cell_text(&mut host, &mut window, &canvas, &c11, "나");
+    app.idle(&mut window, &mut host, 2);
+    let at = centre(&window, &c10);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(editing(&window).as_deref(), Some(c10.as_str()));
+    app.keys(&mut window, &mut host, vec![Event::Text("가".into())]);
+    assert_eq!(editing(&window).as_deref(), Some(c10.as_str()), "the edit is still open");
+
+    // An agent's merge is refused while the edit is open (the edited text is not stored yet).
+    let merge = json!({ "table_id": table_id, "row": 1, "column": 0, "rows": 1, "columns": 2 });
+    let run = designllm_contracts::UiRun {
+        run_id: "run-merge".into(), view_id: "view-agent".into(), expected: None, command_id: "table.merge_cells".into(),
+        args: merge.clone(), actor: "agent".into(), permission: designllm_contracts::UiPermission::Change,
+        allowed_intents: [Intent::Content].into_iter().collect(), status: designllm_contracts::UiRunStatus::Queued,
+        timeout_ms: 10_000, result: None, error: None,
+    };
+    let refusal = window.app.ui_run_refusal(&run).expect("an agent's merge waits for the edit");
+    assert_eq!(refusal.code, designllm_contracts::ErrorCode::TargetBusy, "{refusal:?}");
+
+    // The window's merge stores the edit, then merges with the stored text.
+    window.app.invoke("table.merge_cells", merge).expect("the merge waits for the edit");
+    app.idle(&mut window, &mut host, 8);
+    assert!(editing(&window).is_none(), "the merge ends the edit");
+    assert_eq!(cell_text(&mut host, &canvas, &c10), "가\n나", "the edited text is in the merged cell; notice: {:?}", window.message());
+    assert_eq!(cell_text(&mut host, &canvas, &c11), "");
+    assert_eq!(table_of(&mut host, &canvas).cell_spans.get(&c10), Some(&designllm_contracts::CanvasTableSpan { row_span: 1, column_span: 2 }));
+
+    // Editing the merged cell, its menu's 병합 해제 stores the edit and then unmerges.
+    let at = centre(&window, &c10);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(editing(&window).as_deref(), Some(c10.as_str()), "the merged cell opens");
+    app.keys(&mut window, &mut host, vec![Event::Text("다".into())]);
+    let draft = window.app.text_draft.clone();
+    assert!(draft.contains('다'), "{draft:?}");
+    let at = centre(&window, &c10);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(editing(&window).as_deref(), Some(c10.as_str()), "the right click leaves the edit open");
+    let at = menu_item(&window, 1);
+    app.click(&mut window, &mut host, at);
+    app.idle(&mut window, &mut host, 8);
+    assert!(editing(&window).is_none(), "the unmerge ends the edit");
+    assert!(table_of(&mut host, &canvas).cell_spans.is_empty(), "the merged cell is split; notice: {:?}", window.message());
+    assert_eq!(cell_text(&mut host, &canvas, &c10), draft, "the edited text is stored before the unmerge");
+}
+
+#[test]
+fn table_merge_on_a_locked_table_the_menu_offers_nothing_and_the_command_is_refused() {
+    let mut host = Host::start();
+    let (canvas, mut window, table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    let mut app = Driver::at_once();
+    let table_id = table_node(&mut host, &canvas).id;
+    window.app.select_ids(vec![table_id.clone()]);
+    app.idle(&mut window, &mut host, 2);
+    window.app.invoke("edit.lock", json!({})).expect("the table is locked");
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(table_node(&mut host, &canvas).ext.locked, Some(true));
+
+    let selection = window.app.selected_nodes.clone();
+    let at = centre(&window, &table.rows[1].cell_ids[1]);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(window.app.selected_nodes, selection, "a locked table's cell is not selected");
+    for unmerge in [false, true] {
+        assert!(menu_reason(&window, usize::from(unmerge)).is_some_and(|reason| reason.contains("잠긴")), "unmerge {unmerge}");
+    }
+    let sent = app.sent.len();
+    let at = menu_item(&window, 0);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(changes_sent_since(&app, sent), 0, "a disabled item sends nothing");
+    let refused = window.app.invoke("table.merge_cells", json!({ "table_id": table_id, "row": 1, "column": 0, "rows": 1, "columns": 2 }));
+    assert!(refused.err().is_some_and(|reason| reason.contains("잠긴")), "the command refuses a locked table");
+    assert!(table_of(&mut host, &canvas).cell_spans.is_empty());
+}
+
+#[test]
+fn table_merge_a_right_click_outside_the_edited_cell_stores_the_edit_selects_the_pressed_cell_and_the_menu_names_it() {
+    let mut host = Host::start();
+    let (canvas, mut window, table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    let mut app = Driver::at_once();
+    let (c00, c10) = (table.rows[0].cell_ids[0].clone(), table.rows[1].cell_ids[0].clone());
+    let first = table_node(&mut host, &canvas);
+    let merge_body = |id: &str| json!({ "table_id": id, "row": 1, "column": 0, "rows": 1, "columns": 2 });
+    window.app.invoke("table.merge_cells", merge_body(&first.id)).expect("the first table's body row is merged");
+    app.idle(&mut window, &mut host, 4);
+
+    // A second table below the first, its body row merged too.
+    window.app.invoke("canvas.table.add", json!({ "rows": 2, "columns": 2 })).expect("a second table");
+    app.idle(&mut window, &mut host, 4);
+    let second = tables(&mut host, &canvas).into_iter().find(|node| node.id != first.id).expect("the second table");
+    let below = designllm_contracts::Rect { y: first.bounds.y + first.bounds.height + 40 * designllm_contracts::EMU_PER_CSS_PX, ..second.bounds };
+    host.apply(&canvas, vec![Operation::SetGeometry { node_id: second.id.clone(), bounds: below }], [Intent::Design].into_iter().collect())
+        .expect("the second table moves down");
+    window.app.refresh_active();
+    window.settle(&mut host);
+    app.idle(&mut window, &mut host, 4);
+    window.app.invoke("canvas.table.set_header", json!({ "table_id": second.id, "enabled": false })).expect("its header is off");
+    app.idle(&mut window, &mut host, 4);
+    window.app.invoke("table.merge_cells", merge_body(&second.id)).expect("the second table's body row is merged");
+    app.idle(&mut window, &mut host, 4);
+    let second_anchor = second.ext.table.as_ref().expect("a table").rows[1].cell_ids[0].clone();
+    assert_eq!(table_of_id(&mut host, &canvas, &second.id).cell_spans.len(), 1, "notice: {:?}", window.message());
+
+    // Editing the first table's merged cell, a right click on another cell stores the edit and selects that cell. Its menu
+    // is about that cell: 병합 해제 is disabled and does not split the edited merged cell.
+    window.app.select_ids(vec![first.id.clone()]);
+    app.idle(&mut window, &mut host, 2);
+    let at = centre(&window, &c10);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(editing(&window).as_deref(), Some(c10.as_str()));
+    app.keys(&mut window, &mut host, vec![Event::Text("가".into())]);
+    let at = centre(&window, &c00);
+    right_click(&mut app, &mut window, &mut host, at);
+    app.idle(&mut window, &mut host, 4);
+    assert!(editing(&window).is_none(), "the right click outside the edited cell ends the edit");
+    assert_eq!(cell_text(&mut host, &canvas, &c10), "가", "the edit is stored");
+    assert_eq!(window.app.selected_nodes, vec![c00.clone()], "the pressed cell is selected; notice: {:?}", window.message());
+    assert!(menu_reason(&window, 1).is_some(), "c00 is no merged cell");
+    let sent = app.sent.len();
+    let at = menu_item(&window, 1);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(changes_sent_since(&app, sent), 0);
+    assert_eq!(table_of_id(&mut host, &canvas, &first.id).cell_spans.len(), 1, "the edited merged cell stays merged");
+
+    // Editing a cell of the first table, a right click on the second table's merged cell: 병합 해제 splits the second table's.
+    let at = centre(&window, &c00);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(editing(&window).as_deref(), Some(c00.as_str()));
+    app.keys(&mut window, &mut host, vec![Event::Text("나".into())]);
+    let at = centre(&window, &second_anchor);
+    right_click(&mut app, &mut window, &mut host, at);
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(window.app.selected_nodes, vec![second_anchor.clone()], "the second table's merged cell is selected");
+    assert_eq!(menu_reason(&window, 1), None, "the second table's merged cell can be split");
+    let at = menu_item(&window, 1);
+    app.click(&mut window, &mut host, at);
+    app.idle(&mut window, &mut host, 4);
+    assert!(table_of_id(&mut host, &canvas, &second.id).cell_spans.is_empty(), "the second table is split; notice: {:?}", window.message());
+    assert_eq!(table_of_id(&mut host, &canvas, &first.id).cell_spans.len(), 1, "the first table keeps its merged cell");
+    assert_eq!(cell_text(&mut host, &canvas, &c00), "나", "the edit is stored");
+}
+
+fn table_of_id(host: &mut Host, canvas: &str, id: &str) -> CanvasTable {
+    tables(host, canvas).into_iter().find(|node| node.id == id).and_then(|node| node.ext.table).expect("the table")
+}
+
+#[test]
+fn table_merge_waiting_for_the_edit_is_dropped_when_the_window_goes_home_or_another_change_comes_first() {
+    for case in ["home", "change"] {
+        let mut host = Host::start();
+        let (canvas, mut window, table) = new_table(&mut host);
+        header_off(&mut window, &mut host, &canvas);
+        let mut app = Driver { call_frames: 2, ..Driver::slow() };
+        let (c00, c10) = (table.rows[0].cell_ids[0].clone(), table.rows[1].cell_ids[0].clone());
+        let table_id = table_node(&mut host, &canvas).id;
+        let at = centre(&window, &c10);
+        app.click(&mut window, &mut host, at);
+        assert!(until(&mut app, &mut window, &mut host, 40, |window| editing(window).as_deref() == Some(c10.as_str())), "{case}: the cell opens");
+        app.keys(&mut window, &mut host, vec![Event::Text("가".into())]);
+        window.app.invoke("table.merge_cells", json!({ "table_id": table_id, "row": 1, "column": 0, "rows": 1, "columns": 2 }))
+            .expect("the merge waits for the edit");
+        // The edit is stored and closed; the merge still waits for the window to read the stored revision.
+        assert!(until(&mut app, &mut window, &mut host, 60, |window| window.app.inline_text_edit.is_none()), "{case}: the edit ends");
+        assert!(window.app.span_waits_for_edit(), "{case}: the merge has not run yet");
+        let expected = match case {
+            "home" => {
+                window.app.invoke("nav.home", json!({})).expect("home");
+                "편집 화면을 떠나"
+            }
+            _ => {
+                host.apply(&canvas, vec![Operation::SetText { node_id: c00.clone(), text: "밖".into() }], [Intent::Content].into_iter().collect())
+                    .expect("another change");
+                "다른 변경"
+            }
+        };
+        app.idle(&mut window, &mut host, 30);
+        assert!(!window.app.span_waits_for_edit(), "{case}");
+        assert!(table_of(&mut host, &canvas).cell_spans.is_empty(), "{case}: the waiting merge is dropped");
+        assert_eq!(cell_text(&mut host, &canvas, &c10), "가", "{case}: the edit is stored");
+        let notice = window.message().unwrap_or_default();
+        assert!(notice.contains(expected), "{case}: the reason is shown: {notice}");
+    }
+}
+
+#[test]
+fn table_merge_menu_only_for_the_topmost_table_reselects_a_mixed_selection_and_closes_for_another_popup() {
+    let mut host = Host::start();
+    let (canvas, mut window, table) = new_table(&mut host);
+    header_off(&mut window, &mut host, &canvas);
+    let mut app = Driver::at_once();
+    let (c01, c11) = (table.rows[0].cell_ids[1].clone(), table.rows[1].cell_ids[1].clone());
+    let bounds = table_node(&mut host, &canvas).bounds;
+    // A shape over the table's first row.
+    let shape: Node = serde_json::from_value(json!({
+        "id": "shape-1", "kind": "rectangle",
+        "bounds": { "x": bounds.x, "y": bounds.y, "width": bounds.width, "height": 36 * designllm_contracts::EMU_PER_CSS_PX },
+    })).expect("a shape");
+    add_node(&mut host, &mut window, &canvas, shape);
+    app.idle(&mut window, &mut host, 4);
+
+    let at = centre(&window, &c01);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert!(window.app.table_merge.menu_items.is_none(), "the shape is on top there: no table menu");
+
+    // The cell selected with another object: the right press selects the cell alone.
+    window.app.select_ids(vec!["shape-1".into(), c11.clone()]);
+    app.idle(&mut window, &mut host, 2);
+    let at = centre(&window, &c11);
+    right_click(&mut app, &mut window, &mut host, at);
+    assert_eq!(window.app.selected_nodes, vec![c11.clone()], "the pressed cell alone is selected");
+    assert!(window.app.table_merge.menu_items.is_some(), "the table menu opens on the cell");
+
+    // Another popup opening closes the menu; where its item was, nothing is sent.
+    let item = menu_item(&window, 0);
+    egui::Popup::open_id(&window.ctx, egui::Id::new("another-popup"));
+    app.idle(&mut window, &mut host, 2);
+    assert!(window.app.table_merge.menu_items.is_none(), "the menu is closed");
+    assert!(window.app.table_menu_commands().is_none(), "its commands are dropped with it");
+    let sent = app.sent.len();
+    app.click(&mut window, &mut host, item);
+    assert_eq!(changes_sent_since(&app, sent), 0);
 }

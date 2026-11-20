@@ -25,7 +25,10 @@ use serde_json::Value;
 /// (method, how it makes operations): the paths that produce or restore operations an agent did not send as a change set, so
 /// [`refusal`] does not see them. Found by searching every product construction of `Operation::` (2026-11-20).
 pub const INDIRECT_PATHS: &[(&str, &str)] = &[
-    ("ui.command.run", "the desktop window runs a GUI command for the agent and builds its change set itself"),
+    (
+        "ui.command.run",
+        "the desktop window runs a GUI command for the agent and builds its change set itself; in a window started for UI tests, ui.input plays the agent's pointer, key and IME input into it, so any edit a person can make",
+    ),
     ("figure.dataset.edit", "core builds PutDataset and SetPlot from the edits (core/src/dataset.rs)"),
     (
         "design_system.set, design_system.publish, changes.apply of a published token update",

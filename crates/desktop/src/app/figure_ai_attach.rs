@@ -172,6 +172,9 @@ impl DesktopApp {
         if !path.is_file() {
             return Err("근거 자료 파일을 찾지 못했습니다".into());
         }
+        if let Some(reason) = self.ui_test_path_refusal(Some(&path)) {
+            return Err(reason);
+        }
         if self.figure_ai_files().iter().any(|file| file.path == path) {
             return Err("이미 첨부한 파일입니다".into());
         }

@@ -388,6 +388,37 @@ pub fn web_runtime_directory() -> Option<PathBuf> {
     None
 }
 
+/// The mock agent (`designllm-host-harness`) a UI-test window gives the host it starts (task 69). Set once by the window's
+/// launch, read by every `ensure_host` of this process (the first start and `다시 연결`).
+static UI_TEST_MOCK_AGENT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+pub fn set_ui_test_mock_agent(path: PathBuf) {
+    let _ = UI_TEST_MOCK_AGENT.set(path);
+}
+
+/// Whether this process was started for UI tests (`DESIGNLLM_UI_TEST_INPUT` = 1, on or offscreen): only then may a host take
+/// a mock agent.
+pub fn ui_test_launch() -> bool {
+    std::env::var("DESIGNLLM_UI_TEST_INPUT").is_ok_and(|value| matches!(value.trim(), "1" | "on" | "offscreen"))
+}
+
+/// A mock agent path a UI test may name: an absolute local path of an existing `designllm-host-harness` executable. The
+/// host runs it for `mock` jobs, so nothing else is taken.
+pub fn ui_test_mock_agent_path(raw: &std::ffi::OsStr) -> DltResult<PathBuf> {
+    let text = raw.to_str().ok_or_else(|| DltError::invalid("the mock agent path is not Unicode"))?;
+    let path = PathBuf::from(text);
+    let name = path.file_name().map(|name| name.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if !(name == "designllm-host-harness" || name == "designllm-host-harness.exe") {
+        return Err(DltError::invalid("the mock agent must be the designllm-host-harness test executable"));
+    }
+    // The agent path rules of a dialog answer (66c): a local drive (not a network drive), no UNC or device path, no link or
+    // reparse point from the root to the file, a regular file.
+    if let Some(reason) = designllm_contracts::local_path::agent_file_refusal(text) {
+        return Err(DltError::invalid(format!("the mock agent: {reason}")));
+    }
+    Ok(path)
+}
+
 pub fn ensure_host(workspace: &Path) -> DltResult<()> {
     // GUI/smoke launch is authorized to create its workspace. MCP remains attach-only.
     std::fs::create_dir_all(workspace)?;
@@ -403,6 +434,7 @@ pub fn ensure_host(workspace: &Path) -> DltResult<()> {
     let capture = HostStartupCapture::new(&workspace.join("logs"))?;
     let mut command = std::process::Command::new(std::env::current_exe()?);
     command.arg("--host").arg("--workspace").arg(workspace)
+        .args(UI_TEST_MOCK_AGENT.get().map(|path| [std::ffi::OsStr::new("--ui-test-mock-agent"), path.as_os_str()]).into_iter().flatten())
         .env("DESIGNLLM_HOST_STARTUP_ERROR_PATH", &capture.error_path)
         .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(log);
     #[cfg(windows)] {
@@ -517,4 +549,28 @@ pub fn prepare_smoke_canvas(workspace: &Path) -> DltResult<ArtifactSummary> {
     let change = ChangeSet { request_id: new_id(), actor: "smoke".into(), workspace_id, artifact_id: summary.id.clone(), base_revision: summary.revision, allowed_intents: [Intent::Content].into_iter().collect(), job_ref: None, read_dependencies: vec![], operations: nodes.into_iter().map(|node| Operation::AddNode { page_id: page_id.clone(), parent_id: None, node }).collect() };
     let result: ChangeResult = serde_json::from_value(client.call("changes.apply", serde_json::to_value(change).unwrap())?).map_err(|e| DltError::invalid(e.to_string()))?;
     Ok(ArtifactSummary { revision: result.revision, dirty: true, ..summary })
+}
+
+#[cfg(test)]
+mod ui_test_mock_agent_tests {
+    use super::*;
+
+    /// Task 69: the host takes a mock agent only as an explicit path to the test harness, never another program.
+    #[test]
+    fn only_an_existing_local_harness_is_taken_as_the_mock_agent() {
+        // A UNC path, a missing file and another program are refused by name or by the agent path rules.
+
+        let dir = std::env::temp_dir().join(format!("designllm-mock-agent-{}", new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let harness = dir.join("designllm-host-harness.exe");
+        let other = dir.join("cmd.exe");
+        std::fs::write(&harness, b"x").unwrap();
+        std::fs::write(&other, b"x").unwrap();
+        assert_eq!(ui_test_mock_agent_path(harness.as_os_str()).unwrap(), harness);
+        for bad in [other.clone(), dir.join("designllm-host-harness-missing.exe"), PathBuf::from("designllm-host-harness.exe"), PathBuf::from(r"\\server\share\designllm-host-harness.exe")] {
+            assert!(ui_test_mock_agent_path(bad.as_os_str()).is_err(), "{}", bad.display());
+        }
+        assert_eq!(ui_test_mock_agent_path(dir.join("designllm-host-harness.exe-not").as_os_str()).unwrap_err().code, ErrorCode::InvalidArgument);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

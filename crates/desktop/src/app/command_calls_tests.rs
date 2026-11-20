@@ -80,7 +80,7 @@ const KIND_RUN: &[&str] = &[
     "layer.find.next", "layer.find.previous", "canvas.open_url", "canvas.interaction.set", "canvas.interaction.remove",
     "canvas.token.put", "canvas.token.remove", "canvas.token.mode", "canvas.token.bind", "canvas.token.unbind",
     "canvas.table.add", "canvas.table.add_row", "canvas.table.remove_row", "canvas.table.add_column", "canvas.table.remove_column", "canvas.table.set_header",
-    "canvas.table.set_column_widths",
+    "canvas.table.set_column_widths", "table.merge_cells", "table.unmerge_cell",
 ];
 
 /// A canvas with one node per lint finding: `small` (20 × 20 px), `pale` (#BBBBBB text on white), `kid` drawn
@@ -506,6 +506,20 @@ fn prepare_kind(host: &mut Host, id: &str) -> (Recorder, Value) {
             _ => unreachable!(),
         };
         return (recorder, args);
+    }
+
+    if id.starts_with("table.") {
+        let canvas = canvas_with_three_boxes(host, [0, 1_000_000, 3_000_000]);
+        let mut recorder = Recorder::open(host, &canvas);
+        recorder.step(host, "canvas.table.add", json!({ "rows": 2, "columns": 2 })).expect("a Canvas table is ready");
+        let table_id = recorder.app.selected_node.clone().expect("the new table is selected");
+        recorder.step(host, "canvas.table.set_header", json!({ "table_id": table_id, "enabled": false })).expect("the header is off");
+        let merge = json!({ "table_id": table_id, "row": 1, "column": 0, "rows": 1, "columns": 2 });
+        if id == "table.merge_cells" {
+            return (recorder, merge);
+        }
+        recorder.step(host, "table.merge_cells", merge).expect("a merged region to unmerge");
+        return (recorder, json!({ "table_id": table_id, "row": 1, "column": 1 }));
     }
 
     if id.starts_with("canvas.token.") {
@@ -4129,6 +4143,37 @@ fn figure_link_calls_match_the_registry_for_page_and_flow_placement() {
             .filter(|call| *call != other_placement).collect();
         assert_eq!(distinct_in_order(&window.calls[mark..]), declared, "{kind}");
     }
+}
+
+#[test]
+fn table_merge_runs_through_the_agent_registry_path_and_unmerges_the_same_region() {
+    let mut host = Host::start();
+    let canvas = canvas_with_three_boxes(&mut host, [0, 1_000_000, 3_000_000]);
+    let mut recorder = Recorder::open(&mut host, &canvas);
+    recorder.step(&mut host, "canvas.table.add", json!({ "rows": 2, "columns": 2 })).expect("a Canvas table is ready");
+    let table_id = recorder.app.selected_node.clone().expect("the new table is selected");
+    recorder.step(&mut host, "canvas.table.set_header", json!({ "table_id": table_id, "enabled": false })).expect("the header is off");
+    complete_queued_table_change(
+        &mut recorder,
+        &mut host,
+        "table.merge_cells",
+        json!({ "table_id": table_id, "row": 1, "column": 0, "rows": 1, "columns": 2 }),
+        &canvas,
+    );
+    let spans = |host: &mut Host| {
+        let artifact = host.artifact(&canvas);
+        let ArtifactBody::Canvas(document) = &artifact.body else { panic!("a canvas") };
+        document.pages[0].nodes.iter().find_map(|node| node.ext.table.clone()).expect("the table").cell_spans
+    };
+    assert_eq!(spans(&mut host).len(), 1, "the merge is one span through the agent path");
+    complete_queued_table_change(
+        &mut recorder,
+        &mut host,
+        "table.unmerge_cell",
+        json!({ "table_id": table_id, "row": 1, "column": 1 }),
+        &canvas,
+    );
+    assert!(spans(&mut host).is_empty(), "the unmerge through the agent path clears the span");
 }
 
 #[test]

@@ -234,6 +234,7 @@ impl DesktopApp {
                 None => {
                     // Not sent: the text and files come back to the box, and the home screen stays.
                     self.answer_sent_outcome(ticket, Outcome::Refused);
+                    self.repeat_ui_test_refusal();
                     return Ok(());
                 }
             }
@@ -399,6 +400,7 @@ impl DesktopApp {
         let open_width = 8.0 + 16.0 + 6.0 + text_width(ui, "열기", &open_font) + 10.0;
         let open = Rect::from_min_size(Pos2::new(bar.right() - open_width, middle - 16.0), Vec2::new(open_width, 32.0));
         let response = ui.interact(open, ui.id().with("home-open"), Sense::click()).on_hover_text("열기  Ctrl+O");
+        crate::ui_record::note(ui, "열기", &response);
         if response.hovered() {
             ui.painter().rect_filled(open, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
         }
@@ -521,6 +523,7 @@ impl DesktopApp {
                     .min_size(Vec2::new(inner_width, 56.0))
                     .desired_width(inner_width);
                 let response = ui.add(edit);
+                crate::ui_record::note(ui, "무엇을 만들까요?", &response);
                 if std::mem::take(&mut self.home.focus_request) {
                     response.request_focus();
                 }
@@ -1091,6 +1094,7 @@ impl DesktopApp {
                 Vec2::new(GRID_CELL.x, cell_height),
             );
             let response = ui.interact(cell, ui.id().with(("home-cell", &summary.id)), Sense::click());
+            crate::ui_record::note(ui, &summary.title, &response);
             let thumb = Rect::from_min_size(cell.min, GRID_CELL);
             ui.painter().rect_filled(thumb, CornerRadius::same(theme::RADIUS_FLOAT), palette.board);
             if let Some(page) = self.paint_thumb(ui, ThumbSource::Artifact(summary), thumb, Fit::Contain { margin: 12.0 }, CornerRadius::ZERO) {
@@ -1131,6 +1135,7 @@ impl DesktopApp {
         ui.painter().rect_filled(top, CornerRadius::ZERO, palette.line);
         for summary in self.shown_projects() {
             let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 56.0), Sense::click());
+            crate::ui_record::note(ui, &summary.title, &response);
             let content = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.bottom() - 1.0));
             if response.hovered() {
                 ui.painter().rect_filled(content, CornerRadius::ZERO, palette.surface_2);

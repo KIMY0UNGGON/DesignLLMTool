@@ -1810,7 +1810,9 @@ impl DesktopApp {
                         ui.label(RichText::new(reason).color(palette.ink_3));
                     }
                     ui.horizontal(|ui| {
-                        if ui.add_enabled(standing.ready, egui::Button::new("복원")).clicked() {
+                        let restore_button = ui.add_enabled(standing.ready, egui::Button::new("복원"));
+                        crate::ui_record::note_human_only(ui, "복원", &restore_button);
+                        if restore_button.clicked() {
                             restore = Some(draft.key.clone());
                         }
                         if standing.open.is_some() && ui.button("열기").clicked() {
@@ -1819,7 +1821,9 @@ impl DesktopApp {
                         if ui.button("복사").clicked() {
                             copy = Some(copy_text(&draft.body));
                         }
-                        if ui.add_enabled(standing.reason != Some(OTHER_OWNER), egui::Button::new("버리기")).clicked() {
+                        let discard_button = ui.add_enabled(standing.reason != Some(OTHER_OWNER), egui::Button::new("버리기"));
+                        crate::ui_record::note_human_only(ui, "버리기", &discard_button);
+                        if discard_button.clicked() {
                             discard = Some(draft.key.clone());
                         }
                     });

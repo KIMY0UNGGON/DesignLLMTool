@@ -94,7 +94,7 @@ fn agent_path_arg(id: &str) -> Option<&'static str> {
 /// no UNC, no link or reparse point) although the window's connection is the user's. The user's own commands send no mark.
 pub(super) fn mark_agent_path(run: Option<&RunContext>, method: &str, params: &mut Value) {
     if run.is_some_and(|run| agent_path_arg(&run.command_id).is_some())
-        && matches!(method, "artifact.open" | "asset.import" | "artifact.save" | "artifact.export")
+        && designllm_contracts::local_path::AGENT_PATH_METHODS.contains(&method)
     {
         if let Some(params) = params.as_object_mut() {
             params.insert(designllm_contracts::local_path::AGENT_PATH_PARAM.into(), Value::Bool(true));
@@ -254,6 +254,8 @@ impl DesktopApp {
             "canvas.table.add_row" | "canvas.table.remove_row" | "canvas.table.add_column" | "canvas.table.remove_column" | "canvas.table.set_header" | "canvas.table.set_column_widths" => {
                 canvas_editor && table_editable && selected_table
             }
+            // A merge is made from selected cells, so the table node itself is not the selection here.
+            "table.merge_cells" | "table.unmerge_cell" => canvas_editor && table_editable,
             "select.next" | "select.previous" => self.screen_is_editor() && self.has_selectable_layers(),
             "layer.find.next" | "layer.find.previous" => flow_editor || canvas_editor,
             id if super::web_runtime::WEB_RUNTIME_COMMANDS.contains(&id) => self.web_runtime_unavailable.is_none(),
@@ -372,7 +374,7 @@ impl DesktopApp {
         let screen = if self.screen_is_editor() { "editor" } else { "home" };
         let tab = if view.left_tab == LeftTab::Ai { "ai" } else { "layers" };
         let selection = self.local_ui_selection();
-        UiState {
+        let mut state = UiState {
             screen: screen.into(),
             artifact_id: self.active.as_ref().map(|item| item.id.clone()),
             revision: self.active.as_ref().map(|item| item.revision),
@@ -402,7 +404,12 @@ impl DesktopApp {
                 "job_attempt_id": self.job.as_ref().map(|job| job.attempt_id.as_str()),
                 "visible_pages": self.visible_pages(),
             }),
+        };
+        if self.ui_test.is_some() {
+            // The state tells an agent that this window takes synthetic input (task 69).
+            state.detail["ui_test_input"] = json!(true);
         }
+        state
     }
 
     fn local_ui_selection(&self) -> Selection {
@@ -445,7 +452,7 @@ impl DesktopApp {
     /// The whole command registry. `enabled` reflects both wiring and the current artifact kind.
     pub(super) fn ui_commands(&self) -> Vec<UiCommand> {
         let kind = self.active.as_ref().map_or(ArtifactKind::Canvas, |active| active.kind);
-        commands::COMMANDS
+        let mut registry: Vec<UiCommand> = commands::COMMANDS
             .iter()
             .map(|spec| UiCommand {
                 id: spec.id.into(),
@@ -456,7 +463,9 @@ impl DesktopApp {
                 enabled: commands::available(spec.id) && self.ui_command_enabled_for_current_kind(spec.id) && ui_run_supported(spec.id),
                 shortcut: (!spec.shortcut.is_empty()).then(|| spec.shortcut.to_owned()),
             })
-            .collect()
+            .collect();
+        registry.extend(self.ui_test_commands());
+        registry
     }
 
     /// Publishes the state when it changed, and at least every few seconds so that the view stays
@@ -603,6 +612,10 @@ impl DesktopApp {
         let kind = self.active.as_ref().map_or(ArtifactKind::Canvas, |active| active.kind);
         if !commands::ui_intents_for(spec, kind).is_subset(&run.allowed_intents) {
             return Some(DltError::new(ErrorCode::ContentLocked, format!("{}: 허용되지 않은 변경 종류입니다", spec.id)));
+        }
+        // A cell's text edited in place is not stored yet: the merge would leave it out (the window's own merge waits for it).
+        if matches!(spec.id, "table.merge_cells" | "table.unmerge_cell") && self.inline_text_edit.is_some() {
+            return Some(DltError::new(ErrorCode::TargetBusy, super::table_merge::EDITING_REFUSAL));
         }
         if commands::ui_permission(spec) != UiPermission::Read && !state_relative_read {
             if let Some(error) = self.ui_run_state_refusal(&run) {
@@ -776,6 +789,10 @@ impl DesktopApp {
             self.ui.screenshot_wanted = true;
             return;
         }
+        if super::ui_test_input::is_ui_test_command(&run.command_id) {
+            self.execute_ui_test_run(run);
+            return;
+        }
         if let Some(error) = self.ui_run_refusal(&run) {
             self.complete_ui_run(&run.run_id, None, Some(error));
             return;
@@ -828,8 +845,12 @@ impl DesktopApp {
             ui.label(format!("새 작업물 · {tile}"));
             egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| { ui.label(arg("prompt")); });
             ui.horizontal(|ui| {
-                if ui.button("거절").clicked() { answer = Some(false); }
-                if ui.button("모델 실행").clicked() { answer = Some(true); }
+                let refuse = ui.button("거절");
+                crate::ui_record::note_human_only(ui, "거절", &refuse);
+                if refuse.clicked() { answer = Some(false); }
+                let accept = ui.button("모델 실행");
+                crate::ui_record::note_human_only(ui, "모델 실행", &accept);
+                if accept.clicked() { answer = Some(true); }
             });
         });
         if let Some(accepted) = answer {

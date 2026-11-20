@@ -13,6 +13,13 @@ use crate::{icons, theme, widgets};
 /// The AI tab's label of a job whose request this window does not know (`job_prompts`).
 pub(super) const JOB_LABEL: &str = "AI 작업";
 
+/// The longest gap in seconds between the two clicks of a double click on a layer row: the system's double-click time
+/// (Windows `GetDoubleClickTime`, 500 ms unless the user changed it).
+pub(super) fn double_click_secs() -> f64 {
+    // SAFETY: GetDoubleClickTime takes no arguments and only reads a system setting.
+    f64::from(unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime() }) / 1000.0
+}
+
 /// One row of the layers tree, computed before anything is drawn so the artifact is not borrowed
 /// while commands run.
 #[derive(Clone, Default)]
@@ -701,6 +708,10 @@ impl DesktopApp {
         let mut row_page = 0u32;
         // Rows under a closed row are skipped until the depth comes back up.
         let mut hidden_below: Option<usize> = None;
+        // The last click on a row's own area (its key and time), the first half of a double click on that row; this frame's
+        // click that keeps it as the first half.
+        let last_click = ui.id().with("layer-row-last-click");
+        let mut first_click_kept = false;
         for (position, row) in rows.iter().enumerate() {
             if let Some(index) = row.page_index {
                 row_page = index;
@@ -721,6 +732,7 @@ impl DesktopApp {
             }
             let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), theme::LAYER_ROW), Sense::click_and_drag());
             placed.push(rect);
+            if let Some(test) = self.ui_test.as_mut() { test.note_layer_row(row.node_id.as_deref(), row.page_index.or(row.owner_page), &row.label, rect, ui.clip_rect()); }
             if response.drag_started_by(egui::PointerButton::Primary) {
                 if row.depth == 1 {
                     if let Some(id) = &row.node_id {
@@ -814,7 +826,24 @@ impl DesktopApp {
                     }
                 }
             }
-            if response.double_clicked() && !state_action_clicked {
+            // egui's `double_clicked` counts clicks anywhere within 0.3 s (a click on another row just before makes it a triple
+            // click, and the first click of a pair a double one), so it misses a double click on a row that follows another
+            // click. A double click here is two clicks on this row's own area within the system's double-click time, with no
+            // other click between them (an icon, the twisty, another row, the board); the click that makes one is no first half
+            // of another, so a third click is a single one.
+            let now = ui.input(|input| input.time);
+            let row_clicked = response.clicked() && !state_action_clicked;
+            let double_clicked = row_clicked
+                && ui.data(|data| data.get_temp::<(String, f64)>(last_click)).is_some_and(|(id, at)| id == key && now - at <= double_click_secs());
+            if row_clicked {
+                if double_clicked {
+                    ui.data_mut(|data| data.remove::<(String, f64)>(last_click));
+                } else {
+                    ui.data_mut(|data| data.insert_temp(last_click, (key.clone(), now)));
+                    first_click_kept = true;
+                }
+            }
+            if double_clicked {
                 if let Some(section_id) = row.section_id.as_deref() {
                     self.open_page_section_editor(section_id);
                 } else if !renaming && !web_files {
@@ -824,7 +853,7 @@ impl DesktopApp {
             if renaming {
                 self.draw_rename_field(ui, rect, x, palette);
             }
-            if response.clicked() && !state_action_clicked {
+            if row_clicked {
                 if let Some(result) = row.search_result {
                     self.open_flow_find_result(result);
                 } else if row.section_id.is_some() {
@@ -858,6 +887,10 @@ impl DesktopApp {
                     }
                 }
             }
+        }
+        // Any other click this frame (an icon, the twisty, the board) ends the first half of a row's double click.
+        if !first_click_kept && ui.input(|input| input.pointer.any_click()) {
+            ui.data_mut(|data| data.remove::<(String, f64)>(last_click));
         }
         let drag: Option<LayerDrag> = ui.data(|data| data.get_temp(drag_id));
         if let Some(drag) = drag {

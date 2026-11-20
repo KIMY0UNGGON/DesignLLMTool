@@ -693,6 +693,7 @@ impl DesktopApp {
         let mut table_action = None;
         let mut repeat_action = None;
         let mut table_cell_action = None;
+        let span_offer = self.panel_span_offer();
         let mut discard_crop_draft = false;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 0, bottom: 12 }).show(ui, |ui| {
@@ -752,7 +753,7 @@ impl DesktopApp {
                         self.document_sections(ui, palette, &mut first);
                     }
                 }
-                table_cell_action = self.draw_canvas_table_merge_control(ui, palette, &mut first);
+                table_cell_action = self.draw_canvas_table_merge_control(ui, palette, &mut first, span_offer);
                 if let Some(figure) = self.figure_document() {
                     ui.spacing_mut().item_spacing.y = 4.0;
                     self.draw_figure_details(ui, &figure);
@@ -775,10 +776,8 @@ impl DesktopApp {
         if let Some((command, args)) = repeat_action {
             self.invoke_ui(command, args);
         }
-        if let Some(operation) = table_cell_action {
-            if let Err(message) = self.change(vec![operation], &[designllm_contracts::Intent::Content]) {
-                self.set_error(message);
-            }
+        if let Some(action) = table_cell_action {
+            self.run_span_action(action);
         }
         if discard_crop_draft { self.discard_canvas_image_crop(); }
     }
@@ -1049,67 +1048,44 @@ impl DesktopApp {
         })
     }
 
-    pub(super) fn canvas_table_span_operation(&self) -> Option<(bool, designllm_contracts::Operation)> {
+    /// The edit the selected cells ask for: the unmerge of a merged cell (its anchor, with or without cells it covers), else a
+    /// merge of the rectangle they form. `Err` says why the selection is not an edit.
+    pub(super) fn canvas_table_span_request(&self) -> Result<(String, designllm_contracts::CanvasTable, super::table_merge::SpanEdit), String> {
         if !self.canvas_table_context_current() || !self.feature_edit_supported(Feature::Tables) {
-            return None;
+            return Err("표 편집 상태에서만 셀을 합칠 수 있습니다".into());
         }
-        let (table_node, expected, selected) = self.selected_canvas_table_cells()?;
-        if table_node.ext.locked == Some(true) || table_node.children.iter().any(|cell| cell.ext.locked == Some(true)) {
-            return None;
-        }
-        if selected.len() == 1 && expected.cell_spans.contains_key(&selected[0]) {
-            let mut table = expected.clone();
-            table.cell_spans.remove(&selected[0]);
-            return Some((true, designllm_contracts::Operation::SetCanvasTableStructure {
-                table_id: table_node.id.clone(), expected, table,
-            }));
-        }
-        if selected.len() < 2 { return None; }
-        if expected.rows.is_empty() { return None; }
-        let selected_set: std::collections::BTreeSet<&str> = selected.iter().map(String::as_str).collect();
-        let mut positions = Vec::with_capacity(selected.len());
-        for id in &selected {
-            let position = expected.rows.iter().enumerate().find_map(|(row, table_row)| {
-                table_row.cell_ids.iter().position(|cell_id| cell_id == id).map(|column| (row, column))
-            })?;
-            positions.push(position);
-        }
-        let top = positions.iter().map(|(row, _)| *row).min()?;
-        let left = positions.iter().map(|(_, column)| *column).min()?;
-        let bottom = positions.iter().map(|(row, _)| *row).max()?;
-        let right = positions.iter().map(|(_, column)| *column).max()?;
-        let row_span = bottom.checked_sub(top)?.checked_add(1)?;
-        let column_span = right.checked_sub(left)?.checked_add(1)?;
-        if row_span.checked_mul(column_span)? != selected.len() { return None; }
-        for row in top..=bottom {
-            for column in left..=right {
-                if !selected_set.contains(expected.rows[row].cell_ids[column].as_str()) { return None; }
-            }
-        }
-        for (anchor_id, span) in &expected.cell_spans {
-            let anchor = expected.rows.iter().enumerate().find_map(|(row, table_row)| {
-                table_row.cell_ids.iter().position(|cell_id| cell_id == anchor_id).map(|column| (row, column))
-            })?;
-            let span_bottom = anchor.0.checked_add(span.row_span as usize)?;
-            let span_right = anchor.1.checked_add(span.column_span as usize)?;
-            if anchor.0 <= bottom && span_bottom > top && anchor.1 <= right && span_right > left {
-                return None;
-            }
-        }
-        let anchor_id = expected.rows[top].cell_ids[left].clone();
-        let mut table = expected.clone();
-        table.cell_spans.insert(anchor_id, designllm_contracts::CanvasTableSpan {
-            row_span: u32::try_from(row_span).ok()?,
-            column_span: u32::try_from(column_span).ok()?,
-        });
-        Some((false, designllm_contracts::Operation::SetCanvasTableStructure { table_id: table_node.id.clone(), expected, table }))
+        let (table_node, expected, selected) = self.selected_canvas_table_cells().ok_or("같은 표의 셀을 고르세요")?;
+        let edit = self.span_request_for(&table_node.id, &selected)?;
+        Ok((table_node.id.clone(), expected, edit))
     }
 
-    fn draw_canvas_table_merge_control(&self, ui: &mut Ui, palette: &theme::Palette, first: &mut bool) -> Option<designllm_contracts::Operation> {
+    /// The structure operation the selection's merge or unmerge makes; `None` when the selection is not one or the span
+    /// rules refuse it.
+    pub(super) fn canvas_table_span_operation(&self) -> Option<(bool, designllm_contracts::Operation)> {
+        let (table_id, expected, edit) = self.canvas_table_span_request().ok()?;
+        let unmerge = matches!(edit, super::table_merge::SpanEdit::Unmerge { .. });
+        let table = super::table_merge::structure_after(&expected, &super::table_merge::cell_positions(&expected), edit).ok()?;
+        Some((unmerge, designllm_contracts::Operation::SetCanvasTableStructure { table_id, expected, table }))
+    }
+
+    /// The command the panel's or the menu's merge (`unmerge` false) or unmerge asks for; `Err` says why it is refused (every
+    /// check of the command itself, `span_edit_check`).
+    pub(super) fn canvas_table_span_command(&self, unmerge: bool) -> Result<(&'static str, serde_json::Value), String> {
+        if !self.canvas_table_context_current() || !self.feature_edit_supported(Feature::Tables) {
+            return Err("표 편집 상태에서만 셀을 합칠 수 있습니다".into());
+        }
+        let (table_node, _, selected) = self.selected_canvas_table_cells().ok_or("같은 표의 셀을 고르세요")?;
+        self.span_command_for(&table_node.id, &selected, unmerge)
+    }
+
+    /// The 셀 section: 병합 or 병합 해제 for the selected table's cells (`offer`, `panel_span_offer`). A click yields the
+    /// command, or the reason it is refused.
+    fn draw_canvas_table_merge_control(&self, ui: &mut Ui, palette: &theme::Palette, first: &mut bool, offer: Option<bool>) -> Option<Result<(&'static str, serde_json::Value), String>> {
         if !TABLE_SPANS_UI_ENABLED { return None; }
-        let (unmerge, operation) = self.canvas_table_span_operation()?;
+        // Shown only for a selection that can merge or unmerge (an invalid one has no action, as before).
+        let unmerge = offer?;
         let action = if unmerge { ("minus", "병합 해제") } else { ("add", "병합") };
-        section_head(ui, palette, first, "셀", Some(action)).then_some(operation)
+        section_head(ui, palette, first, "셀", Some(action)).then(|| self.canvas_table_span_command(unmerge))
     }
 }
 
@@ -4097,6 +4073,9 @@ fn field_with_hint(ui: &mut Ui, palette: &theme::Palette, id: Id, width: f32, pr
         edit = edit.hint_text(egui::RichText::new(hint).color(palette.ink_3));
     }
     let response = ui.add_enabled(enabled, |ui: &mut Ui| ui.add_sized(vec2(width.max(40.0), theme::FIELD_HEIGHT), edit));
+    if matches!(prefix, "폭" | "열") {
+        crate::ui_record::note(ui, prefix, &response);
+    }
     let rect = response.rect;
     if !prefix.is_empty() {
         ui.painter().text(Pos2::new(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, prefix, small.clone(), palette.ink_3);

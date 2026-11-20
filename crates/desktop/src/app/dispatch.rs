@@ -351,6 +351,7 @@ impl DesktopApp {
         }
         // F2 opens the selected table's or text's text before `edit.rename` sees it (68 item 11).
         self.take_f2_for_text_edit(ctx);
+        self.handle_nudge_keys(ctx);
         let typing = ctx.wants_keyboard_input();
         for spec in COMMANDS {
             if !self.command_enabled_for_current_kind(spec.id) {
@@ -367,6 +368,14 @@ impl DesktopApp {
             }
             // Esc confirms the open board memo or title editor (`draw_editing_memo`), so it does not clear the selection.
             if self.board_memo_editor_shown() && spec.id == "select.clear" {
+                continue;
+            }
+            // Esc ends the open inline text edit (`draw_inline_text_editor`; an IME's Esc there cancels the composition), so
+            // `select.clear` does not take it first. egui takes the text field's focus on Esc, so `typing` above is false here and
+            // the bare-key guard does not stop it. An edit the editor cannot end on Esc (a conflict, a target that changed, a page
+            // not drawn) keeps its draft on Esc, and the selection stays its node: `select.clear` could not change it during an
+            // edit either (`set_selected_ids`, `set_selection`). Its conflict notice's buttons decide what happens to the draft.
+            if self.inline_text_edit.is_some() && self.board_rect.is_some() && spec.id == "select.clear" {
                 continue;
             }
             if !self.shortcut_applies(spec) {

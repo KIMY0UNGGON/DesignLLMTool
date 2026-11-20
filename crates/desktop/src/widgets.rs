@@ -47,6 +47,7 @@ pub fn icon_button(ui: &mut Ui, palette: &Palette, icon: &str, tooltip: &str, ac
     let color = if active { palette.accent } else { palette.ink_2 };
     let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_IN_BUTTON));
     icons::paint(ui, icon_rect, icon, color);
+    crate::ui_record::note(ui, tooltip, &response);
     response.on_hover_text(tooltip)
 }
 
@@ -93,6 +94,7 @@ pub fn labeled_button_with(ui: &mut Ui, palette: &Palette, icon: Option<&str>, l
     if dot {
         ui.painter().circle_filled(Pos2::new(x + label_width + 4.0 + 3.0, rect.center().y), 3.0, palette.accent);
     }
+    crate::ui_record::note(ui, label, &response);
     response
 }
 
@@ -107,6 +109,7 @@ pub fn zoom_button(ui: &mut Ui, palette: &Palette, value: &str, open: bool) -> R
     ui.painter().text(Pos2::new(rect.left() + 10.0, rect.center().y), Align2::LEFT_CENTER, value, font, palette.ink);
     let chevron = Rect::from_min_size(Pos2::new(rect.right() - 4.0 - theme::ICON_SMALL, rect.center().y - 8.0), Vec2::splat(theme::ICON_SMALL));
     icons::paint(ui, chevron, "chev-down", palette.ink_3);
+    crate::ui_record::note(ui, value, &response);
     response
 }
 
@@ -117,6 +120,7 @@ pub fn split_chevron(ui: &mut Ui, palette: &Palette, tooltip: &str) -> Response 
         ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_MINI), palette.surface_2);
     }
     icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_SMALL)), "chev-down", palette.ink_3);
+    crate::ui_record::note(ui, tooltip, &response);
     response.on_hover_text(tooltip)
 }
 
@@ -134,6 +138,7 @@ pub fn mini_button(ui: &mut Ui, palette: &Palette, icon: &str, tooltip: &str) ->
         ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_MINI), palette.surface_2);
     }
     icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_SMALL)), icon, palette.ink_2);
+    crate::ui_record::note(ui, tooltip, &response);
     response.on_hover_text(tooltip)
 }
 
@@ -156,6 +161,7 @@ pub fn tab(ui: &mut Ui, palette: &Palette, label: &str, on: bool, dot: Option<Co
     if let Some(color) = dot {
         ui.painter().circle_filled(Pos2::new(x + label_width + 6.0 + 3.0, rect.center().y), 3.0, color);
     }
+    crate::ui_record::note(ui, label, &response);
     response
 }
 
@@ -168,6 +174,7 @@ pub fn text_button(ui: &mut Ui, palette: &Palette, label: &str, color: Color32) 
         ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
     }
     ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, font, color);
+    crate::ui_record::note(ui, label, &response);
     response
 }
 
@@ -229,6 +236,7 @@ fn menu_row(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, sho
         let check = Rect::from_min_size(Pos2::new(rect.right() - 24.0, rect.center().y - 8.0), Vec2::splat(theme::ICON_SMALL));
         icons::paint(ui, check, "check", palette.accent);
     }
+    crate::ui_record::note(ui, label, &response);
     response
 }
 
@@ -360,6 +368,7 @@ pub fn wide_primary(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &
         x += icon_width;
     }
     ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, label, font, ink);
+    crate::ui_record::note(ui, label, &response);
     response
 }
 
@@ -391,6 +400,7 @@ pub fn dropdown(ui: &mut Ui, palette: &Palette, value: &str, icon: Option<&str>,
         theme::display_font(false, 13.0),
         palette.ink,
     );
+    crate::ui_record::note(ui, value, &response);
     response
 }
 
@@ -429,13 +439,15 @@ pub fn parse_number(text: &str) -> Option<f64> {
 
 /// A single-line text field in the house style (white, `line-strong` border).
 pub fn text_field(ui: &mut Ui, palette: &Palette, text: &mut String, hint: &str, width: f32) -> Response {
-    ui.add_sized(
+    let response = ui.add_sized(
         egui::vec2(width, theme::FIELD_HEIGHT),
         TextEdit::singleline(text)
             .hint_text(egui::RichText::new(hint).color(palette.ink_3))
             .font(theme::display_font(false, 13.0))
             .margin(egui::Margin::symmetric(8, 4)),
-    )
+    );
+    crate::ui_record::note(ui, hint, &response);
+    response
 }
 
 /// Parses `#RRGGBB` (the `#` is optional).
@@ -568,11 +580,14 @@ pub fn field_with_button(
     let mut submitted = false;
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.add_enabled(enabled, egui::Button::new(action)).clicked() {
+            let button = ui.add_enabled(enabled, egui::Button::new(action));
+            crate::ui_record::note(ui, action, &button);
+            if button.clicked() {
                 submitted = true;
             }
             let width = ui.available_width().max(48.0);
             let field = ui.add(TextEdit::singleline(text).hint_text(hint).desired_width(width));
+            crate::ui_record::note(ui, hint, &field);
             if focus {
                 field.request_focus();
             }

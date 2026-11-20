@@ -6,7 +6,7 @@ use std::{io::Read, path::PathBuf};
 mod gl_check;
 
 #[derive(Default)]
-struct Args { workspace: Option<PathBuf>, mode: String, command: Option<PathBuf>, output: Option<PathBuf>, checkpoint_id: Option<String>, destination: Option<PathBuf>, job: Option<String>, attempt: Option<String>, web_path: Option<PathBuf>, parent_hwnd: Option<isize>, invisible: bool }
+struct Args { workspace: Option<PathBuf>, mode: String, command: Option<PathBuf>, output: Option<PathBuf>, checkpoint_id: Option<String>, destination: Option<PathBuf>, job: Option<String>, attempt: Option<String>, web_path: Option<PathBuf>, parent_hwnd: Option<isize>, invisible: bool, ui_test_mock_agent: Option<PathBuf> }
 fn parse() -> DltResult<Args> {
     let mut result = Args::default();
     let mut workspace_occurrences = 0usize;
@@ -36,6 +36,8 @@ fn parse() -> DltResult<Args> {
             "--preview-web" => { set_mode(&mut result.mode, "--preview-web")?; result.web_path = Some(PathBuf::from(args.next().ok_or_else(|| DltError::invalid("--preview-web needs a path"))?)); },
             "--parent-hwnd" => result.parent_hwnd = Some(args.next().ok_or_else(|| DltError::invalid("--parent-hwnd needs a handle"))?.to_string_lossy().parse().map_err(|_| DltError::invalid("Invalid window handle"))?),
             "--invisible" => result.invisible = true,
+            // Task 69: only the window of a UI-test launch passes this to the host it starts (`ensure_host`).
+            "--ui-test-mock-agent" => result.ui_test_mock_agent = Some(designllm_application::ui_test_mock_agent_path(&args.next().ok_or_else(|| DltError::invalid("--ui-test-mock-agent needs a path"))?)?),
             "--job-id" => result.job = Some(args.next().ok_or_else(|| DltError::invalid("--job-id needs an ID"))?.to_string_lossy().into_owned()),
             "--attempt-id" => result.attempt = Some(args.next().ok_or_else(|| DltError::invalid("--attempt-id needs an ID"))?.to_string_lossy().into_owned()),
             other => return Err(DltError::invalid(format!("Unknown argument: {other}"))),
@@ -43,6 +45,9 @@ fn parse() -> DltResult<Args> {
     }
     if (result.invisible || result.parent_hwnd.is_some()) && result.mode != "--preview-web" { return Err(DltError::invalid("--invisible/--parent-hwnd apply only to --preview-web; use --smoke-test for the desktop")); }
     if (result.job.is_some() || result.attempt.is_some()) && result.mode != "--mcp" { return Err(DltError::invalid("Job binding applies only to --mcp")); }
+    if result.ui_test_mock_agent.is_some() && result.mode != "--host" { return Err(DltError::invalid("--ui-test-mock-agent applies only to --host")); }
+    // A host started by hand takes a mock agent only inside a UI-test launch (the window's host inherits its variable).
+    if result.ui_test_mock_agent.is_some() && !designllm_application::ui_test_launch() { return Err(DltError::invalid("--ui-test-mock-agent needs DESIGNLLM_UI_TEST_INPUT (a UI-test launch)")); }
     if result.checkpoint_id.is_some() && result.mode != "--restore-migration-checkpoint" { return Err(DltError::invalid("checkpoint IDs apply only to --restore-migration-checkpoint")); }
     if result.destination.is_some() && result.mode != "--restore-migration-checkpoint" { return Err(DltError::invalid("--destination applies only to --restore-migration-checkpoint")); }
     if matches!(result.mode.as_str(), "--list-migration-checkpoints" | "--restore-migration-checkpoint") {
@@ -84,7 +89,9 @@ fn run() -> DltResult<()> {
                 if args.mode == "--host" { report_host_startup_error(&error); }
                 error
             })?;
-            designllm_host::serve(opened, mode).map_err(|error| {
+            let mut options = designllm_host::HostOptions::default();
+            options.runtime.mock_agent = args.ui_test_mock_agent;
+            designllm_host::serve_with(opened, mode, options).map_err(|error| {
                 if args.mode == "--host" { report_host_startup_error(&error); }
                 error
             })
@@ -129,6 +136,13 @@ fn run() -> DltResult<()> {
         }
         "" => {
             gl_check::require(gl_check::Report::MessageBox)?;
+            // Task 69: a UI-test window (DESIGNLLM_UI_TEST_INPUT) may give its host the mock agent for scripted jobs; no
+            // other launch reads DESIGNLLM_UI_TEST_MOCK_AGENT.
+            if designllm_desktop::ui_test_mode_enabled() {
+                if let Some(raw) = std::env::var_os("DESIGNLLM_UI_TEST_MOCK_AGENT").filter(|raw| !raw.is_empty()) {
+                    designllm_application::set_ui_test_mock_agent(designllm_application::ui_test_mock_agent_path(&raw)?);
+                }
+            }
             if let Err(error) = designllm_application::ensure_host(&workspace) {
                 if let Err(display_error) = designllm_desktop::run_startup_error(&workspace, &error) {
                     eprintln!("Could not display startup error: {display_error}");

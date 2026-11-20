@@ -849,7 +849,7 @@ impl DesktopApp {
         self.text_adapter = GraphemeAdapter::default();
         self.text_adapter.set_caret_at_grapheme(ctx, self.text_editor_id, &self.text_draft, Some(caret));
         let view_id = self.view_id.clone();
-        let actor = inline_text_actor(&view_id);
+        let actor = self.ui_test_inline_actor(&view_id).unwrap_or_else(|| inline_text_actor(&view_id));
         self.inline_text_edit = Some(InlineTextEdit {
             id, actor, view_id, artifact_id: active.id.clone(), node_id: node_id.to_owned(), page_index, kind: active.kind,
             revision: context.revision, committed_text: original, queue: VecDeque::new(), in_flight: None,

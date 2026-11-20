@@ -141,6 +141,21 @@ mod tests {
         assert_eq!(pinned_actor(&Identity::cli(), "desktop"), "cli:desktop");
     }
 
+    /// Task 69: the window carries a UI-test run's actor (this connection's `mcp:c1:agent`) into the inline edit it starts,
+    /// as `mcp:c1:agent:inline:<view>`. That name is this connection's: it has the prefix, so the connection could send it
+    /// itself and it is not rewritten, and it is no other identity's.
+    #[test]
+    fn a_ui_test_inline_actor_belongs_to_the_connection_that_ran_the_input() {
+        let inline = "mcp:c1:agent:inline:00000000-0000-0000-0000-000000000000";
+        assert!(actor_has_prefix(inline, "mcp:c1"));
+        assert_eq!(pinned_actor(&mcp(), inline), inline);
+        assert!(!actor_has_prefix(inline, "mcp:c12") && !actor_has_prefix(inline, "desktop"));
+        assert_eq!(pinned_actor(&Identity::bridge("c2", None, None), inline), format!("mcp:c2:{inline}"), "another connection cannot claim it");
+        let mut reserve = json!({ "owner": inline, "node_ids": ["t1"] });
+        mcp().pin("targets.reserve", &mut reserve);
+        assert_eq!(reserve["owner"], inline, "the reservation keeps the same owner as the commit");
+    }
+
     #[test]
     fn an_actor_with_the_prefix_stays_and_an_empty_one_becomes_the_prefix() {
         let identity = mcp();

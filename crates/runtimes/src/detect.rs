@@ -75,7 +75,9 @@ pub struct RuntimeConfig {
 
 impl RuntimeConfig {
     /// Reads `DESIGNLLM_CLAUDE_PATH` and `DESIGNLLM_CODEX_PATH`. The mock agent is never enabled from the
-    /// environment: it runs an arbitrary program, so only code that sets `mock_agent` explicitly can use it.
+    /// environment: it runs an arbitrary program, so only code that sets `mock_agent` explicitly can use it. The one such
+    /// place outside tests is a UI-test launch (task 69): the host takes `--ui-test-mock-agent <designllm-host-harness>`
+    /// from its command line, checked by the agent path rules, and only inside a launch with `DESIGNLLM_UI_TEST_INPUT`.
     pub fn from_env() -> Self {
         RuntimeConfig {
             claude_path: env::var_os("DESIGNLLM_CLAUDE_PATH").map(PathBuf::from),

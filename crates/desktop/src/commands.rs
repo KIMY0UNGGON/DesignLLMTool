@@ -152,6 +152,8 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { id: "canvas.table.remove_column", label: "열 삭제", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","required":["table_id"],"properties":{"table_id":{"type":"string"},"index":{"type":"integer","minimum":0}}}"# },
     CommandSpec { id: "canvas.table.set_header", label: "머리글", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","required":["table_id","enabled"],"properties":{"table_id":{"type":"string"},"enabled":{"type":"boolean"}}}"# },
     CommandSpec { id: "canvas.table.set_column_widths", label: "열 너비 비율", permission: Permission::Design, shortcut: "", args: r#"{"type":"object","required":["table_id","column_widths"],"properties":{"table_id":{"type":"string"},"column_widths":{"type":["array","null"],"items":{"type":"integer","minimum":1}}}}"# },
+    CommandSpec { id: "table.merge_cells", label: "셀 병합", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","required":["table_id","row","column","rows","columns"],"properties":{"table_id":{"type":"string"},"row":{"type":"integer","minimum":0},"column":{"type":"integer","minimum":0},"rows":{"type":"integer","minimum":1},"columns":{"type":"integer","minimum":1}}}"# },
+    CommandSpec { id: "table.unmerge_cell", label: "병합 해제", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","required":["table_id","row","column"],"properties":{"table_id":{"type":"string"},"row":{"type":"integer","minimum":0},"column":{"type":"integer","minimum":0}}}"# },
     CommandSpec { id: "data.edit_cell", label: "칸 값 바꾸기", permission: Permission::Data, shortcut: "", args: r#"{"type":"object","required":["row_id","column_id","value"],"properties":{"dataset_id":{"type":"string"},"row_id":{"type":"string"},"column_id":{"type":"string"},"value":{"type":"string"}}}"# },
     CommandSpec { id: "add.figure_image", label: "이미지", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","required":["path"],"description":"그림 파일의 절대 경로를 지정합니다.","properties":{"path":{"type":"string"},"origin":{"type":"string","enum":["experimental_original","paper_extracted","generated_illustration"]},"source_ref":{"type":"string"}}}"# },
     CommandSpec { id: "data.add_column", label: "열 추가", permission: Permission::Data, shortcut: "", args: r#"{"type":"object","properties":{"dataset_id":{"type":"string"},"name":{"type":"string"},"data_type":{"type":"string","enum":["numeric","category","count","text"]},"unit":{"type":"string"},"fill":{"type":"string"}}}"# },
@@ -704,6 +706,7 @@ pub(crate) fn core_calls(id: &str) -> Option<&'static [&'static str]> {
         "canvas.table.remove_row" | "canvas.table.remove_column" => &["changes.apply:remove_node", "changes.apply:set_canvas_table_structure", "selection.set"][..],
         "canvas.table.set_header" => &["changes.apply:set_canvas_table_structure", "selection.set"][..],
         "canvas.table.set_column_widths" => &["changes.apply:set_canvas_table_column_widths", "selection.set"][..],
+        "table.merge_cells" | "table.unmerge_cell" => &["changes.apply:set_canvas_table_structure", "selection.set"][..],
         "figure.style" => &["changes.apply:set_style"][..],
         "figure.toggle_sheet" => &[][..],
         // A dry run for the losses, then the HTML into a scratch file that the preview window shows.

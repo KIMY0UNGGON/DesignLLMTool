@@ -52,7 +52,7 @@ pub(super) fn ui_run_success_result(run: &ui_channel::RunContext, payload: &RpcP
             | "data.edit_cell" | "data.add_row" | "data.add_column" | "data.remove_row" | "data.remove_column"
             | "canvas.token.put" | "canvas.token.remove" | "canvas.token.mode" | "canvas.token.bind" | "canvas.token.unbind"
             | "canvas.design_system.list" | "canvas.design_system.publish" | "canvas.design_system.set"
-            | "canvas.table.add" | "canvas.table.add_row" | "canvas.table.remove_row" | "canvas.table.add_column" | "canvas.table.remove_column" | "canvas.table.set_header" | "canvas.table.set_column_widths"
+            | "canvas.table.add" | "canvas.table.add_row" | "canvas.table.remove_row" | "canvas.table.add_column" | "canvas.table.remove_column" | "canvas.table.set_header" | "canvas.table.set_column_widths" | "table.merge_cells" | "table.unmerge_cell"
     ) {
         if let RpcPayload::Json(result) = payload {
             let mut reply = json!({ "command": run.command_id, "accepted": true, "core_result": result });

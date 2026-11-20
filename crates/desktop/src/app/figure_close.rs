@@ -523,12 +523,12 @@ impl DesktopApp {
             ui.heading("보류된 변경");
             ui.label(warning);
             ui.horizontal(|ui| {
-                if ui.button("계속 작업").clicked() {
-                    keep = true;
-                }
-                if ui.button("전환").clicked() {
-                    switch = true;
-                }
+                let keep_button = ui.button("계속 작업");
+                crate::ui_record::note_human_only(ui, "계속 작업", &keep_button);
+                keep = keep_button.clicked();
+                let switch_button = ui.button("전환");
+                crate::ui_record::note_human_only(ui, "전환", &switch_button);
+                switch = switch_button.clicked();
             });
         });
         if keep {

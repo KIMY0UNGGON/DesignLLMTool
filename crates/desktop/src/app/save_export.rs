@@ -454,13 +454,9 @@ impl DesktopApp {
                     if ui.button("취소").clicked() {
                         cancel = true;
                     }
-                    if ui
-                        .add_enabled(
-                            !confirmation.allowed.is_empty(),
-                            egui::Button::new("이 손실을 허용하고 내보내기"),
-                        )
-                        .clicked()
-                    {
+                    let accept = ui.add_enabled(!confirmation.allowed.is_empty(), egui::Button::new("이 손실을 허용하고 내보내기"));
+                    crate::ui_record::note_human_only(ui, "이 손실을 허용하고 내보내기", &accept);
+                    if accept.clicked() {
                         confirm = true;
                     }
                 });

@@ -232,9 +232,13 @@ impl DesktopApp {
                         }
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        discard = widgets::icon_button(ui, palette, "close", "버리기", false).clicked();
+                        let discard_button = widgets::icon_button(ui, palette, "close", "버리기", false);
+                        crate::ui_record::note_human_only(ui, "버리기", &discard_button);
+                        discard = discard_button.clicked();
                         if block.is_none() {
-                            apply = widgets::labeled_button(ui, palette, Some("check"), "적용", true).clicked();
+                            let apply_button = widgets::labeled_button(ui, palette, Some("check"), "적용", true);
+                            crate::ui_record::note_human_only(ui, "적용", &apply_button);
+                            apply = apply_button.clicked();
                         }
                     });
                 });

@@ -69,6 +69,11 @@ fn cli_lookup(kind: RuntimeKind) -> ModelList {
     designllm_runtimes::detect::model_list(kind, &designllm_runtimes::detect::RuntimeConfig::from_env())
 }
 
+/// A lookup that asks no CLI: the fixed list (a UI-test window, task 69, unless it is told to ask).
+pub(super) fn fixed_lookup(kind: RuntimeKind) -> ModelList {
+    ModelList { models: fallback_models(kind), source: ModelSource::Fallback }
+}
+
 /// Tests do not run a CLI: their lookup answers with the fixed list.
 #[cfg(test)]
 fn test_lookup(kind: RuntimeKind) -> ModelList {

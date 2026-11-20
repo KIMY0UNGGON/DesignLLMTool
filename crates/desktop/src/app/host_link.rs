@@ -199,8 +199,12 @@ impl DesktopApp {
                 ui.label(HOST_LOST_CLOSE_NOTE);
             }
             ui.horizontal(|ui| {
-                reconnect = ui.add_enabled(can_restart, egui::Button::new(RECONNECT)).clicked();
-                quit = ui.button(QUIT).clicked();
+                let reconnect_button = ui.add_enabled(can_restart, egui::Button::new(RECONNECT));
+                crate::ui_record::note_human_only(ui, RECONNECT, &reconnect_button);
+                reconnect = reconnect_button.clicked();
+                let quit_button = ui.button(QUIT);
+                crate::ui_record::note_human_only(ui, QUIT, &quit_button);
+                quit = quit_button.clicked();
             });
         });
         if waiting {

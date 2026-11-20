@@ -1366,6 +1366,88 @@
     {
       "args": {
         "properties": {
+          "column": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "columns": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "row": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rows": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_id",
+          "row",
+          "column",
+          "rows",
+          "columns"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_canvas_table_structure",
+        "selection.set"
+      ],
+      "id": "table.merge_cells",
+      "intents": [
+        "content"
+      ],
+      "label": "셀 병합",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "column": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "row": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_id",
+          "row",
+          "column"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_canvas_table_structure",
+        "selection.set"
+      ],
+      "id": "table.unmerge_cell",
+      "intents": [
+        "content"
+      ],
+      "label": "병합 해제",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
           "column_id": {
             "type": "string"
           },

@@ -2677,6 +2677,77 @@ mod ui_channel_tests {
     }
 
     #[test]
+    fn table_merge_commands_refuse_a_single_cell_an_outside_region_an_overlap_and_an_unmerged_cell() {
+        use designllm_contracts::CanvasTableSpan;
+
+        let args = |row: usize, column: usize, rows: usize, columns: usize| {
+            json!({ "table_id": "table", "row": row, "column": column, "rows": rows, "columns": columns })
+        };
+        let mut harness = table_span_harness(table_span_test_artifact(false));
+        harness.app.selected_node = Some("table".into());
+        harness.app.selected_nodes = vec!["table".into()];
+        let single = harness.app.table_merge_cells(&args(0, 0, 1, 1));
+        assert!(single.err().is_some_and(|message| message.contains("두 칸")), "a single cell is not a merge");
+        let outside = harness.app.table_merge_cells(&args(0, 0, 100, 1));
+        assert!(outside.err().is_some_and(|message| message.contains("표 밖")), "a region past the grid is refused");
+        let unmerged = harness.app.table_unmerge_cell(&json!({ "table_id": "table", "row": 0, "column": 0 }));
+        assert!(unmerged.err().is_some_and(|message| message.contains("병합된 칸이 아닙니다")), "an unmerged cell has nothing to unmerge");
+
+        let mut artifact = table_span_test_artifact(false);
+        table_span_table_mut(&mut artifact, "table").ext.table.as_mut().unwrap().cell_spans.insert(
+            "c11".into(), CanvasTableSpan { row_span: 1, column_span: 2 },
+        );
+        let mut merged = table_span_harness(artifact);
+        merged.app.selected_node = Some("table".into());
+        merged.app.selected_nodes = vec!["table".into()];
+        let overlap = merged.app.table_merge_cells(&args(0, 0, 1, 2));
+        assert!(overlap.err().is_some_and(|message| message.contains("걸친")), "a region over a merged cell is refused");
+    }
+
+    #[test]
+    fn table_merge_refuses_a_covered_cell_with_a_different_style_and_says_why() {
+        let mut artifact = table_span_test_artifact(false);
+        table_span_table_mut(&mut artifact, "table").children[1].style.color = "#CC0000".into();
+        let mut harness = table_span_harness(artifact);
+        harness.app.selected_node = Some("table".into());
+        harness.app.selected_nodes = vec!["table".into()];
+        let args = json!({ "table_id": "table", "row": 0, "column": 0, "rows": 1, "columns": 2 });
+        harness.app.run_span_action(Ok(("table.merge_cells", args)));
+        let notice = harness.app.notices.current(std::time::Instant::now()).expect("the refusal is shown");
+        assert_eq!(notice.severity, crate::notice::Severity::Error);
+        assert!(notice.text.contains("서식"), "a covered style difference is refused with its reason: {}", notice.text);
+    }
+
+    /// The core's other hidden-cell rules are checked before the change is sent, each with its reason.
+    #[test]
+    fn table_merge_refuses_a_covered_cell_layout_height_or_interaction_target_and_bad_arguments_by_name() {
+        let args = json!({ "table_id": "table", "row": 0, "column": 0, "rows": 1, "columns": 2 });
+        let refusal = |change: &dyn Fn(&mut designllm_contracts::Node)| {
+            let mut artifact = table_span_test_artifact(false);
+            change(table_span_table_mut(&mut artifact, "table"));
+            let mut harness = table_span_harness(artifact);
+            harness.app.table_merge_cells(&args).err().unwrap_or_default()
+        };
+        let padded = refusal(&|table| table.children[1].layout.as_mut().unwrap().padding = 9525);
+        assert!(padded.contains("배치"), "TABLE_SPAN_HIDDEN_LAYOUT: {padded}");
+        let taller = refusal(&|table| table.children[1].bounds.height += 9525);
+        assert!(taller.contains("높이"), "TABLE_SPAN_HIDDEN_GEOMETRY: {taller}");
+        let targeted = refusal(&|table| {
+            let covered = table.children[1].id.clone();
+            table.children[0].interactions.push(designllm_contracts::Interaction::ToggleVisibility { node_id: covered });
+        });
+        assert!(targeted.contains("상호작용"), "TABLE_SPAN_INTERACTION_TARGET: {targeted}");
+
+        let mut harness = table_span_harness(table_span_test_artifact(false));
+        let negative = harness.app.table_merge_cells(&json!({ "table_id": "table", "row": -1, "column": 0, "rows": 1, "columns": 2 }));
+        assert_eq!(negative.err().as_deref(), Some("row는 0 이상의 정수여야 합니다"));
+        let fraction = harness.app.table_merge_cells(&json!({ "table_id": "table", "row": 0, "column": 0, "rows": 1.5, "columns": 2 }));
+        assert_eq!(fraction.err().as_deref(), Some("rows는 1 이상의 정수여야 합니다"));
+        let missing = harness.app.table_unmerge_cell(&json!({ "table_id": "table", "row": 0 }));
+        assert_eq!(missing.err().as_deref(), Some("column 값을 지정하세요"));
+    }
+
+    #[test]
     fn canvas_table_span_planner_rejects_covered_cells_locks_and_stale_context() {
         use designllm_contracts::CanvasTableSpan;
 
@@ -2759,9 +2830,16 @@ mod ui_channel_tests {
         let change = requests.iter().find(|request| request.1 == "changes.apply").expect("the merge button sends a local ChangeSet");
         assert_eq!(change.2["base_revision"], 1);
         assert_eq!(change.2["allowed_intents"], json!(["content"]));
-        assert_eq!(change.2["operations"][0]["op"], "set_canvas_table_structure");
-        assert_eq!(change.2["operations"][0]["table_id"], "table");
-        assert_eq!(change.2["operations"][0]["table"]["cell_spans"]["c11"], json!({ "row_span": 1, "column_span": 2 }));
+        // The covered text moves to the anchor first, then the covered cell is emptied, then the structure change (one change).
+        assert_eq!(change.2["operations"][0]["op"], "set_text");
+        assert_eq!(change.2["operations"][0]["node_id"], "c11");
+        assert_eq!(change.2["operations"][0]["text"], "visible anchor text\ncovered plain text");
+        assert_eq!(change.2["operations"][1]["op"], "set_text");
+        assert_eq!(change.2["operations"][1]["node_id"], "c12");
+        assert_eq!(change.2["operations"][1]["text"], "");
+        let structure = change.2["operations"].as_array().unwrap().iter().find(|op| op["op"] == "set_canvas_table_structure").expect("the structure change is in the same ChangeSet");
+        assert_eq!(structure["table_id"], "table");
+        assert_eq!(structure["table"]["cell_spans"]["c11"], json!({ "row_span": 1, "column_span": 2 }));
         assert!(requests.iter().all(|request| !request.1.starts_with("ui.command.")), "the local inspector does not dispatch an MCP/UI command");
         let ArtifactBody::Canvas(document) = &harness.app.artifact.as_ref().unwrap().body else { panic!("Canvas body") };
         assert_eq!(document.pages[0].nodes[0].children[0].text, "visible anchor text");
@@ -2952,7 +3030,6 @@ mod ui_channel_tests {
     fn canvas_table_merge_refusal_is_visible_and_preserves_covered_data() {
         let mut artifact = table_span_test_artifact(false);
         table_span_table_mut(&mut artifact, "table").children[1].text = "keep covered text".into();
-        table_span_table_mut(&mut artifact, "table").children[1].style.color = "#CC0000".into();
         let mut harness = table_span_harness(artifact);
         harness.app.selected_node = Some("c11".into());
         harness.app.selected_nodes = vec!["c11".into(), "c12".into()];
@@ -2963,7 +3040,8 @@ mod ui_channel_tests {
         let _ = draw_properties_offscreen(&mut harness, click_at(position));
         let requests = harness.sent();
         let change = requests.iter().find(|request| request.1 == "changes.apply").expect("the merge request reaches the backend");
-        assert_eq!(change.2["operations"][0]["table"]["cell_spans"]["c11"], json!({ "row_span": 1, "column_span": 2 }));
+        let structure = change.2["operations"].as_array().unwrap().iter().find(|op| op["op"] == "set_canvas_table_structure").expect("the structure change");
+        assert_eq!(structure["table"]["cell_spans"]["c11"], json!({ "row_span": 1, "column_span": 2 }));
 
         let mut refusal = DltError::new(ErrorCode::InvalidArgument, "covered cell content cannot be hidden");
         refusal.affected_ids.push("c12".into());
@@ -2979,7 +3057,7 @@ mod ui_channel_tests {
         assert!(harness.app.refusal.is_some(), "the refusal callout remains attached to the selected target");
         let ArtifactBody::Canvas(document) = &harness.app.artifact.as_ref().unwrap().body else { panic!("Canvas body") };
         assert_eq!(document.pages[0].nodes[0].children[1].text, "keep covered text", "a refused structural edit leaves covered data untouched");
-        assert_eq!(document.pages[0].nodes[0].children[1].style.color, "#CC0000", "a refused merge preserves the covered cell style");
+        assert_eq!(document.pages[0].nodes[0].children[1].style, document.pages[0].nodes[0].children[0].style, "a refused merge preserves the covered cell style");
         assert_eq!(harness.app.selected_nodes, vec!["c11".to_owned(), "c12".to_owned()], "a refusal leaves the user's selection available to fix");
         assert!(document.pages[0].nodes[0].ext.table.as_ref().unwrap().cell_spans.is_empty());
     }

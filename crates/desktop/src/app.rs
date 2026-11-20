@@ -60,6 +60,13 @@ mod tools;
 mod video_insert;
 mod thumbs;
 mod ui_channel;
+mod ui_test_input;
+#[cfg(test)] mod ui_test_input_tests;
+pub(crate) use ui_test_input::{ui_test_mode_from_env, ui_test_scale_from_env, UiTestMode};
+/// The UI-test mode, window visibility and dialog refusal of a launch (`smoke`: a smoke capture).
+pub(crate) fn ui_test_launch_mode(smoke: bool) -> (Option<UiTestMode>, bool, bool) {
+    ui_test_input::launch_mode(smoke, std::env::var(ui_test_input::UI_TEST_INPUT_ENV).ok().as_deref())
+}
 mod runner_models;
 mod figure_ai_attach;
 mod figure_close;
@@ -77,6 +84,7 @@ pub(crate) use host_link::HostStarter;
 mod image_edit;
 mod inline_cell_nav;
 mod inline_text;
+mod nudge_keys;
 mod jobs;
 mod messages;
 mod operation_commands;
@@ -87,6 +95,7 @@ mod replies;
 mod save_export;
 mod smoke;
 mod state;
+mod table_merge;
 mod view_fetch;
 mod web_preview;
 mod web_mapping;
@@ -192,6 +201,8 @@ pub struct DesktopApp {
     held_refusal_id: Option<String>,
     ui: ui_channel::UiChannel,
     run_context: Option<ui_channel::RunContext>,
+    /// The synthetic input of a window started for UI tests (task 69); None in every other window.
+    ui_test: Option<ui_test_input::UiTestInput>,
     layer_rename: Option<sidebar::LayerRename>,
     node_clipboard: Option<NodeClipboard>,
     style_clipboard: Option<StylePatch>,
@@ -260,6 +271,7 @@ pub struct DesktopApp {
     selected_nodes: Vec<String>,
     covered_table_text_selection: Option<CoveredTableTextSelection>,
     cell_nav: inline_cell_nav::CellNav,
+    table_merge: table_merge::TableMergeState,
     selected_board_memo: Option<String>,
     board_memo_editor: Option<BoardMemoEditor>,
     board_memo_mutation: Option<BoardMemoMutation>,
@@ -274,6 +286,8 @@ pub struct DesktopApp {
     text_target: Option<TextTarget>,
     text_draft: String,
     text_editor_focused: bool,
+    /// The arrow keys' presses not sent yet and the locked selection they told about (`nudge_keys`).
+    nudge: nudge_keys::NudgeKeys,
     inline_text_edit: Option<InlineTextEdit>,
     next_text_session_id: u64,
     text_editor_id: Id,
@@ -436,6 +450,7 @@ impl DesktopApp {
             held_refusal_id: None,
             ui: ui_channel::UiChannel::default(),
             run_context: None,
+            ui_test: None,
             layer_rename: None,
             node_clipboard: None,
             style_clipboard: None,
@@ -490,6 +505,7 @@ impl DesktopApp {
             selected_nodes: Vec::new(),
             covered_table_text_selection: None,
             cell_nav: Default::default(),
+            table_merge: Default::default(),
             selected_board_memo: None,
             board_memo_editor: None,
             board_memo_mutation: None,
@@ -502,6 +518,7 @@ impl DesktopApp {
             text_target: None,
             text_draft: String::new(),
             text_editor_focused: false,
+            nudge: nudge_keys::NudgeKeys::default(),
             inline_text_edit: None,
             next_text_session_id: 1,
             text_editor_id: Id::new("document-text-editor"),
@@ -600,6 +617,12 @@ impl DesktopApp {
             return None;
         }
         ui_channel::mark_agent_path(self.run_context.as_ref(), method, &mut params);
+        // A UI-test window starts no model run but the mock runtime (task 69 r3), whoever asked for it.
+        if let Some(reason) = self.ui_test_run_refusal(method, &params) {
+            self.refuse_ui_test_run(reason);
+            return None;
+        }
+        ui_test_input::pin_ui_test_request(self.ui_test.as_ref(), method, &mut params);
         let mut image_replacement_cancelled = false;
         let replacement = self.pending_image_replacement.as_ref()
             .filter(|pending| self.active.as_ref().is_some_and(|active| active.id == pending.intent.artifact_id))
@@ -795,6 +818,10 @@ impl DesktopApp {
         if self.host_lost() {
             return None;
         }
+        if self.ui_test.is_some() && !request.prompt.trim().is_empty() && request.runtime != "mock" {
+            self.refuse_ui_test_run(ui_test_input::REAL_RUN_REFUSED);
+            return None;
+        }
         let ticket = self.next_ticket;
         self.next_ticket += 1;
         self.notices.clear_transient();
@@ -834,6 +861,8 @@ impl eframe::App for DesktopApp {
     }
 
     fn raw_input_hook(&mut self, ctx: &Context, input: &mut egui::RawInput) {
+        // A UI-test run's events join the frame's input before anything reads it, as a person's would (task 69).
+        self.inject_ui_test_input(ctx, input);
         let board_selection_click = self.board_rect.is_some_and(|board_rect| input.events.iter().any(|event| matches!(event,
             egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, .. } if board_rect.contains(*pos)
         )));
@@ -967,6 +996,7 @@ impl eframe::App for DesktopApp {
         self.advance_inline_text_close_cleanup(ctx);
         self.poll_events();
         self.apply_pending_page_reorder_selection();
+        self.run_span_after_edit();
         if self.inline_text_edit.is_some() {
             self.screen = Screen::Editor;
             self.renew_inline_text_target_if_needed();
@@ -1014,6 +1044,7 @@ impl eframe::App for DesktopApp {
             self.publish_ui_if_due();
         }
         self.ui_screenshot_events(ctx);
+        self.ui_test_frame_end(ctx);
         ctx.request_repaint_after(Duration::from_secs(1));
         self.smoke_step(ctx);
 

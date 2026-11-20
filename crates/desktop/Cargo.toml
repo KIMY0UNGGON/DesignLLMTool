@@ -30,7 +30,8 @@ unicode-segmentation.workspace = true
 # Windows file dialogs (already in Cargo.lock through web-preview).
 # Win32_UI_WindowsAndMessaging: the tests count this process's visible windows (no dialog may open in a headless run).
 # Win32_System_Pipes lets the UI poll its preview child's READY without blocking the window.
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Pipes", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_System_Time", "Win32_UI_WindowsAndMessaging"] }
+# Win32_UI_Input_KeyboardAndMouse: the system double-click time a layer row's double click follows (GetDoubleClickTime).
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Pipes", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_System_Time", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
 # The packaged GUI regression opens its window on a private Windows desktop.

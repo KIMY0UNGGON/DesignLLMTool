@@ -53,7 +53,9 @@ fn distinct_ids(ids: &[String]) -> Vec<String> {
 
 impl DesktopApp {
     pub(super) fn poll_events(&mut self) {
-        if self.host_lost() || Instant::now().duration_since(self.last_event_poll) < Duration::from_secs(2) {
+        // A UI-test window polls more often, so that an agent's input runs reach it soon (task 69).
+        let interval = if self.ui_test.is_some() { super::ui_test_input::TEST_EVENT_POLL } else { Duration::from_secs(2) };
+        if self.host_lost() || Instant::now().duration_since(self.last_event_poll) < interval {
             return;
         }
         self.last_event_poll = Instant::now();

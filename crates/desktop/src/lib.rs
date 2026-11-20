@@ -15,6 +15,7 @@ mod smoke_window;
 mod rpc;
 mod strings;
 mod theme;
+mod ui_record;
 mod widgets;
 
 use std::path::Path;
@@ -27,6 +28,12 @@ static HOST_STARTER: std::sync::OnceLock<fn(&Path) -> DltResult<()>> = std::sync
 
 pub fn set_host_starter(starter: fn(&Path) -> DltResult<()>) {
     let _ = HOST_STARTER.set(starter);
+}
+
+/// Whether this launch turns the UI-test input on (`DESIGNLLM_UI_TEST_INPUT`, task 69). The launcher gives the host a mock
+/// agent only then.
+pub fn ui_test_mode_enabled() -> bool {
+    app::ui_test_mode_from_env().is_some()
 }
 
 pub fn run(workspace: &Path) -> DltResult<()> {
@@ -117,14 +124,16 @@ fn run_app(workspace: &Path, smoke_output: Option<&Path>) -> DltResult<()> {
     });
     let smoke_result = smoke_path.as_ref().map(|_| Arc::new(Mutex::new(None)));
     let result_for_app = smoke_result.clone();
-    let title = "DesignLLMTool";
-    let visible = smoke_path.is_none();
+    // Task 69: synthetic input for UI tests, off unless the launch asks for it (docs/UI_CHANNEL.md "시험용 입력").
+    let (ui_test, visible, headless) = app::ui_test_launch_mode(smoke_path.is_some());
+    let ui_test_scale = ui_test.and_then(|_| app::ui_test_scale_from_env());
+    let title = if ui_test.is_some() { "DesignLLMTool [UI 시험 입력]" } else { "DesignLLMTool" };
     // No visible main window: every native dialog and preview window is refused (`dialogs::headless`).
-    dialogs::set_headless(!visible);
-    // Smoke captures only: `DESIGNLLM_SMOKE_SIZE=800x560` sets the window's logical size.
-    let size = smoke_path
-        .as_ref()
-        .and_then(|_| std::env::var("DESIGNLLM_SMOKE_SIZE").ok())
+    dialogs::set_headless(headless);
+    // Smoke captures and off-screen UI tests only: `DESIGNLLM_SMOKE_SIZE=800x560` sets the window's logical size.
+    let size = (!visible)
+        .then(|| std::env::var("DESIGNLLM_SMOKE_SIZE").ok())
+        .flatten()
         .and_then(|value| {
             let (width, height) = value.split_once('x')?;
             Some([width.trim().parse::<f32>().ok()?, height.trim().parse::<f32>().ok()?])
@@ -143,7 +152,7 @@ fn run_app(workspace: &Path, smoke_output: Option<&Path>) -> DltResult<()> {
     }
     let options = renderer::native_options(viewport);
     let result = eframe::run_native(
-        title,
+        "DesignLLMTool",
         options,
         Box::new(move |cc| {
             theme::install(&cc.egui_ctx);
@@ -154,10 +163,15 @@ fn run_app(workspace: &Path, smoke_output: Option<&Path>) -> DltResult<()> {
             if std::env::var("DESIGNLLM_SMOKE_THEME").as_deref() == Ok("dark") {
                 cc.egui_ctx.set_theme(eframe::egui::Theme::Dark);
             }
+            // U02 (task 69): a UI-test window at a forced zoom (`DESIGNLLM_UI_TEST_SCALE`), egui's own scaling path.
+            if let Some(scale) = ui_test_scale {
+                cc.egui_ctx.set_zoom_factor(scale);
+            }
             Ok(Box::new(
                 app::DesktopApp::new(worker, workspace_name.clone(), smoke_path, result_for_app)
                     .with_workspace(&workspace_path)
-                    .with_host_starter(host_starter.clone()),
+                    .with_host_starter(host_starter.clone())
+                    .with_ui_test_input(ui_test),
             ))
         }),
     );

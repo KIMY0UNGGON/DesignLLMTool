@@ -248,6 +248,8 @@ impl DesktopApp {
             "canvas.table.remove_column" => self.canvas_table_remove_column(args),
             "canvas.table.set_header" => self.canvas_table_set_header(args),
             "canvas.table.set_column_widths" => self.canvas_table_set_column_widths(args),
+            "table.merge_cells" => self.table_merge_cells(args),
+            "table.unmerge_cell" => self.table_unmerge_cell(args),
             "canvas.guides.set" => self.canvas_guides_set(args),
             "canvas.guides.clear" => self.canvas_guides_clear(args),
             "view.toggle_guides" => {
@@ -1059,7 +1061,7 @@ impl DesktopApp {
         Ok(())
     }
 
-    fn ensure_canvas_table_edit_supported(&self) -> Result<(), String> {
+    pub(super) fn ensure_canvas_table_edit_supported(&self) -> Result<(), String> {
         self.ensure_canvas_table_context_current()?;
         if !self.feature_edit_supported(Feature::Tables) {
             return Err("현재 작업물은 표 구조를 편집할 수 없습니다".into());
@@ -1130,7 +1132,7 @@ impl DesktopApp {
         Ok(())
     }
 
-    fn canvas_table_target<'a>(&'a self, args: &Value) -> Result<(String, String, &'a Node, CanvasTable), String> {
+    pub(super) fn canvas_table_target<'a>(&'a self, args: &Value) -> Result<(String, String, &'a Node, CanvasTable), String> {
         self.ensure_canvas_table_edit_supported()?;
         let table_id = text(args, "table_id").filter(|id| !id.trim().is_empty()).ok_or("표를 지정하세요")?;
         let Some(artifact) = self.artifact.as_ref().filter(|artifact| artifact.kind == ArtifactKind::Canvas) else {
@@ -1153,7 +1155,7 @@ impl DesktopApp {
         Ok((table_id.to_owned(), page.id.clone(), node, table))
     }
 
-    fn apply_canvas_table_structure(
+    pub(super) fn apply_canvas_table_structure(
         &mut self,
         table_id: String,
         expected: CanvasTable,

@@ -404,9 +404,13 @@ impl DesktopApp {
     }
 
     /// Moves every selected node by (`dx`, `dy`) EMU (`edit.nudge` with several nodes selected), as one change. Each frame is
-    /// relative to its own parent, so nodes under different parents or on different pages move by the same offset.
+    /// relative to its own parent, so nodes under different parents or on different pages move by the same offset. Locked nodes
+    /// stay where they are, as a drag of the selection leaves them (task 68 item 15).
     pub(super) fn move_selected_by(&mut self, dx: i64, dy: i64) -> Result<(), String> {
-        let nodes: Vec<Node> = self.selected_located()?.into_iter().map(|(node, _, _)| node).collect();
+        let nodes: Vec<Node> = self.selected_located()?.into_iter().map(|(node, _, _)| node).filter(|node| !is_locked(node)).collect();
+        if nodes.is_empty() {
+            return Err(super::nudge_keys::LOCKED_NUDGE.into());
+        }
         let before: Vec<ModelRect> = nodes.iter().map(|node| node.bounds).collect();
         let after: Vec<ModelRect> = before.iter().map(|rect| ModelRect { x: rect.x + dx, y: rect.y + dy, ..*rect }).collect();
         self.geometry_change(&nodes, &before, &after)

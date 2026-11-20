@@ -450,6 +450,10 @@ impl DesktopApp {
     }
 
     fn spawn_video_source_inspection(&mut self, token: &str) -> Result<(), String> {
+        if let Some(reason) = self.ui_test_path_refusal(self.video_insert.as_ref().map(|pending| pending.source_path.as_path())) {
+            self.video_insert = None;
+            return Err(reason);
+        }
         let Some(pending) = self.video_insert.as_mut().filter(|pending| {
             pending.intent.token == token && pending.stage == VideoInsertStage::InspectingSource
         }) else {
@@ -486,6 +490,10 @@ impl DesktopApp {
     }
 
     fn spawn_video_poster_extraction(&mut self, token: &str) -> Result<(), String> {
+        if let Some(reason) = self.ui_test_path_refusal(self.video_insert.as_ref().map(|pending| pending.source_path.as_path())) {
+            self.video_insert = None;
+            return Err(reason);
+        }
         let Some(pending) = self.video_insert.as_mut().filter(|pending| {
             pending.intent.token == token && pending.stage == VideoInsertStage::ExtractingPoster
         }) else {

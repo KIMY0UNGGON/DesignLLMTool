@@ -519,7 +519,9 @@ impl DesktopApp {
                     } else {
                         "예약 만료를 기다리며 닫기"
                     };
-                    if ui.button(close_label).clicked() { close_after_release_failure = true; }
+                    let close = ui.button(close_label);
+                    crate::ui_record::note_human_only(ui, close_label, &close);
+                    if close.clicked() { close_after_release_failure = true; }
                 });
             } else {
                 // A figure job that runs on its own is not discarded by closing: the button then only closes.
@@ -527,7 +529,9 @@ impl DesktopApp {
                 if let Some(note) = self.held_drop_note(drafts_unsaved) { ui.label(note); }
                 ui.horizontal(|ui| {
                     if ui.button("계속 작업").clicked() { keep_working = true; }
-                    if ui.button(discard_label).clicked() {
+                    let discard = ui.button(discard_label);
+                    crate::ui_record::note_human_only(ui, discard_label, &discard);
+                    if discard.clicked() {
                         if drafts_unsaved { close_without_saving = true; } else { discard_and_close = true; }
                     }
                 });

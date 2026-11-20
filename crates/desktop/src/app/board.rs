@@ -511,6 +511,13 @@ impl DesktopApp {
             let page_rect = at.and_then(|(page, _)| slots.iter().find(|slot| slot.page_index == page)).map(|slot| board::to_screen(slot.world, origin, view.zoom));
             self.click_ends_inline_cell_edit(ctx, at.zip(page_rect).map(|((page, pos), rect)| (page, pos, rect)), ctx.pixels_per_point());
         }
+        // A right click on a Canvas table opens its 셀 병합 / 병합 해제 menu (68 item 14). The click is read from the input (the
+        // node regions over the page take it from the board's own response); the widget it landed on says what was pressed.
+        let right_click = ctx.input(|input| input.pointer.secondary_clicked().then(|| input.pointer.interact_pos()).flatten())
+            .filter(|_| ui.rect_contains_pointer(board_rect))
+            .and_then(|pos| page_at(&slots, origin, view.zoom, pos).map(|page| (page, pos)))
+            .and_then(|(page, pos)| slots.iter().find(|slot| slot.page_index == page).map(|slot| (page, pos, board::to_screen(slot.world, origin, view.zoom))));
+        self.table_cell_context_menu(ctx, &response, right_click);
         self.region_clicked = false;
         if self.inline_text_edit.is_some() {
             self.draw_inline_text_conflict(ctx, ui);

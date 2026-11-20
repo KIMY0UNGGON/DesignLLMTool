@@ -19,7 +19,7 @@ const MAX_STATE_BYTES: usize = 256 * 1024;
 const MAX_REGISTRY_BYTES: usize = 1024 * 1024;
 const MAX_COMMANDS: usize = 2_000;
 const MAX_ARGS_BYTES: usize = 256 * 1024;
-const MAX_RESULT_BYTES: usize = 1024 * 1024;
+const MAX_RESULT_BYTES: usize = UI_RESULT_MAX_BYTES;
 const MAX_PENDING_PER_VIEW: usize = 32;
 const MAX_LIVE_VIEWS: usize = 16;
 const MAX_FINISHED_RUNS: usize = 256;
@@ -112,6 +112,14 @@ fn check_registry(commands: &[UiCommand]) -> DltResult<()> {
         if let Some(s) = &c.shortcut { check_text(&format!("shortcut of {}", c.id), s, false)?; }
         if !c.args_schema.is_object() { return Err(invalid(format!("args_schema of {} must be a JSON object (a JSON Schema)", c.id))); }
         if c.id == UI_SCREENSHOT_COMMAND && c.permission != UiPermission::Read { return Err(invalid(format!("{UI_SCREENSHOT_COMMAND} is a read command"))); }
+        // Synthetic input can do whatever a person at the window can: the strictest class and every intent, so a run must
+        // grant both (docs/UI_CHANNEL.md "시험용 입력").
+        if c.id == UI_INPUT_COMMAND && (c.permission != UiPermission::AgentStart || c.intents != [Intent::Content, Intent::Design, Intent::Data].into_iter().collect()) {
+            return Err(invalid(format!("{UI_INPUT_COMMAND} is an agent_start command that changes content, design and data")));
+        }
+        if c.id == UI_LAYOUT_COMMAND && (c.permission != UiPermission::Read || !c.intents.is_empty()) {
+            return Err(invalid(format!("{UI_LAYOUT_COMMAND} is a read command")));
+        }
     }
     let size = json_len(&commands);
     if size > MAX_REGISTRY_BYTES { return Err(invalid(format!("the command registry is {size} bytes; at most {MAX_REGISTRY_BYTES}"))); }
