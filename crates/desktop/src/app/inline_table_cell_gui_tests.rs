@@ -13,6 +13,7 @@ use eframe::egui::{self, Event, ImeEvent, Key, Modifiers, Pos2, Vec2};
 use serde_json::json;
 
 use super::test_support::{primary_button, Host, Window};
+use crate::grapheme::TextInputEdit;
 use crate::rpc::{RpcPayload, RpcReply, Work};
 
 /// A canvas with a new 2 × 2 table made by the desktop's table command, and a window that shows it.
@@ -541,6 +542,287 @@ fn table_cell_ime_composition_while_the_render_is_on_its_way_commits_once() {
     app.frame(&mut window, &mut host, vec![key(Key::Escape)]);
     app.idle(&mut window, &mut host, 60);
     assert_eq!(cell_text(&mut host, &canvas, &cell), "a한", "the text and the committed syllable are stored once");
+}
+
+/// 68c: a composition whose `Enabled` the cell's editor did not see (only `Preedit` and `Commit` reach it, in every cell
+/// after the first) opens at its first preedit: no conflict, no lost or doubled text.
+#[test]
+fn table_cell_a_composition_without_enabled_in_each_next_cell_commits_without_a_conflict() {
+    for slow in [false, true] {
+        let mut host = Host::start();
+        let (canvas, mut window, table) = new_table(&mut host);
+        let mut app = if slow { Driver::slow() } else { Driver::at_once() };
+        app.idle(&mut window, &mut host, if slow { 20 } else { 1 });
+        let cells: Vec<String> = table.rows.iter().flat_map(|row| row.cell_ids.clone()).collect();
+
+        let at = centre(&window, &cells[0]);
+        app.click(&mut window, &mut host, at);
+        idle_until(&mut app, &mut window, &mut host, 30, &format!("slow {slow}: the click opens the first cell"), |window| editing(window).as_deref() == Some(cells[0].as_str()));
+        app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Enabled), Event::Ime(ImeEvent::Preedit("ㅎ".into()))]);
+        app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Preedit("한".into()))]);
+        app.keys(&mut window, &mut host, vec![Event::Ime(ImeEvent::Commit("한".into()))]);
+        assert_eq!(conflict(&window), None, "slow {slow}: the first commit: notice {:?}", window.message());
+
+        let syllables = ["글", "자", "다"];
+        for (index, syllable) in syllables.into_iter().enumerate() {
+            app.keys(&mut window, &mut host, vec![key(Key::Tab)]);
+            let next = cells[index + 1].as_str();
+            idle_until(&mut app, &mut window, &mut host, 120, &format!("slow {slow}: Tab moves to cell {}", index + 1), |window| editing(window).as_deref() == Some(next));
+            // No `Enabled` here.
+            app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Preedit("ㅎ".into()))]);
+            app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Preedit(syllable.into()))]);
+            app.keys(&mut window, &mut host, vec![Event::Ime(ImeEvent::Commit(syllable.into()))]);
+            assert_eq!(conflict(&window), None, "slow {slow}: the commit in cell {}: notice {:?}", index + 1, window.message());
+        }
+        app.keys(&mut window, &mut host, vec![key(Key::Escape)]);
+        idle_until(&mut app, &mut window, &mut host, 200, &format!("slow {slow}: Escape ends the edit"), |window| window.app.inline_text_edit.is_none());
+        let stored: Vec<String> = cells.iter().map(|cell| cell_text(&mut host, &canvas, cell)).collect();
+        assert_eq!(stored, ["한", "글", "자", "다"], "slow {slow}: each cell keeps its committed syllable once");
+    }
+}
+
+/// 68c: a commit of a composition this edit did not open (neither its open one nor one opened this frame) is kept as a
+/// conflict and applied to nothing.
+#[test]
+fn an_ime_commit_begun_in_another_session_is_kept_as_a_conflict_and_applies_nothing() {
+    let mut host = Host::start();
+    let (canvas, mut window, table) = new_table(&mut host);
+    let mut app = Driver::at_once();
+    let cell = table.rows[0].cell_ids[0].clone();
+    let at = centre(&window, &cell);
+    app.click(&mut window, &mut host, at);
+    assert_eq!(editing(&window).as_deref(), Some(cell.as_str()), "the click opens the cell; notice: {:?}", window.message());
+    let stale = TextInputEdit {
+        request_id: String::new(), range: 0..0, paragraph_index: 0, paragraph_range: Some(0..0), caret_after: 1,
+        paragraph_after: 0, caret_after_in_paragraph: 1, text: "x".into(), ime_commit: true, ime_generation: 7, after_text: None,
+    };
+    window.app.queue_inline_text_edits(vec![stale], 0..0);
+    assert_eq!(conflict(&window).as_deref(), Some("IME 조합 상태가 바뀌었습니다. 입력을 유지했습니다"), "the stale commit is refused");
+    app.idle(&mut window, &mut host, 4);
+    assert_eq!(cell_text(&mut host, &canvas, &cell), "", "the stale commit is not applied");
+}
+
+/// Two empty text nodes, `text-a` and `text-b`, under the table, drawn.
+fn add_two_texts(host: &mut Host, window: &mut Window, app: &mut Driver, canvas: &str) {
+    let page_id = match &host.artifact(canvas).body { ArtifactBody::Canvas(document) => document.pages[0].id.clone(), _ => unreachable!() };
+    for (id, y) in [("text-a", 3_000_000), ("text-b", 4_000_000)] {
+        let node: Node = serde_json::from_value(json!({
+            "id": id, "kind": "text", "bounds": { "x": 100_000, "y": y, "width": 900_000, "height": 600_000 },
+        })).expect("a text node");
+        host.apply(canvas, vec![Operation::AddNode { page_id: page_id.clone(), parent_id: None, node }], [Intent::Content, Intent::Design].into_iter().collect())
+            .expect("the text node is added");
+    }
+    window.app.refresh_active();
+    window.settle(host);
+    window.draw(host, 1.0);
+    app.idle(window, host, 2);
+}
+
+/// Selects `node` the way the layer list does, then Enter opens its text.
+fn open_text(window: &mut Window, app: &mut Driver, host: &mut Host, node: &str) {
+    window.app.set_selected_ids(vec![node.to_owned()]);
+    window.app.set_selection(designllm_contracts::Selection { node_ids: vec![node.to_owned()], text_range: None });
+    app.idle(window, host, 2);
+    app.keys(window, host, vec![key(Key::Enter)]);
+}
+
+/// 68c: a text node edited after another, its composition's `Enabled` not seen by the editor.
+#[test]
+fn text_node_ime_after_another_edit_commits_without_a_conflict_and_without_enabled() {
+    let mut host = Host::start();
+    let (canvas, mut window, _) = new_table(&mut host);
+    let mut app = Driver::at_once();
+    add_two_texts(&mut host, &mut window, &mut app, &canvas);
+
+    open_text(&mut window, &mut app, &mut host, "text-a");
+    idle_until(&mut app, &mut window, &mut host, 30, "Enter opens the first text", |window| editing(window).as_deref() == Some("text-a"));
+    app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Enabled), Event::Ime(ImeEvent::Preedit("ㅎ".into()))]);
+    app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Preedit("한".into()))]);
+    app.keys(&mut window, &mut host, vec![Event::Ime(ImeEvent::Commit("한".into()))]);
+    assert_eq!(conflict(&window), None, "the first commit: notice {:?}", window.message());
+    app.keys(&mut window, &mut host, vec![key(Key::Escape)]);
+    idle_until(&mut app, &mut window, &mut host, 100, "Escape ends the first text", |window| window.app.inline_text_edit.is_none());
+
+    open_text(&mut window, &mut app, &mut host, "text-b");
+    idle_until(&mut app, &mut window, &mut host, 30, "Enter opens the second text", |window| editing(window).as_deref() == Some("text-b"));
+    // No `Enabled`.
+    app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Preedit("ㅎ".into()))]);
+    app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Preedit("글".into()))]);
+    app.keys(&mut window, &mut host, vec![Event::Ime(ImeEvent::Commit("글".into()))]);
+    assert_eq!(conflict(&window), None, "the commit in the second text: notice {:?}", window.message());
+    app.keys(&mut window, &mut host, vec![key(Key::Escape)]);
+    idle_until(&mut app, &mut window, &mut host, 100, "Escape ends the second text", |window| window.app.inline_text_edit.is_none());
+    assert_eq!(cell_text(&mut host, &canvas, "text-a"), "한", "the first text keeps its syllable once");
+    assert_eq!(cell_text(&mut host, &canvas, "text-b"), "글", "the second text keeps its syllable once");
+}
+
+/// The egui events a Windows Korean IME gives the window: the window messages as winit 0.30.13 sends them
+/// (`platform_impl/windows/event_loop.rs`, `WM_IME_*`) and egui-winit 0.33.3 turns them into egui events. Its
+/// `Preedit("", None)` is egui's `Disabled`, its `Commit` is followed by `Disabled`, and its first `Preedit` after a
+/// `Disabled` is preceded by `Enabled`. Every composition has its `Enabled`.
+mod windows_ime {
+    use eframe::egui::{Event, ImeEvent};
+
+    fn ime(event: ImeEvent) -> Event {
+        Event::Ime(event)
+    }
+
+    /// The frames of typing `syllables` (each the preedits of one syllable, its last the syllable), the last one still
+    /// composed. `restarted`: the IME ends the composition between syllables and starts the next one.
+    pub(super) fn typing(syllables: &[&[&str]], restarted: bool) -> Vec<Vec<Event>> {
+        let mut frames = Vec::new();
+        let mut done: Option<&str> = None;
+        for syllable in syllables {
+            let (first, rest) = syllable.split_first().expect("a syllable has a preedit");
+            frames.push(match done {
+                // WM_IME_STARTCOMPOSITION, WM_IME_COMPOSITION (GCS_COMPSTR).
+                None => vec![ime(ImeEvent::Enabled), ime(ImeEvent::Preedit((*first).into()))],
+                // One WM_IME_COMPOSITION (GCS_RESULTSTR | GCS_COMPSTR); restarted: WM_IME_COMPOSITION (GCS_RESULTSTR),
+                // WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_IME_COMPOSITION (GCS_COMPSTR).
+                Some(done) => {
+                    let mut frame = vec![ime(ImeEvent::Disabled), ime(ImeEvent::Commit(done.into())), ime(ImeEvent::Disabled)];
+                    if restarted {
+                        frame.push(ime(ImeEvent::Disabled));
+                    }
+                    frame.extend([ime(ImeEvent::Enabled), ime(ImeEvent::Preedit((*first).into()))]);
+                    frame
+                }
+            });
+            frames.extend(rest.iter().map(|preedit| vec![ime(ImeEvent::Preedit((*preedit).into()))]));
+            done = syllable.last().copied();
+        }
+        frames
+    }
+
+    /// A key that ends the composition of `syllable` (Tab, Escape, an arrow): WM_IME_COMPOSITION (GCS_RESULTSTR), then
+    /// WM_IME_ENDCOMPOSITION.
+    pub(super) fn end(syllable: &str) -> Vec<Event> {
+        vec![ime(ImeEvent::Disabled), ime(ImeEvent::Commit(syllable.into())), ime(ImeEvent::Disabled), ime(ImeEvent::Disabled)]
+    }
+}
+
+/// Plays `frames`, one frame each, and checks after each that the edit shows no conflict.
+fn play(app: &mut Driver, window: &mut Window, host: &mut Host, frames: Vec<Vec<Event>>, what: &str) {
+    for (index, events) in frames.into_iter().enumerate() {
+        app.frame(window, host, events);
+        assert_eq!(conflict(window), None, "{what}, frame {index}: notice {:?}", window.message());
+    }
+}
+
+/// Idles until `done` holds, checking every frame that no edit shows a conflict.
+fn idle_until(app: &mut Driver, window: &mut Window, host: &mut Host, frames: u32, what: &str, done: impl Fn(&Window) -> bool) {
+    for _ in 0..frames {
+        if done(window) {
+            return;
+        }
+        app.frame(window, host, Vec::new());
+        assert_eq!(conflict(window), None, "{what}: notice {:?}", window.message());
+    }
+    assert!(done(window), "{what}: not done after {frames} frames; editing {:?}, notice {:?}", editing(window), window.message());
+}
+
+/// 68c: typing Korean into the cells of a table as Windows delivers it: each syllable's commit comes in one frame with the
+/// next syllable's `Enabled` and preedit, and the commit of the last syllable in one frame with the Tab (or Escape) that
+/// ends it. One cell gets its whole typing in one frame (the window busy while the render was on its way). No conflict at
+/// any frame, every syllable stored once, and Tab moves on.
+#[test]
+fn table_cell_windows_korean_ime_order_types_each_cell_and_tab_moves_on_without_a_conflict() {
+    let words: [&[&[&str]]; 4] = [&[&["ㅎ", "하", "한"], &["ㄱ", "그", "글"]], &[&["ㅈ", "자"]], &[&["ㄷ", "다"], &["ㄹ", "라"]], &[&["ㅁ", "마"]]];
+    for slow in [false, true] {
+        for restarted in [false, true] {
+            let case = format!("slow {slow}, restarted {restarted}");
+            let mut host = Host::start();
+            let (canvas, mut window, table) = new_table(&mut host);
+            let mut app = if slow { Driver::slow() } else { Driver::at_once() };
+            app.idle(&mut window, &mut host, if slow { 20 } else { 1 });
+            let cells: Vec<String> = table.rows.iter().flat_map(|row| row.cell_ids.clone()).collect();
+            let at = centre(&window, &cells[0]);
+            app.click(&mut window, &mut host, at);
+            idle_until(&mut app, &mut window, &mut host, 30, &format!("{case}: the click opens cell 0"), |window| editing(window).as_deref() == Some(cells[0].as_str()));
+
+            for (index, word) in words.iter().enumerate() {
+                let last = word.last().and_then(|syllable| syllable.last()).copied().expect("a syllable");
+                let leave = if index + 1 < words.len() { key(Key::Tab) } else { key(Key::Escape) };
+                let mut frames = windows_ime::typing(word, restarted);
+                let mut end = windows_ime::end(last);
+                end.push(leave);
+                frames.push(end);
+                // Cell 2 gets its whole typing in one frame.
+                if index == 2 {
+                    frames = vec![frames.concat()];
+                }
+                play(&mut app, &mut window, &mut host, frames, &format!("{case}: cell {index}"));
+                if index + 1 < words.len() {
+                    let next = cells[index + 1].as_str();
+                    idle_until(&mut app, &mut window, &mut host, 120, &format!("{case}: Tab after cell {index}"), |window| editing(window).as_deref() == Some(next));
+                }
+            }
+            idle_until(&mut app, &mut window, &mut host, 200, &format!("{case}: Escape ends the edit"), |window| window.app.inline_text_edit.is_none());
+            let stored: Vec<String> = cells.iter().map(|cell| cell_text(&mut host, &canvas, cell)).collect();
+            assert_eq!(stored, ["한글", "자", "다라", "마"], "{case}: each cell keeps what was typed in it, once");
+        }
+    }
+}
+
+/// 68c: one frame that holds a commit and the start of the next composition, in the orders the IME and the UI test input
+/// can give: the commit is the composition's that made it, the next composition only the later commits'. No conflict, the
+/// next preedit is shown, every syllable stored once.
+#[test]
+fn table_cell_a_commit_and_the_next_composition_in_one_frame_raise_no_conflict() {
+    let ime = Event::Ime;
+    let orders: [Vec<Event>; 3] = [
+        vec![ime(ImeEvent::Commit("한".into())), ime(ImeEvent::Preedit("ㄱ".into()))],
+        vec![ime(ImeEvent::Commit("한".into())), ime(ImeEvent::Disabled), ime(ImeEvent::Enabled), ime(ImeEvent::Preedit("ㄱ".into()))],
+        vec![ime(ImeEvent::Disabled), ime(ImeEvent::Commit("한".into())), ime(ImeEvent::Disabled), ime(ImeEvent::Enabled), ime(ImeEvent::Preedit("ㄱ".into()))],
+    ];
+    for slow in [false, true] {
+        for (order, frame) in orders.iter().enumerate() {
+            let case = format!("slow {slow}, order {order}");
+            let mut host = Host::start();
+            let (canvas, mut window, table) = new_table(&mut host);
+            let mut app = if slow { Driver::slow() } else { Driver::at_once() };
+            app.idle(&mut window, &mut host, if slow { 20 } else { 1 });
+            let cell = table.rows[0].cell_ids[0].clone();
+            let at = centre(&window, &cell);
+            app.click(&mut window, &mut host, at);
+            idle_until(&mut app, &mut window, &mut host, 30, &format!("{case}: the click opens the cell"), |window| editing(window).as_deref() == Some(cell.as_str()));
+            play(&mut app, &mut window, &mut host, vec![
+                vec![ime(ImeEvent::Enabled), ime(ImeEvent::Preedit("ㅎ".into()))],
+                vec![ime(ImeEvent::Preedit("한".into()))],
+                frame.clone(),
+            ], &case);
+            assert_eq!(window.app.text_draft, "한ㄱ", "{case}: the commit and the next preedit are shown");
+            play(&mut app, &mut window, &mut host, vec![vec![ime(ImeEvent::Preedit("글".into()))], vec![ime(ImeEvent::Commit("글".into()))]], &case);
+            app.idle(&mut window, &mut host, 2);
+            play(&mut app, &mut window, &mut host, vec![vec![key(Key::Escape)]], &case);
+            idle_until(&mut app, &mut window, &mut host, 200, &format!("{case}: Escape ends the edit"), |window| window.app.inline_text_edit.is_none());
+            assert_eq!(cell_text(&mut host, &canvas, &cell), "한글", "{case}: both syllables stored once");
+        }
+    }
+}
+
+/// 68c: a text node typed in as Windows delivers it, then a second text node: no conflict, each syllable stored once.
+#[test]
+fn text_node_windows_korean_ime_order_commits_without_a_conflict() {
+    let mut host = Host::start();
+    let (canvas, mut window, _) = new_table(&mut host);
+    let mut app = Driver::at_once();
+    add_two_texts(&mut host, &mut window, &mut app, &canvas);
+    for (node, word, stored) in [
+        ("text-a", &[&["ㅎ", "하", "한"][..], &["ㄱ", "그", "글"][..]][..], "한글"),
+        ("text-b", &[&["ㅈ", "자"][..]][..], "자"),
+    ] {
+        open_text(&mut window, &mut app, &mut host, node);
+        idle_until(&mut app, &mut window, &mut host, 30, &format!("Enter opens {node}"), |window| editing(window).as_deref() == Some(node));
+        let last = word.last().and_then(|syllable| syllable.last()).copied().expect("a syllable");
+        let mut frames = windows_ime::typing(word, false);
+        frames.push(windows_ime::end(last));
+        play(&mut app, &mut window, &mut host, frames, node);
+        app.idle(&mut window, &mut host, 2);
+        play(&mut app, &mut window, &mut host, vec![vec![key(Key::Escape)]], node);
+        idle_until(&mut app, &mut window, &mut host, 100, &format!("Escape ends {node}"), |window| window.app.inline_text_edit.is_none());
+        assert_eq!(cell_text(&mut host, &canvas, node), stored, "{node} keeps what was typed, once");
+    }
 }
 
 /// A render that never comes back: the cell shows that it waits, asks for the render again after 1.5 s, and after 5 s

@@ -169,6 +169,8 @@ pub(crate) struct UiTestInput {
     flow_alive: bool,
     /// The frame in which the window last refused a model run (`refuse_ui_test_run`).
     refused_frame: Option<u64>,
+    /// Timing of the window's requests and frames (68f), read with `ui.layout {"perf": ...}`.
+    pub(super) perf: super::perf::Perf,
 }
 
 impl UiTestInput {
@@ -267,8 +269,12 @@ fn human_only_error(message: impl Into<String>) -> DltError {
     error
 }
 
+/// A UI-test window's timing (68f, `perf.rs`): read-only, listed with `ui.input` and `ui.layout`. Not a contract command:
+/// only this window answers it.
+pub(super) const UI_PERF_COMMAND: &str = "ui.perf";
+
 pub(super) fn is_ui_test_command(id: &str) -> bool {
-    matches!(id, UI_INPUT_COMMAND | UI_LAYOUT_COMMAND)
+    matches!(id, UI_INPUT_COMMAND | UI_LAYOUT_COMMAND | UI_PERF_COMMAND)
 }
 
 fn point_rect(rect: Rect) -> UiPointRect {
@@ -426,6 +432,9 @@ fn refusal(code: ErrorCode, message: impl Into<String>) -> DltError {
 impl DesktopApp {
     pub(crate) fn with_ui_test_input(mut self, mode: Option<UiTestMode>) -> Self {
         self.ui_test = mode.map(|_| UiTestInput::default());
+        if mode.is_some() {
+            self.rpc.enable_timing();
+        }
         // The runner menu asks no CLI in a UI-test window (68-1 checks set DESIGNLLM_UI_TEST_CLI_MODELS=1): the fixed lists answer.
         if mode.is_some() && std::env::var(UI_TEST_CLI_MODELS_ENV).as_deref() != Ok("1") {
             self.runner_models = super::runner_models::RunnerModels::with_lookup(super::runner_models::fixed_lookup);
@@ -497,6 +506,16 @@ impl DesktopApp {
                 id: UI_LAYOUT_COMMAND.into(),
                 label: "화면 좌표 읽기".into(),
                 args_schema: json!({ "type": "object", "properties": {}, "additionalProperties": false }),
+                intents: BTreeSet::new(),
+                permission: UiPermission::Read,
+                enabled: true,
+                shortcut: None,
+            },
+            UiCommand {
+                id: UI_PERF_COMMAND.into(),
+                label: "시험 계측 읽기".into(),
+                // `reset`: the counts start again after this read (the only thing the command changes).
+                args_schema: json!({ "type": "object", "properties": { "reset": { "type": "boolean" } }, "additionalProperties": false }),
                 intents: BTreeSet::new(),
                 permission: UiPermission::Read,
                 enabled: true,
@@ -583,6 +602,7 @@ impl DesktopApp {
         if !next.events.is_empty() {
             // A person types into the window they look at.
             input.focused = true;
+            test.perf.input();
         }
         input.events.extend(next.events);
     }
@@ -703,6 +723,18 @@ impl DesktopApp {
             let layout = self.ui_layout();
             return serde_json::to_value(layout).map(Some).map_err(|error| refusal(ErrorCode::Internal, error.to_string()));
         }
+        if run.command_id == UI_PERF_COMMAND {
+            if !run.permission.allows(UiPermission::Read) {
+                return Err(refusal(ErrorCode::InvalidArgument, format!("{UI_PERF_COMMAND}: 실행 권한이 부족합니다")));
+            }
+            let reset = run.args.get("reset").and_then(Value::as_bool).unwrap_or(false);
+            let test = self.ui_test.as_mut().expect("checked above");
+            let report = test.perf.report(RESULT_BUDGET);
+            if reset {
+                test.perf.reset();
+            }
+            return Ok(Some(report));
+        }
         if !run.permission.allows(UiPermission::AgentStart) {
             return Err(refusal(ErrorCode::InvalidArgument, format!("{UI_INPUT_COMMAND}: agent_start 권한이 필요합니다")));
         }
@@ -808,8 +840,9 @@ impl DesktopApp {
                 if view.left_open {
                     let docked = frame::editor_frame(screen, true, view.left_width, view.right_open, view.right_width).left_docked;
                     let rect = if docked { stored("sidebar") } else { ctx.memory(|memory| memory.area_rect(egui::Id::new("sidebar-overlay"))) };
-                    let ai = view.left_tab == LeftTab::Ai;
-                    panel("sidebar", rect, Some(if ai { "ai" } else { "layers" }));
+                    let tab = self.shown_left_tab();
+                    let ai = tab == LeftTab::Ai;
+                    panel("sidebar", rect, Some(super::toolbox::left_tab_name(tab)));
                     if ai {
                         panel("ai", rect, None);
                     }

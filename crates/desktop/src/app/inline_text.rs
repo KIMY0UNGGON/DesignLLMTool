@@ -82,16 +82,20 @@ impl DesktopApp {
         })
     }
 
-    pub(super) fn queue_inline_text_edits(&mut self, edits: Vec<TextInputEdit>) {
+    /// Queues a frame's edits in the order they were typed. An IME commit belongs to the composition that made it: the one
+    /// this edit had open (`session.ime_generation`) or one this frame opened (`opened`); any other is refused. A
+    /// composition the frame opens after a commit (Windows sends a syllable's commit and the next syllable's start in one
+    /// message) is checked only against the commits after it.
+    pub(super) fn queue_inline_text_edits(&mut self, edits: Vec<TextInputEdit>, opened: std::ops::Range<u64>) {
         let Some(session) = self.inline_text_edit.as_mut() else { return };
         for mut edit in edits {
             if edit.ime_commit {
-                if edit.ime_generation != session.ime_generation {
+                if edit.ime_generation != session.ime_generation && !opened.contains(&edit.ime_generation) {
                     session.conflict = Some("IME 조합 상태가 바뀌었습니다. 입력을 유지했습니다".into());
                     session.retry_allowed = false;
                     return;
                 }
-                session.composing = false;
+                session.ime_generation = edit.ime_generation;
                 session.ime_commit_pending = true;
             }
             if edit.request_id.is_empty() {
@@ -112,33 +116,70 @@ impl DesktopApp {
             ));
             return;
         }
+        let later = self.split_after_closed_cell_composition(input);
+        let first_opened = self.text_adapter.ime_generation().saturating_add(1);
         let _ = self.text_adapter.raw_input_hook(ctx, input, self.text_editor_id, &mut self.text_draft);
         let ime_started = self.text_adapter.take_ime_started();
         let ime_finished = self.text_adapter.take_ime_finished();
         let ime_cancelled = self.text_adapter.take_ime_cancelled();
         let edits = self.text_adapter.take_input_edits();
+        // The compositions this frame opened, oldest first, and whether one is still open after its last event.
+        let opened = first_opened..self.text_adapter.ime_generation().saturating_add(1);
+        let composition_open = self.text_adapter.is_ime_active();
+        if let Some(session) = self.inline_text_edit.as_mut() {
+            if ime_started || ime_finished || ime_cancelled {
+                session.composing = composition_open;
+            }
+            session.ime_cancelled_frame |= ime_cancelled;
+        }
+        self.queue_inline_text_edits(edits, opened);
         if ime_started {
             if let Some(session) = self.inline_text_edit.as_mut() {
-                session.composing = true;
                 session.ime_generation = self.text_adapter.ime_generation();
             }
         }
-        if ime_cancelled {
-            if let Some(session) = self.inline_text_edit.as_mut() {
-                session.composing = false;
-                session.ime_cancelled_frame = true;
-            }
-        } else if ime_finished {
-            if let Some(session) = self.inline_text_edit.as_mut() {
-                session.composing = false;
-            }
-        }
-        self.queue_inline_text_edits(edits);
-        if ime_finished || ime_cancelled {
+        if (ime_finished || ime_cancelled) && !composition_open {
             if let Some(session_id) = self.inline_text_edit.as_ref().map(|session| session.id) {
                 self.release_inline_text_target(session_id);
             }
         }
+        let Some(later) = later else { return };
+        let mut now = std::mem::replace(&mut input.events, later);
+        if self.inline_text_edit.as_ref().is_some_and(|session| session.conflict.is_none()) {
+            self.process_inline_text_adapter_input(ctx, input);
+        } else {
+            // As on the next frame: Escape does nothing behind the conflict notice.
+            input.events.retain(|event| !matches!(event, egui::Event::Key { key: egui::Key::Escape, pressed: true, .. }));
+        }
+        now.append(&mut input.events);
+        input.events = now;
+    }
+
+    /// A table cell's composition that was open when the frame began and closes in it, then a key: Windows sends the commit
+    /// and the Tab, Escape or arrow that ended the composition in one frame. The events from that key on are taken out of
+    /// `input` and handled after the ones before it, as the next frame's would be, so the key can leave the cell
+    /// (`take_inline_cell_navigation` takes nothing while a composition is open).
+    fn split_after_closed_cell_composition(&self, input: &mut egui::RawInput) -> Option<Vec<egui::Event>> {
+        let session = self.inline_text_edit.as_ref().filter(|session| session.reservation_node_ids.len() > 1)?;
+        let mut open = session.composing || self.text_adapter.is_ime_active();
+        if !open {
+            return None;
+        }
+        let mut closed = false;
+        let at = input.events.iter().position(|event| {
+            match event {
+                egui::Event::Ime(egui::ImeEvent::Enabled) => open = true,
+                egui::Event::Ime(egui::ImeEvent::Preedit(preedit)) => open |= !preedit.is_empty(),
+                egui::Event::Ime(egui::ImeEvent::Commit(_) | egui::ImeEvent::Disabled) => {
+                    open = false;
+                    closed = true;
+                }
+                egui::Event::Key { pressed: true, .. } => return closed && !open,
+                _ => {}
+            }
+            false
+        })?;
+        Some(input.events.split_off(at))
     }
 
     pub(super) fn start_next_inline_text_change(&mut self) {

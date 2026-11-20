@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use designllm_contracts::{ArtifactKind, ArtifactSummary, AssetRef, DltError, Job, JobStartRequest, JobStatus};
-use eframe::egui::{self, Context, Id};
+use eframe::egui::{Context, Id};
 use serde_json::{json, Value};
 
 use super::drafts::{same_content, Body, Draft};
@@ -517,21 +517,18 @@ impl DesktopApp {
             self.pending_switch = None;
             return;
         };
-        let (mut keep, mut switch) = (false, false);
-        egui::Modal::new(Id::new("figure-switch-confirmation")).show(ctx, |ui| {
-            ui.set_max_width(440.0);
-            ui.heading("보류된 변경");
+        use crate::widgets::{DialogButton, DialogChoice};
+        let palette = crate::theme::palette(ctx);
+        let shown = crate::widgets::dialog_with_choices(ctx, &palette, Id::new("figure-switch-confirmation"), "보류된 변경", crate::widgets::DialogPlace::Modal, |ui| {
             ui.label(warning);
-            ui.horizontal(|ui| {
-                let keep_button = ui.button("계속 작업");
-                crate::ui_record::note_human_only(ui, "계속 작업", &keep_button);
-                keep = keep_button.clicked();
-                let switch_button = ui.button("전환");
-                crate::ui_record::note_human_only(ui, "전환", &switch_button);
-                switch = switch_button.clicked();
-            });
+            ((), vec![
+                DialogChoice::new("계속 작업", DialogButton::Primary).human_only(),
+                DialogChoice::new("전환", DialogButton::Danger).human_only(),
+            ])
         });
-        if keep {
+        // `계속 작업` is the main and the safe choice: Enter, Esc and a press on the backdrop keep the open document.
+        let (keep, switch) = (shown.inner.1[0], shown.inner.1[1]);
+        if keep || shown.enter || shown.dismissed {
             self.answer_pending_switch(false);
         }
         if switch {

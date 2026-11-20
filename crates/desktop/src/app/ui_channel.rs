@@ -17,7 +17,7 @@ use eframe::egui::{self, ColorImage, Context, Event};
 use serde_json::{json, Value};
 
 use super::{
-    board::{LeftTab, Tool},
+    board::Tool,
     save_screenshot, DesktopApp, PendingAction,
 };
 use crate::{board as board_geometry, commands};
@@ -372,7 +372,7 @@ impl DesktopApp {
     pub(super) fn ui_state(&self) -> UiState {
         let view = self.view_ref();
         let screen = if self.screen_is_editor() { "editor" } else { "home" };
-        let tab = if view.left_tab == LeftTab::Ai { "ai" } else { "layers" };
+        let tab = super::toolbox::left_tab_name(self.shown_left_tab());
         let selection = self.local_ui_selection();
         let mut state = UiState {
             screen: screen.into(),
@@ -836,23 +836,26 @@ impl DesktopApp {
             return;
         }
         let arg = |key: &str| run.args[key].as_str().unwrap_or_default();
-        let mut answer = None;
-        egui::Modal::new(egui::Id::new("agent-home-create")).show(ctx, |ui| {
-            ui.set_max_width(440.0);
-            ui.heading("에이전트의 모델 실행 요청");
+        use crate::widgets::{DialogButton, DialogChoice};
+        let palette = crate::theme::palette(ctx);
+        // The buttons stay under the request, in view however long it is: no one approves a request they could not scroll to.
+        let shown = crate::widgets::dialog_with_choices(ctx, &palette, egui::Id::new("agent-home-create"), "에이전트의 모델 실행 요청", crate::widgets::DialogPlace::Modal, |ui| {
             ui.label(format!("{} · {} · {}", arg("runtime"), arg("model"), arg("effort")));
             let tile = super::home::TILES.iter().find(|item| item.0 == arg("tile")).map_or(arg("tile"), |item| item.1);
             ui.label(format!("새 작업물 · {tile}"));
-            egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| { ui.label(arg("prompt")); });
-            ui.horizontal(|ui| {
-                let refuse = ui.button("거절");
-                crate::ui_record::note_human_only(ui, "거절", &refuse);
-                if refuse.clicked() { answer = Some(false); }
-                let accept = ui.button("모델 실행");
-                crate::ui_record::note_human_only(ui, "모델 실행", &accept);
-                if accept.clicked() { answer = Some(true); }
-            });
+            // A long request scrolls in the dialog's body (`widgets::dialog_with_choices`); a scroll area of its own inside it
+            // would size itself to the body's last height.
+            ui.label(arg("prompt"));
+            ((), vec![
+                DialogChoice::new("거절", DialogButton::Plain).human_only(),
+                DialogChoice::new("모델 실행", DialogButton::Primary).human_only(),
+            ])
         });
+        let pressed = &shown.inner.1;
+        let pressed = if pressed[0] { Some(false) } else if pressed[1] { Some(true) } else { None };
+        // Enter is `모델 실행`; Esc and a press on the backdrop are `거절`, the safe side. A synthetic key reaches neither: the run
+        // ends with HUMAN_ONLY while this approval is open (`ui_test_approval_open`).
+        let answer = pressed.or(shown.enter.then_some(true)).or(shown.dismissed.then_some(false));
         if let Some(accepted) = answer {
             let (run, deadline) = self.ui.pending_home_create.take().unwrap();
             if accepted && Instant::now() < deadline {

@@ -31,7 +31,7 @@ use std::{
 };
 
 use designllm_contracts::{new_id, ArtifactKind, CanvasBoardMemo, DltError, FigureRevisionRef};
-use eframe::egui::{self, Align2, RichText};
+use eframe::egui::{self, RichText};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -1791,13 +1791,20 @@ impl DesktopApp {
         }
         let palette = theme::palette(ctx);
         let (mut restore, mut discard, mut copy, mut open) = (None, None, None, None);
-        egui::Window::new("복구할 초안")
-            .anchor(Align2::RIGHT_BOTTOM, [-16.0, -16.0])
-            .collapsible(false)
-            .resizable(false)
-            .default_width(360.0)
-            .show(ctx, |ui| {
-                for draft in &drafts {
+        use crate::widgets::{dialog_buttons, DialogButton, DialogChoice, DialogPlace};
+        // A notice at the top middle of the board (of the window under the top bar on the home screen), stacked with the board's
+        // other notices; it covers no work in the middle of the window and takes no keys.
+        let board = self.board_rect.filter(|_| self.screen == super::Screen::Editor).unwrap_or_else(|| {
+            let window = ctx.content_rect();
+            egui::Rect::from_min_max(window.min + egui::vec2(0.0, theme::TOP_BAR_HEIGHT), window.max)
+        });
+        crate::widgets::dialog(ctx, &palette, egui::Id::new("복구할 초안"), "복구할 초안", DialogPlace::BoardTop(board), |ui| {
+                for (index, draft) in drafts.iter().enumerate() {
+                    if index > 0 {
+                        ui.add_space(8.0);
+                        crate::widgets::divider(ui, &palette);
+                        ui.add_space(8.0);
+                    }
                     let standing = self.draft_standing(draft);
                     let when = modified_label(draft.saved_at_ms, now_ms(), local_offset_minutes());
                     ui.label(RichText::new(format!("{} · {} · {when}", kind_label(&draft.body), self.target_title(draft))).strong());
@@ -1809,25 +1816,26 @@ impl DesktopApp {
                     if let Some(reason) = standing.reason {
                         ui.label(RichText::new(reason).color(palette.ink_3));
                     }
-                    ui.horizontal(|ui| {
-                        let restore_button = ui.add_enabled(standing.ready, egui::Button::new("복원"));
-                        crate::ui_record::note_human_only(ui, "복원", &restore_button);
-                        if restore_button.clicked() {
-                            restore = Some(draft.key.clone());
-                        }
-                        if standing.open.is_some() && ui.button("열기").clicked() {
-                            open = standing.open.clone();
-                        }
-                        if ui.button("복사").clicked() {
-                            copy = Some(copy_text(&draft.body));
-                        }
-                        let discard_button = ui.add_enabled(standing.reason != Some(OTHER_OWNER), egui::Button::new("버리기"));
-                        crate::ui_record::note_human_only(ui, "버리기", &discard_button);
-                        if discard_button.clicked() {
-                            discard = Some(draft.key.clone());
-                        }
-                    });
-                    ui.separator();
+                    let mut choices = vec![DialogChoice::new("복원", DialogButton::Primary).enabled(standing.ready).human_only()];
+                    if standing.open.is_some() {
+                        choices.push(DialogChoice::new("열기", DialogButton::Plain));
+                    }
+                    choices.push(DialogChoice::new("복사", DialogButton::Plain));
+                    choices.push(DialogChoice::new("버리기", DialogButton::Danger).enabled(standing.reason != Some(OTHER_OWNER)).human_only());
+                    let pressed = dialog_buttons(ui, &palette, &choices);
+                    let last = pressed.len() - 1;
+                    if pressed[0].clicked() {
+                        restore = Some(draft.key.clone());
+                    }
+                    if standing.open.is_some() && pressed[1].clicked() {
+                        open = standing.open.clone();
+                    }
+                    if pressed[last - 1].clicked() {
+                        copy = Some(copy_text(&draft.body));
+                    }
+                    if pressed[last].clicked() {
+                        discard = Some(draft.key.clone());
+                    }
                 }
             });
         if let Some(text) = copy {

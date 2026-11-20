@@ -56,6 +56,17 @@ pub(super) fn agent_letter(runtime: &str) -> &'static str {
     if runtime == "codex" { "X" } else { "C" }
 }
 
+/// The state word of an agent mark in a tooltip (§5.5 states).
+fn agent_state_word(state: AgentState) -> &'static str {
+    match state {
+        AgentState::Waiting => "대기",
+        AgentState::Running => "실행 중",
+        AgentState::Review => "검토 중",
+        AgentState::Done => "완료",
+        AgentState::Failed => "실패",
+    }
+}
+
 /// Whether the host still runs a job of this status (queued, running or validating).
 pub(super) fn job_status_running(status: JobStatus) -> bool {
     matches!(status, JobStatus::Queued | JobStatus::Running | JobStatus::Validating)
@@ -249,7 +260,10 @@ impl DesktopApp {
             ui.add_space(10.0 - theme::GROUP_GAP);
             // The agent is always shown (waiting when idle, §5.5); its state follows the running job.
             let state = self.job.as_ref().map_or(AgentState::Waiting, |job| job_agent_state(job.status));
-            let response = widgets::avatar(ui, palette, agent_letter(&self.active_runtime()), palette.agent(0), state, 24.0);
+            // The letter is the runtime's mark, not an account: the tooltip says what the press does (GUI_DESIGN §5.5).
+            let runtime = self.active_runtime();
+            let tooltip = format!("AI 패널 열기 · {} {}", super::home::agent_name(&runtime, None), agent_state_word(state));
+            let response = widgets::avatar(ui, palette, agent_letter(&runtime), palette.agent(0), state, 24.0).on_hover_text(tooltip);
             if response.clicked() {
                 self.left_tab_to(LeftTab::Ai);
             }
@@ -409,19 +423,26 @@ impl DesktopApp {
     pub(super) fn draw_left_sidebar(&mut self, ui: &mut Ui, palette: &theme::Palette) {
         // tokens `layout.sidebar.tabs` and `component.sidebar-tab`: a 40 px row, padding 8, pill tabs 2 apart,
         // and a 1 px line under it. The first tab is the kind's own (layers, outline or files).
-        let tab = self.view_ref().left_tab;
+        // The toolbox tab exists for canvases and slides only (68g).
+        let toolbox = self.toolbox_shown();
+        let tab = self.shown_left_tab();
         let first = match self.active.as_ref().map(|item| item.kind) {
             Some(ArtifactKind::Docx | ArtifactKind::Hwpx | ArtifactKind::Hwp) => "목차",
             Some(ArtifactKind::WebCode) => "파일",
             _ => "레이어",
         };
+        let mut tabs = vec![(first, LeftTab::Layers)];
+        if toolbox {
+            tabs.push(("도구", LeftTab::Tools));
+        }
+        tabs.push(("AI", LeftTab::Ai));
         ui.spacing_mut().item_spacing = Vec2::ZERO;
         let width = ui.available_width();
         let (row, _) = ui.allocate_exact_size(Vec2::new(width, theme::SIDEBAR_TABS_HEIGHT), Sense::hover());
         ui.painter().hline(row.x_range(), row.bottom() - 0.5, Stroke::new(theme::hairline(ui.ctx()), palette.line));
         let mut strip = ui.new_child(egui::UiBuilder::new().max_rect(row.shrink2(Vec2::new(8.0, 0.0))).layout(Layout::left_to_right(Align::Center)));
         strip.spacing_mut().item_spacing = Vec2::new(theme::GROUP_GAP, 0.0);
-        for (label, value) in [(first, LeftTab::Layers), ("AI", LeftTab::Ai)] {
+        for (label, value) in tabs {
             // An agent at work: a running job, or nodes an agent holds (reservations).
             let working = self.job_running() || !self.reservations.is_empty();
             let dot = (value == LeftTab::Ai && working && tab != LeftTab::Ai).then(|| palette.agent(0));
@@ -430,12 +451,19 @@ impl DesktopApp {
             }
         }
         self.panel_close_button(ui, palette, row, "panel-left", "nav.toggle_left");
-        match self.view_ref().left_tab {
+        match tab {
             LeftTab::Layers => {
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     egui::Frame::new().inner_margin(Margin::same(theme::TREE_PADDING as i8)).show(ui, |ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                         self.draw_layers(ui, palette);
+                    });
+                });
+            }
+            LeftTab::Tools => {
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    egui::Frame::new().inner_margin(super::toolbox::MARGIN).show(ui, |ui| {
+                        self.draw_toolbox(ui, palette);
                     });
                 });
             }

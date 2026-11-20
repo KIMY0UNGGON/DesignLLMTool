@@ -48,13 +48,17 @@ const PROMPT: &str = r#"{"type":"object","required":["prompt"],"properties":{"pr
 const ARTIFACT: &str = r#"{"type":"object","required":["artifact_id"],"properties":{"artifact_id":{"type":"string"}}}"#;
 const BOOL: &str = r#"{"type":"object","required":["on"],"properties":{"on":{"type":"boolean"}}}"#;
 const TEXT_LIST: &str = r#"{"type":"object","required":["list"],"properties":{"list":{"type":"string","enum":["bullet","numbered","none"]}}}"#;
-const TAB: &str = r#"{"type":"object","required":["tab"],"properties":{"tab":{"type":"string","enum":["layers","ai","outline","files","projects","design_systems","templates"]}}}"#;
+const TAB: &str = r#"{"type":"object","required":["tab"],"properties":{"tab":{"type":"string","enum":["layers","tools","ai","outline","files","projects","design_systems","templates"]}}}"#;
 const FILE_EXPORT: &str = r#"{"type":"object","required":["format","target_path"],"properties":{"format":{"type":"string","enum":["png","jpeg","svg","pdf","html","pptx","zip"]},"target_path":{"type":"string"},"overwrite":{"type":"boolean"},"expected_target_hash":{"type":"string"},"allowed_losses":{"type":"array","items":{"type":"string"}},"scale":{"type":"integer","enum":[1,2,3]},"background":{"type":"string","enum":["page","transparent"]},"scope":{"type":"string","enum":["page","selection","all","range"]},"pages":{"type":"string","description":"scope가 range일 때 내보낼 쪽 번호. 1부터 세고, 쉼표로 나열하며 a-b로 범위를 씁니다. 예: 1,3-5"}}}"#;
 const FILE_SAVE: &str = r#"{"type":"object","required":["target_path"],"properties":{"target_path":{"type":"string"},"overwrite":{"type":"boolean"},"expected_target_hash":{"type":"string"}}}"#;
 const AI_CANCEL: &str = r#"{"type":"object","required":["job_id","attempt_id"],"properties":{"job_id":{"type":"string"},"attempt_id":{"type":"string"}}}"#;
 const PROPOSAL_ID: &str = r#"{"type":"object","required":["proposal_id"],"properties":{"proposal_id":{"type":"string","minLength":1}}}"#;
 const CREATE: &str = r#"{"type":"object","required":["tile"],"description":"tile로 작업물 종류를 고릅니다. 크기와 실행기 설정은 생략하면 현재 홈의 값을 사용합니다.","properties":{"tile":{"type":"string","enum":["blank","mobile","ui","wireframe","slides","document","resume","poster","social","figure","diagram","web","animation"]},"prompt":{"type":"string"},"preset":{"type":"string"},"runtime":{"type":"string","enum":["claude","codex"]},"model":{"type":"string"},"effort":{"type":"string","enum":["minimal","low","medium","high","xhigh","max"]},"mode":{"type":"string","enum":["design","code"],"description":"홈 탭 표시 모드. 생성할 작업물은 tile이 결정합니다."}}}"#;
-const ARG_ICON: &str = r##"{"type":"object","required":["icon"],"properties":{"icon":{"type":"string"},"size":{"type":"number","minimum":8},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}}}"##;
+/// The optional placement of an inserted object (68g): `at` names the page and the object's centre in the document's units
+/// (px for canvas and slides, mm for text documents), measured from the page's top left. Without it the object goes to the
+/// fixed place of the page. An `at` outside the page is refused.
+const ARG_AT: &str = r#"{"type":"object","properties":{"at":{"type":"object","description":"삽입할 위치. 개체의 가운데 점을 쪽의 왼쪽 위에서 잰 x, y(캔버스·슬라이드는 px)로 줍니다. page_index를 생략하면 현재 쪽입니다. 쪽 밖이면 거부합니다.","required":["x","y"],"properties":{"page_index":{"type":"integer","minimum":0},"x":{"type":"number"},"y":{"type":"number"}}}}}"#;
+const ARG_ICON: &str = r##"{"type":"object","required":["icon"],"properties":{"icon":{"type":"string"},"size":{"type":"number","minimum":8},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"},"at":{"type":"object","description":"삽입할 위치(add.text와 같은 뜻). 아이콘의 가운데 점을 줍니다.","required":["x","y"],"properties":{"page_index":{"type":"integer","minimum":0},"x":{"type":"number"},"y":{"type":"number"}}}}}"##;
 const ARG_PATH: &str = r#"{"type":"object","required":["d","view_box"],"properties":{"d":{"type":"string"},"view_box":{"type":"string"}}}"#;
 const ARG_NODE_PATH: &str = r#"{"type":"object","required":["d","view_box"],"properties":{"d":{"type":"string"},"view_box":{"type":"string"},"node_id":{"type":"string"}}}"#;
 const TOKEN_PUT_ARGS: &str = r##"{"type":"object","required":["token_id","name","values"],"description":"선택한 캔버스 작업물의 로컬 디자인 토큰을 추가하거나 갱신합니다.","properties":{"token_id":{"type":"string","minLength":1},"name":{"type":"string","minLength":1},"values":{"type":"object","description":"font_size, spacing, radius의 숫자 값은 정수 EMU입니다. 예: 16 CSS px = 152400 EMU. GUI의 px 입력은 한 번만 EMU로 변환됩니다.","oneOf":[{"type":"object","required":["kind","light","dark"],"properties":{"kind":{"type":"string","enum":["color"]},"light":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"},"dark":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}},"additionalProperties":false},{"type":"object","required":["kind","light","dark"],"properties":{"kind":{"type":"string","enum":["font_family"]},"light":{"type":"string","minLength":1},"dark":{"type":"string","minLength":1}},"additionalProperties":false},{"type":"object","required":["kind","light","dark"],"properties":{"kind":{"type":"string","enum":["font_size","spacing","radius"]},"light":{"type":"integer"},"dark":{"type":"integer"}},"additionalProperties":false}]}}}"##;
@@ -134,18 +138,18 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { id: "edit.nudge", label: "옮기기", permission: Permission::Content, shortcut: "", args: XY },
     CommandSpec { id: "edit.rename", label: "이름 바꾸기", permission: Permission::Content, shortcut: "F2", args: r#"{"type":"object","required":["name"],"properties":{"name":{"type":"string"},"node_id":{"type":"string"}}}"# },
     // Adding.
-    CommandSpec { id: "add.text", label: "텍스트", permission: Permission::Content, shortcut: "T", args: NONE },
-    CommandSpec { id: "add.rect", label: "사각형", permission: Permission::Content, shortcut: "R", args: NONE },
-    CommandSpec { id: "add.oval", label: "타원", permission: Permission::Content, shortcut: "O", args: NONE },
-    CommandSpec { id: "add.line", label: "선", permission: Permission::Content, shortcut: "L", args: NONE },
+    CommandSpec { id: "add.text", label: "텍스트", permission: Permission::Content, shortcut: "T", args: ARG_AT },
+    CommandSpec { id: "add.rect", label: "사각형", permission: Permission::Content, shortcut: "R", args: ARG_AT },
+    CommandSpec { id: "add.oval", label: "타원", permission: Permission::Content, shortcut: "O", args: ARG_AT },
+    CommandSpec { id: "add.line", label: "선", permission: Permission::Content, shortcut: "L", args: ARG_AT },
     CommandSpec { id: "add.arrow", label: "화살표", permission: Permission::Content, shortcut: "Shift+L", args: NONE },
-    CommandSpec { id: "add.frame", label: "프레임", permission: Permission::Content, shortcut: "F", args: NONE },
+    CommandSpec { id: "add.frame", label: "프레임", permission: Permission::Content, shortcut: "F", args: ARG_AT },
     CommandSpec { id: "add.pen", label: "펜", permission: Permission::Content, shortcut: "P", args: NONE },
     CommandSpec { id: "add.pencil", label: "연필", permission: Permission::Content, shortcut: "Shift+P", args: NONE },
     CommandSpec { id: "add.memo", label: "메모", permission: Permission::Content, shortcut: "N", args: NONE },
-    CommandSpec { id: "add.image", label: "이미지", permission: Permission::Content, shortcut: "Ctrl+Shift+K", args: NONE },
+    CommandSpec { id: "add.image", label: "이미지", permission: Permission::Content, shortcut: "Ctrl+Shift+K", args: ARG_AT },
     CommandSpec { id: "add.table", label: "표", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","properties":{"rows":{"type":"integer","minimum":1},"columns":{"type":"integer","minimum":1}}}"# },
-    CommandSpec { id: "canvas.table.add", label: "표", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","properties":{"rows":{"type":"integer","minimum":1},"columns":{"type":"integer","minimum":1,"maximum":24}}}"# },
+    CommandSpec { id: "canvas.table.add", label: "표", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","properties":{"rows":{"type":"integer","minimum":1},"columns":{"type":"integer","minimum":1,"maximum":24},"at":{"type":"object","description":"삽입할 위치(add.text와 같은 뜻). 표의 가운데 점을 줍니다.","required":["x","y"],"properties":{"page_index":{"type":"integer","minimum":0},"x":{"type":"number"},"y":{"type":"number"}}}}}"# },
     CommandSpec { id: "canvas.table.add_row", label: "행 추가", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","required":["table_id"],"properties":{"table_id":{"type":"string"},"index":{"type":"integer","minimum":0}}}"# },
     CommandSpec { id: "canvas.table.remove_row", label: "행 삭제", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","required":["table_id"],"properties":{"table_id":{"type":"string"},"index":{"type":"integer","minimum":0}}}"# },
     CommandSpec { id: "canvas.table.add_column", label: "열 추가", permission: Permission::Content, shortcut: "", args: r#"{"type":"object","required":["table_id"],"properties":{"table_id":{"type":"string"},"index":{"type":"integer","minimum":0}}}"# },

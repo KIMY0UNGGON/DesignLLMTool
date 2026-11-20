@@ -232,7 +232,7 @@ pub(super) enum PendingAction {
     /// The asset import of a screenshot run; the run completes with it.
     UiAsset { run_id: String, width: u32, height: u32, path: PathBuf },
     /// The asset import of a picture the user chose; the picture becomes an image node.
-    ImageAsset { page_id: String },
+    ImageAsset { page_id: String, center: Option<(i64, i64)> },
     VideoSourceImport { token: String },
     VideoPosterImport { token: String, temp_path: PathBuf },
     VideoInsertApply { token: String },
@@ -517,6 +517,8 @@ pub(super) struct VideoInsertIntent {
     pub(super) expected_revision: u64,
     pub(super) page_index: u32,
     pub(super) page_id: String,
+    /// The centre of the new video in page EMU when a toolbox tile or drop placed it; None puts it at the fixed place.
+    pub(super) center: Option<(i64, i64)>,
     pub(super) view_id: String,
     pub(super) expected_selection: Selection,
     pub(super) selection_generation: u64,

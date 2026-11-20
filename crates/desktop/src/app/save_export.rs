@@ -430,19 +430,16 @@ impl DesktopApp {
         let Some(confirmation) = self.export_confirmation.as_mut() else {
             return;
         };
-        let mut confirm = false;
-        let mut cancel = false;
-        egui::Window::new("내보내기 확인")
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
+        use crate::widgets::{DialogButton, DialogChoice};
+        let palette = crate::theme::palette(ctx);
+        let shown = crate::widgets::dialog_with_choices(ctx, &palette, egui::Id::new("내보내기 확인"), "내보내기 확인", crate::widgets::DialogPlace::Screen, |ui| {
                 ui.label("일부 편집 정보가 출력물에 포함되지 않습니다.");
                 if confirmation.diagnostics.is_empty() {
                     ui.label("허용할 손실 항목을 확인할 수 없습니다.");
                 }
                 for diagnostic in &confirmation.diagnostics {
                     let mut checked = confirmation.allowed.contains(&diagnostic.code);
-                    if ui.checkbox(&mut checked, &diagnostic.message).changed() {
+                    if crate::widgets::checkbox(ui, &palette, &mut checked, &diagnostic.message).changed() {
                         if checked {
                             confirmation.allowed.insert(diagnostic.code.clone());
                         } else {
@@ -450,18 +447,14 @@ impl DesktopApp {
                         }
                     }
                 }
-                ui.horizontal(|ui| {
-                    if ui.button("취소").clicked() {
-                        cancel = true;
-                    }
-                    let accept = ui.add_enabled(!confirmation.allowed.is_empty(), egui::Button::new("이 손실을 허용하고 내보내기"));
-                    crate::ui_record::note_human_only(ui, "이 손실을 허용하고 내보내기", &accept);
-                    if accept.clicked() {
-                        confirm = true;
-                    }
-                });
+                ((), vec![
+                    DialogChoice::new("취소", DialogButton::Plain),
+                    DialogChoice::new("이 손실을 허용하고 내보내기", DialogButton::Warn).enabled(!confirmation.allowed.is_empty()).human_only(),
+                ])
             });
-        if cancel {
+        // The main button accepts a loss, so Enter does not press it. Esc is `취소`.
+        let (cancel, confirm) = (shown.inner.1[0], shown.inner.1[1]);
+        if cancel || shown.dismissed {
             self.export_confirmation = None;
         } else if confirm {
             self.apply_export_losses();

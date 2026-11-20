@@ -85,6 +85,8 @@ pub(super) struct HomeState {
     pub custom_height: String,
     /// Templates and connections read from the host (`templates.list`, `clients.list`).
     pub feeds: super::thumbs::HomeFeeds,
+    /// The workspace information under the workspace name (migration backups and their warnings).
+    pub workspace_info: super::workspace_info::WorkspaceInfo,
 }
 
 impl Default for HomeState {
@@ -111,6 +113,7 @@ impl Default for HomeState {
             custom_width: String::new(),
             custom_height: String::new(),
             feeds: Default::default(),
+            workspace_info: Default::default(),
         }
     }
 }
@@ -330,7 +333,7 @@ impl DesktopApp {
             if let Ok(tile) = std::env::var("DESIGNLLM_SMOKE_HOME_TILE") {
                 self.invoke_ui("home.tile", json!({ "tile": tile }));
             }
-            // `DESIGNLLM_SMOKE_HOME_OPEN=size|runner|design_system` opens that popover.
+            // `DESIGNLLM_SMOKE_HOME_OPEN=size|runner|design_system|workspace` opens that popover.
             self.home.smoke_open = std::env::var("DESIGNLLM_SMOKE_HOME_OPEN").ok();
         }
         // The template list and the connections (top bar agents) are read while the home is shown.
@@ -392,7 +395,26 @@ impl DesktopApp {
         let middle = bar.top() + (bar.height() - 1.0) / 2.0;
         let name_font = theme::display_font(true, 14.0);
         // The workspace menu (other / recent workspaces) waits for `home.workspace`; a menu with no
-        // working item shows no ▾ (REVIEW_BUILD §5), so the button only shows the icon and the name.
+        // working item shows no ▾ (REVIEW_BUILD §5). The workspace information (68e: migration backups and their
+        // warnings) is its one item so far: with it the name is a button with ▾ that opens it.
+        let open_info = self.home.smoke_open.as_deref() == Some("workspace");
+        if open_info {
+            self.home.smoke_open = None;
+        }
+        if !self.home.workspace_info.is_empty() {
+            let name_width = text_width(ui, &self.workspace_name, &name_font);
+            let button = Rect::from_min_max(Pos2::new(bar.left(), middle - 16.0), Pos2::new(bar.left() + 36.0 + name_width + 4.0 + 16.0 + 8.0, middle + 16.0));
+            if open_info {
+                egui::Popup::open_id(ui.ctx(), ui.id().with("home-workspace").with("popup"));
+            }
+            let response = ui.interact(button, ui.id().with("home-workspace"), Sense::click()).on_hover_text("작업공간 정보");
+            crate::ui_record::note(ui, "작업공간 정보", &response);
+            if response.hovered() || popup_open(ui, "home-workspace") {
+                ui.painter().rect_filled(button, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
+            }
+            icon16(ui, Pos2::new(button.right() - 8.0 - 16.0, middle - 8.0), "chev-down", palette.ink_3);
+            popover(&response, 360.0, |ui| super::workspace_info::show(ui, palette, &self.home.workspace_info));
+        }
         icons::paint(ui, Rect::from_min_size(Pos2::new(bar.left() + 4.0, middle - 12.0), Vec2::splat(24.0)), "app-24", Color32::WHITE);
         ui.painter().text(Pos2::new(bar.left() + 36.0, middle), Align2::LEFT_CENTER, &self.workspace_name, name_font, palette.ink);
 
@@ -411,11 +433,12 @@ impl DesktopApp {
         }
 
         // The agents (§5.5, tokens `top-bar.agents-*`): one per connected agent, oldest at the left,
-        // 4 apart and 10 before `열기`. With none connected, the configured runtime, waiting.
+        // 4 apart and 10 before `열기`. With none connected, the app's job (its runtime's mark) while one runs. With neither,
+        // no mark: a waiting mark would press to nothing (GUI_DESIGN §5.5 marks only what can be opened).
         let mut agents = connected_agents(&self.home.feeds.clients);
-        if agents.is_empty() {
+        if let Some(job) = self.job.as_ref().filter(|job| agents.is_empty() && super::chrome::job_status_running(job.status)) {
             let runtime = self.active_runtime();
-            agents.push(ConnectedAgent { name: agent_name(&runtime, None), runtime, job_id: self.job.as_ref().map(|job| job.id.clone()), outside: false });
+            agents.push(ConnectedAgent { name: agent_name(&runtime, None), runtime, job_id: Some(job.id.clone()), outside: false });
         }
         let mut right = open.left() - 2.0 - 10.0;
         let mut other_colours = 0;
@@ -1415,7 +1438,7 @@ fn agent_glyph(runtime: &str, client: Option<&str>) -> String {
     }
 }
 
-fn agent_name(runtime: &str, client: Option<&str>) -> String {
+pub(super) fn agent_name(runtime: &str, client: Option<&str>) -> String {
     match (client.filter(|name| !name.is_empty()), runtime) {
         (Some(name), _) => name.to_owned(),
         (None, "codex") => "Codex".into(),
@@ -2021,5 +2044,36 @@ mod time_label_tests {
         assert_eq!(modified_label(DAY - 3 * 86_400_000 + 3_600_000, DAY + 12 * 3_600_000, 0), "11월 10일");
         // A different year shows the full date.
         assert_eq!(modified_label(DAY - 400 * 86_400_000, DAY, 0), "2024. 10. 9.");
+    }
+}
+
+#[cfg(test)]
+mod top_bar_agent_tests {
+    use super::*;
+    use crate::rpc::RpcWorker;
+    use eframe::egui::{epaint::Shape, Context, Pos2, RawInput, Rect, Vec2, ViewportId};
+
+    /// The top bar's agent marks: with no connected agent and no job there is no mark (a waiting mark would press to nothing,
+    /// GUI_DESIGN §5.5). The letters `C`/`X` are the marks' only text, so none of them is drawn.
+    #[test]
+    fn the_top_bar_draws_no_agent_letter_without_a_connected_agent_or_a_job() {
+        fn collect(shape: &Shape, out: &mut Vec<String>) {
+            match shape {
+                Shape::Text(text) => out.push(text.galley.text().to_owned()),
+                Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, out)),
+                _ => {}
+            }
+        }
+        let (rpc, _replies, _work) = RpcWorker::detached();
+        let mut app = DesktopApp::new(rpc, "작업공간".into(), None, None);
+        let ctx = Context::default();
+        theme::install(&ctx);
+        let mut input = RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0))), ..Default::default() };
+        input.viewports.get_mut(&ViewportId::ROOT).expect("root viewport").native_pixels_per_point = Some(1.0);
+        let output = ctx.run(input, |ctx| app.draw_home(ctx));
+        let mut texts = Vec::new();
+        output.shapes.iter().for_each(|clipped| collect(&clipped.shape, &mut texts));
+        assert!(texts.iter().any(|text| text == "열기"), "the top bar is drawn: {texts:?}");
+        assert!(!texts.iter().any(|text| text == "C" || text == "X"), "no agent letter without an agent: {texts:?}");
     }
 }

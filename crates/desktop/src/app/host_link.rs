@@ -188,25 +188,24 @@ impl DesktopApp {
         let waiting = self.host_link.reconnecting.is_some();
         let can_restart = self.host_link.starter.is_some() && !waiting;
         let close_work = self.has_close_work();
-        let (mut reconnect, mut quit) = (false, false);
-        egui::Modal::new(Id::new("host-link-lost")).show(ctx, |ui| {
-            ui.set_max_width(360.0);
-            ui.heading(HOST_LOST);
+        use crate::widgets::{DialogButton, DialogChoice};
+        let palette = crate::theme::palette(ctx);
+        let shown = crate::widgets::dialog_with_choices(ctx, &palette, Id::new("host-link-lost"), HOST_LOST, crate::widgets::DialogPlace::Modal, |ui| {
             if let Some(failure) = &self.host_link.failure {
                 ui.label(failure);
             }
             if close_work {
                 ui.label(HOST_LOST_CLOSE_NOTE);
             }
-            ui.horizontal(|ui| {
-                let reconnect_button = ui.add_enabled(can_restart, egui::Button::new(RECONNECT));
-                crate::ui_record::note_human_only(ui, RECONNECT, &reconnect_button);
-                reconnect = reconnect_button.clicked();
-                let quit_button = ui.button(QUIT);
-                crate::ui_record::note_human_only(ui, QUIT, &quit_button);
-                quit = quit_button.clicked();
-            });
+            ((), vec![
+                DialogChoice::new(RECONNECT, DialogButton::Primary).enabled(can_restart).human_only(),
+                DialogChoice::new(QUIT, DialogButton::Plain).human_only(),
+            ])
         });
+        // Enter is `다시 연결` while it can run. Without the host there is no safe side to go back to: Esc and a press on the
+        // backdrop do nothing, and closing stays the `종료` button's.
+        let (reconnect, quit) = (shown.inner.1[0], shown.inner.1[1]);
+        let reconnect = reconnect || (shown.enter && can_restart);
         if waiting {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }

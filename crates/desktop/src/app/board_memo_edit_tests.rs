@@ -568,6 +568,39 @@ fn the_memo_tool_click_opens_a_focused_card() {
 }
 
 #[test]
+fn the_memo_tool_makes_one_memo_then_picks_select_and_v_or_esc_leaves_it() {
+    let mut board = Board::new(Vec::new());
+    board.harness.app.selected_node = None;
+    board.harness.app.selected_nodes.clear();
+    board.press_key(Key::N);
+    let page = page_rect(&board);
+    board.click(page.center());
+    assert!(board.harness.app.board_memo_editor.as_ref().is_some_and(|editor| editor.is_new), "the click makes a new memo");
+    assert_eq!(board.harness.app.view_ref().tool, super::super::board::Tool::Select, "the memo tool makes one memo, then the tool is select");
+    board.type_text("hi");
+    board.press_key(Key::Escape);
+    assert_eq!(board.memo_changes().len(), 1, "the one memo is saved");
+    let token = board.harness.app.board_memo_mutation.as_ref().map(|mutation| mutation.token.clone()).expect("the save is in flight");
+    board.harness.app.finish_board_memo_change_offscreen(&token);
+
+    board.frame(Vec::new());
+    board.click(page.center() - eframe::egui::Vec2::new(60.0, 60.0));
+    assert!(board.harness.app.board_memo_editor.is_none(), "the next click on the page makes no memo");
+    assert!(board.memo_changes().is_empty(), "and sends no memo change");
+
+    board.press_key(Key::N);
+    assert_eq!(board.harness.app.view_ref().tool, super::super::board::Tool::Memo, "N picks the memo tool again");
+    board.press_key(Key::V);
+    assert_eq!(board.harness.app.view_ref().tool, super::super::board::Tool::Select, "V picks the select tool");
+
+    let mut board = Board::new(Vec::new());
+    board.press_key(Key::N);
+    board.press_key(Key::Escape);
+    assert_eq!(board.harness.app.view_ref().tool, super::super::board::Tool::Select, "Esc leaves the memo tool when no memo is made");
+    assert!(board.harness.app.board_memo_editor.is_none());
+}
+
+#[test]
 fn a_board_title_or_memo_editor_does_not_open_while_an_inline_text_edit_is_open() {
     let mut board = Board::new(Vec::new());
     board.press_key(Key::Enter);

@@ -1,5 +1,11 @@
 use super::*;
-use super::{doc_tree::{find_node, find_paragraph}, state::RegionClick};
+use super::{doc_tree::{find_node, find_paragraph}, state::RegionClick, toolbox::AddAt};
+
+/// The size (EMU) of a node `add.text`, `add.rect`, `add.frame`, `add.oval` or `add.line` adds: a text box 100 × 16 mm, any
+/// other 60 × 40 mm. The toolbox's drag preview (68g) draws the same size.
+pub(super) fn new_node_size(kind: NodeKind) -> (i64, i64) {
+    if kind == NodeKind::Text { (100 * EMU_PER_MM, 16 * EMU_PER_MM) } else { (60 * EMU_PER_MM, 40 * EMU_PER_MM) }
+}
 
 impl DesktopApp {
     /// The text a selected canvas node or figure element exposes for direct editing. Figure
@@ -98,31 +104,33 @@ impl DesktopApp {
         })
     }
 
-    pub(super) fn add_node(&mut self, kind: NodeKind) {
+    /// Adds a node of `kind` to the page `at` names, its centre on `at` (EMU). Without `at` it goes to the current page's fixed
+    /// place. A page that is not there is refused.
+    pub(super) fn add_node(&mut self, kind: NodeKind, at: Option<AddAt>) -> Result<(), String> {
         let Some(artifact) = self.artifact.as_ref() else {
-            return;
+            return Ok(());
         };
+        let page_index = at.map_or(self.page_index, |at| at.page_index);
         let page = match &artifact.body {
-            ArtifactBody::Canvas(document) => document.pages.get(self.page_index as usize),
-            ArtifactBody::Slides(document) => document.pages.get(self.page_index as usize),
+            ArtifactBody::Canvas(document) => document.pages.get(page_index as usize),
+            ArtifactBody::Slides(document) => document.pages.get(page_index as usize),
             _ => None,
         };
         let Some(page) = page else {
-            self.set_error("선택한 페이지를 편집할 수 없습니다".into());
-            return;
+            return Err("선택한 페이지를 편집할 수 없습니다".into());
         };
         let page_id = page.id.clone();
         let index = page.nodes.len() as i64;
         let is_text = kind == NodeKind::Text;
+        let (width, height) = new_node_size(kind);
+        let (x, y) = match at {
+            Some(at) => (at.center.0 - width / 2, at.center.1 - height / 2),
+            None => (20 * EMU_PER_MM, 20 * EMU_PER_MM + index * 18 * EMU_PER_MM),
+        };
         let node = Node {
             id: new_id(),
             kind,
-            bounds: designllm_contracts::Rect {
-                x: 20 * EMU_PER_MM,
-                y: 20 * EMU_PER_MM + index * 18 * EMU_PER_MM,
-                width: if is_text { 100 * EMU_PER_MM } else { 60 * EMU_PER_MM },
-                height: if is_text { 16 * EMU_PER_MM } else { 40 * EMU_PER_MM },
-            },
+            bounds: designllm_contracts::Rect { x, y, width, height },
             text: if is_text { "텍스트".into() } else { String::new() },
             style: Style::default(),
             asset: None,
@@ -140,6 +148,7 @@ impl DesktopApp {
             }],
             [Intent::Content].into_iter().collect(),
         );
+        Ok(())
     }
 
     pub(super) fn add_paragraph(&mut self) {
@@ -249,7 +258,7 @@ impl DesktopApp {
         } else if response.clicked() || response.double_clicked() {
             response.interact_pointer_pos().map(|position| RegionClick {
                 position,
-                double_clicked: response.double_clicked(),
+                double_clicked: super::board::board_double_click(ui.ctx(), position, response.double_clicked()),
             })
         } else {
             None

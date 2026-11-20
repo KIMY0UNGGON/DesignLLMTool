@@ -345,8 +345,9 @@ impl DesktopApp {
     /// Keyboard shortcuts of the registry. A bare letter does nothing while a text field has the
     /// keyboard, so that typing never triggers a tool.
     pub(super) fn handle_shortcuts(&mut self, ctx: &Context) {
-        // The lost-host notice covers the window: no shortcut runs behind it.
-        if self.host_lost() {
+        // The lost-host notice covers the window, and a dialog that takes keys takes them first (68d): no shortcut runs behind
+        // either.
+        if self.host_lost() || self.key_dialog_open() {
             return;
         }
         // F2 opens the selected table's or text's text before `edit.rename` sees it (68 item 11).
@@ -372,6 +373,10 @@ impl DesktopApp {
             }
             // Esc closes an open menu (a node's or a table's right-click menu, 68 item 16), whose items act on the selection.
             if spec.id == "select.clear" && eframe::egui::Popup::is_any_open(ctx) {
+                continue;
+            }
+            // Esc cancels a toolbox tile's drag or closes its icon picker (68g, `toolbox.rs`), so it does not clear the selection.
+            if spec.id == "select.clear" && super::toolbox::takes_escape(ctx) {
                 continue;
             }
             // Esc ends the open inline text edit (`draw_inline_text_editor`; an IME's Esc there cancels the composition), so
@@ -845,7 +850,13 @@ impl DesktopApp {
             }
             "nav.tab" => {
                 let tab = text(args, "tab").unwrap_or("layers");
-                let target = if tab == "ai" { LeftTab::Ai } else { LeftTab::Layers };
+                let target = match tab {
+                    "ai" => LeftTab::Ai,
+                    // The toolbox tab is a canvas's or a slide deck's (68g); elsewhere there is none to show.
+                    "tools" if !self.toolbox_shown() => return Err("도구 탭은 캔버스와 슬라이드에만 있습니다".into()),
+                    "tools" => LeftTab::Tools,
+                    _ => LeftTab::Layers,
+                };
                 self.view().left_tab = target;
                 Ok(())
             }
@@ -1035,16 +1046,22 @@ impl DesktopApp {
                 self.change(vec![Operation::SetNodeInfo { node_ids: ids, alt: None, name: Some(name), hidden: None }], &[Intent::Content])
             }
             // Adding.
-            "add.text" => self.add_node_kind(NodeKind::Text),
-            "add.rect" | "add.frame" => self.add_node_kind(NodeKind::Rectangle),
-            "add.oval" => self.add_node_kind(NodeKind::Ellipse),
-            "add.line" => self.add_node_kind(NodeKind::Line),
+            "add.text" => self.add_node_kind(NodeKind::Text, args),
+            "add.rect" | "add.frame" => self.add_node_kind(NodeKind::Rectangle, args),
+            "add.oval" => self.add_node_kind(NodeKind::Ellipse, args),
+            "add.line" => self.add_node_kind(NodeKind::Line, args),
             "add.image" => {
                 // A text document takes the picture after the selected block (an empty page id means the flow).
                 let flow = matches!(self.artifact.as_ref().map(|artifact| &artifact.body), Some(designllm_contracts::ArtifactBody::Flow(_)));
+                if flow && args.get("at").is_some() {
+                    return Err("문서에서는 그림 위치를 정할 수 없습니다".into());
+                }
+                // `at` makes its page the current one (68g).
+                let at = if flow { None } else { self.take_add_at(args)? };
                 let page_id = if flow { String::new() } else { self.current_page_id().ok_or("이미지를 넣을 페이지를 고르세요")?.1 };
                 if let Some(path) = crate::dialogs::open_image(self.parent_hwnd) {
-                    self.call("asset.import", json!({ "path": path.to_string_lossy() }), PendingAction::ImageAsset { page_id });
+                    let center = at.map(|at| at.center);
+                    self.call("asset.import", json!({ "path": path.to_string_lossy() }), PendingAction::ImageAsset { page_id, center });
                 }
                 Ok(())
             }
@@ -1639,9 +1656,9 @@ impl DesktopApp {
         }
     }
 
-    fn add_node_kind(&mut self, kind: NodeKind) -> Result<(), String> {
-        self.add_node(kind);
-        Ok(())
+    fn add_node_kind(&mut self, kind: NodeKind, args: &Value) -> Result<(), String> {
+        let at = self.take_add_at(args)?;
+        self.add_node(kind, at)
     }
 
     fn current_page_id(&self) -> Option<(usize, designllm_contracts::Id)> {
@@ -1695,21 +1712,21 @@ impl DesktopApp {
 
 
 impl DesktopApp {
-    /// Adds an imported picture to the page as an image node (320 × 240 px at the top left).
-    pub(super) fn insert_image(&mut self, page_id: &str, value: Value) {
+    /// Adds an imported picture to the page as an image node (320 × 240 px at the top left, or centred on `center` in EMU).
+    pub(super) fn insert_image(&mut self, page_id: &str, value: Value, center: Option<(i64, i64)>) {
         let Ok(asset) = serde_json::from_value::<designllm_contracts::AssetRef>(value) else {
             self.set_error("이미지를 가져오지 못했습니다".into());
             return;
         };
+        let (width, height) = (320 * UNIT_PX as i64, 240 * UNIT_PX as i64);
+        let (x, y) = match center {
+            Some((cx, cy)) => (cx - width / 2, cy - height / 2),
+            None => (40 * UNIT_PX as i64, 40 * UNIT_PX as i64),
+        };
         let node = Node {
             id: new_id(),
             kind: NodeKind::Image,
-            bounds: ModelRect {
-                x: 40 * UNIT_PX as i64,
-                y: 40 * UNIT_PX as i64,
-                width: 320 * UNIT_PX as i64,
-                height: 240 * UNIT_PX as i64,
-            },
+            bounds: ModelRect { x, y, width, height },
             text: String::new(),
             style: Style::default(),
             asset: Some(asset),

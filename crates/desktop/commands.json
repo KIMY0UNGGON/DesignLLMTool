@@ -153,6 +153,7 @@
           "tab": {
             "enum": [
               "layers",
+              "tools",
               "ai",
               "outline",
               "files",
@@ -939,7 +940,28 @@
     },
     {
       "args": {
-        "properties": {},
+        "properties": {
+          "at": {
+            "description": "삽입할 위치. 개체의 가운데 점을 쪽의 왼쪽 위에서 잰 x, y(캔버스·슬라이드는 px)로 줍니다. page_index를 생략하면 현재 쪽입니다. 쪽 밖이면 거부합니다.",
+            "properties": {
+              "page_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          }
+        },
         "type": "object"
       },
       "core_calls": [
@@ -958,7 +980,28 @@
     },
     {
       "args": {
-        "properties": {},
+        "properties": {
+          "at": {
+            "description": "삽입할 위치. 개체의 가운데 점을 쪽의 왼쪽 위에서 잰 x, y(캔버스·슬라이드는 px)로 줍니다. page_index를 생략하면 현재 쪽입니다. 쪽 밖이면 거부합니다.",
+            "properties": {
+              "page_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          }
+        },
         "type": "object"
       },
       "core_calls": [
@@ -977,7 +1020,28 @@
     },
     {
       "args": {
-        "properties": {},
+        "properties": {
+          "at": {
+            "description": "삽입할 위치. 개체의 가운데 점을 쪽의 왼쪽 위에서 잰 x, y(캔버스·슬라이드는 px)로 줍니다. page_index를 생략하면 현재 쪽입니다. 쪽 밖이면 거부합니다.",
+            "properties": {
+              "page_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          }
+        },
         "type": "object"
       },
       "core_calls": [
@@ -996,7 +1060,28 @@
     },
     {
       "args": {
-        "properties": {},
+        "properties": {
+          "at": {
+            "description": "삽입할 위치. 개체의 가운데 점을 쪽의 왼쪽 위에서 잰 x, y(캔버스·슬라이드는 px)로 줍니다. page_index를 생략하면 현재 쪽입니다. 쪽 밖이면 거부합니다.",
+            "properties": {
+              "page_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          }
+        },
         "type": "object"
       },
       "core_calls": [
@@ -1031,7 +1116,28 @@
     },
     {
       "args": {
-        "properties": {},
+        "properties": {
+          "at": {
+            "description": "삽입할 위치. 개체의 가운데 점을 쪽의 왼쪽 위에서 잰 x, y(캔버스·슬라이드는 px)로 줍니다. page_index를 생략하면 현재 쪽입니다. 쪽 밖이면 거부합니다.",
+            "properties": {
+              "page_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          }
+        },
         "type": "object"
       },
       "core_calls": [
@@ -1098,7 +1204,28 @@
     },
     {
       "args": {
-        "properties": {},
+        "properties": {
+          "at": {
+            "description": "삽입할 위치. 개체의 가운데 점을 쪽의 왼쪽 위에서 잰 x, y(캔버스·슬라이드는 px)로 줍니다. page_index를 생략하면 현재 쪽입니다. 쪽 밖이면 거부합니다.",
+            "properties": {
+              "page_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          }
+        },
         "type": "object"
       },
       "core_calls": [
@@ -1146,6 +1273,26 @@
     {
       "args": {
         "properties": {
+          "at": {
+            "description": "삽입할 위치(add.text와 같은 뜻). 표의 가운데 점을 줍니다.",
+            "properties": {
+              "page_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
           "columns": {
             "maximum": 24,
             "minimum": 1,
@@ -1650,6 +1797,26 @@
     {
       "args": {
         "properties": {
+          "at": {
+            "description": "삽입할 위치(add.text와 같은 뜻). 아이콘의 가운데 점을 줍니다.",
+            "properties": {
+              "page_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
           "color": {
             "pattern": "^#[0-9A-Fa-f]{6}$",
             "type": "string"

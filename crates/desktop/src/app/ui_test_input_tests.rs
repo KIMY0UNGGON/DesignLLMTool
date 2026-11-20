@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use super::{
     test_support::{primary_button, screen, Host, Window},
-    ui_test_input::UiTestInput,
+    ui_test_input::{UiTestInput, UI_PERF_COMMAND},
 };
 
 /// A window on a canvas with the rectangles `r1`, `r2` and the text box `t1` ("가"), drawn through `update`. `test` turns the synthetic input on
@@ -198,6 +198,13 @@ fn a_test_window_lists_both_commands_and_says_so_in_its_state() {
     assert_eq!(find(UI_INPUT_COMMAND)["permission"], "agent_start");
     assert_eq!(find(UI_INPUT_COMMAND)["intents"], json!(["design", "content", "data"]));
     assert_eq!(find(UI_LAYOUT_COMMAND)["permission"], "read");
+    assert_eq!(find(UI_PERF_COMMAND)["permission"], "read");
+    // The timing reads back what the window sent, and starts again on reset.
+    let read = bench.run(UI_PERF_COMMAND, json!({ "reset": true }), "read", &[]);
+    assert_eq!(read["status"], "completed", "{read}");
+    assert!(read["result"]["methods"]["ui.state.publish"]["sent"].as_u64().is_some_and(|sent| sent > 0), "{read}");
+    let again = bench.run(UI_PERF_COMMAND, json!({}), "read", &[]);
+    assert!(again["result"]["frames"].as_u64() < read["result"]["frames"].as_u64(), "the counts started again: {again}");
     let state = bench.host.call("ui.state.read", json!({ "view_id": view_id })).expect("the state");
     assert_eq!(state["state"]["detail"]["ui_test_input"], true);
     // The window refuses a run without every intent or the strictest class (the core already did; the window checks again).
@@ -930,4 +937,203 @@ fn a_layer_row_double_click_needs_two_clicks_on_it_with_no_click_between() {
     bench.click_at(point(r1));
     bench.click_at(point(r1));
     assert!(renaming(&bench), "two quick clicks still open it");
+}
+
+/// 68f item 1: Ctrl + wheel over a node (a region the board's widgets lay over it) zooms the board about the pointer,
+/// as over empty board. egui hovers only the topmost interactive widget under the pointer, so a region over the board
+/// takes the board's hover.
+#[test]
+fn ctrl_wheel_over_a_node_zooms_the_board_about_the_pointer() {
+    let mut bench = Bench::new(true);
+    let layout = bench.layout();
+    let [x, y] = centre(node_rect(&layout, "r1"));
+    let zoom = bench.window.app.view_ref().zoom;
+    bench.input(json!([{ "type": "wheel", "x": x, "y": y, "dy": 120.0, "modifiers": { "ctrl": true } }]));
+    assert_ne!(bench.window.app.view_ref().zoom, zoom, "Ctrl + wheel over the node r1 zooms the board");
+}
+
+/// 68f item 1: Ctrl + wheel over the board zooms the board, not the app (egui's zoom factor, the UI scale, stays); over a
+/// panel it does neither, and the plain wheel over a panel leaves the board where it is. The plain wheel over a node pans the
+/// board, as over empty board (design tools do).
+#[test]
+fn the_wheel_moves_the_board_only_over_the_board_and_never_the_ui_scale() {
+    let mut bench = Bench::new(true);
+    let layout = bench.layout();
+    let scale = bench.window.ctx.zoom_factor();
+    let [x, y] = centre(node_rect(&layout, "r1"));
+    let zoom = bench.window.app.view_ref().zoom;
+    bench.input(json!([{ "type": "wheel", "x": x, "y": y, "dy": 120.0, "modifiers": { "ctrl": true } }]));
+    assert_ne!(bench.window.app.view_ref().zoom, zoom, "Ctrl + wheel over the board zooms it");
+    assert_eq!(bench.window.ctx.zoom_factor(), scale, "the UI scale stays");
+    let pan = bench.window.app.view_ref().pan;
+    bench.input(json!([{ "type": "wheel", "x": x, "y": y, "dy": -60.0 }]));
+    assert_ne!(bench.window.app.view_ref().pan, pan, "the wheel over a node pans the board");
+    // egui spreads a wheel step over the next frames (smooth scrolling): it ends before the panels are tried.
+    for _ in 0..40 {
+        bench.frame();
+    }
+    let panels: Vec<_> = layout.panels.iter().filter(|panel| matches!(panel.id.as_str(), "sidebar" | "properties")).cloned().collect();
+    assert!(!panels.is_empty(), "a panel is open: {:?}", layout.panels);
+    for panel in panels {
+        let [x, y] = centre(panel.rect);
+        let (zoom, pan) = (bench.window.app.view_ref().zoom, bench.window.app.view_ref().pan);
+        bench.input(json!([{ "type": "wheel", "x": x, "y": y, "dy": 120.0, "modifiers": { "ctrl": true } }, { "type": "wheel", "x": x, "y": y, "dy": -60.0 }]));
+        assert_eq!(bench.window.app.view_ref().zoom, zoom, "Ctrl + wheel over the {} panel leaves the board's zoom", panel.id);
+        assert_eq!(bench.window.app.view_ref().pan, pan, "the wheel over the {} panel leaves the board", panel.id);
+        assert_eq!(bench.window.ctx.zoom_factor(), scale, "the UI scale stays");
+    }
+}
+
+/// The canvas templates a person starts from (home.use_template).
+const CANVAS_TEMPLATES: [&str; 8] = ["mobile_app", "login", "dashboard", "landing_page", "social_post", "poster_a3", "invitation", "banner"];
+
+/// The id of the node that holds `id` directly, on the open canvas.
+fn container_of(bench: &Bench, id: &str) -> Option<String> {
+    fn walk(nodes: &[designllm_contracts::Node], id: &str, parent: Option<&str>) -> Option<Option<String>> {
+        nodes.iter().find_map(|node| {
+            if node.id == id {
+                Some(parent.map(str::to_owned))
+            } else {
+                walk(&node.children, id, Some(&node.id))
+            }
+        })
+    }
+    let artifact = bench.window.app.artifact.as_ref()?;
+    let ArtifactBody::Canvas(document) = &artifact.body else { return None };
+    document.pages.iter().find_map(|page| walk(&page.nodes, id, None)).flatten()
+}
+
+/// Whether `id` holds other nodes, on the open canvas.
+fn has_children(bench: &Bench, id: &str) -> bool {
+    bench.window.app.artifact.as_ref().and_then(|artifact| super::doc_tree::find_node(artifact, id)).is_some_and(|node| !node.children.is_empty())
+}
+
+/// 68f item 2, sweep: every visible object of every canvas template that holds no other object, clicked in turn without
+/// clearing the selection (a click on another object while one is selected), selects that object or the container that holds it
+/// directly; nothing else. Not clicked: an object whose centre another object drawn after it covers (the click is that one's).
+/// Where the selection's floating toolbar lies over the object (it flips below a selection near the page title) the toolbar
+/// takes the click, as it would a person's: the selection is cleared first, so the click reaches the board.
+/// The clicks come 60 ms apart: egui counts two clicks within 0.3 s as a double click wherever they land, and the board
+/// takes one only where the click before it landed (`board_double_click`), so a quick click on another object selects it.
+#[test]
+fn a_click_on_every_visible_object_of_each_canvas_template_selects_it_or_its_container() {
+    let mut bench = Bench::new(true);
+    let mut wrong: Vec<String> = Vec::new();
+    let mut clicked = 0;
+    for template in CANVAS_TEMPLATES {
+        bench.step("home.use_template", json!({ "template": template }));
+        for _ in 0..10 {
+            bench.frame();
+        }
+        let layout = bench.layout();
+        let contains = |rect: designllm_contracts::UiPointRect, [x, y]: [f32; 2]| x > rect.x && x < rect.x + rect.width && y > rect.y && y < rect.y + rect.height;
+        for (index, node) in layout.nodes.iter().enumerate() {
+            let at = centre(node.rect);
+            let covered = layout.nodes[index + 1..].iter().any(|later| later.visible && contains(later.rect, at));
+            if !node.visible || covered || has_children(&bench, &node.node_id) {
+                continue;
+            }
+            if bench.window.ctx.layer_id_at(Pos2::from(at)) != Some(egui::LayerId::background()) {
+                bench.step("select.clear", json!({}));
+            }
+            bench.click_at(Pos2::from(at));
+            bench.frame();
+            clicked += 1;
+            let selected = bench.window.app.selected_nodes.clone();
+            let container = container_of(&bench, &node.node_id);
+            if selected != [node.node_id.clone()] && container.as_ref().is_none_or(|container| selected != [container.clone()]) {
+                wrong.push(format!("{template}: {} (container {container:?}) -> {selected:?}", node.node_id));
+            }
+        }
+    }
+    assert!(clicked > 40, "the templates hold objects to click ({clicked})");
+    assert!(wrong.is_empty(), "clicks that selected nothing or another object: {wrong:#?}");
+}
+
+/// 68f item 2, early clicks: a click on a template's objects in the first frames after it opens (the fit and the zoom
+/// settle still run), before the board is still.
+#[test]
+fn a_click_right_after_a_canvas_template_opens_selects_the_object() {
+    let mut bench = Bench::new(true);
+    let mut empty: Vec<String> = Vec::new();
+    for template in CANVAS_TEMPLATES {
+        bench.step("home.use_template", json!({ "template": template }));
+        let layout = bench.layout();
+        let nodes: Vec<_> = layout.nodes.iter().filter(|node| node.visible).take(5).cloned().collect();
+        for node in nodes {
+            bench.click_at(Pos2::from(centre(node.rect)));
+            if bench.window.app.selected_nodes.is_empty() {
+                empty.push(format!("{template}: {} (page {})", node.node_id, node.page_index));
+            }
+            bench.step("select.clear", json!({}));
+        }
+    }
+    assert!(empty.is_empty(), "clicks that selected nothing: {empty:#?}");
+}
+
+/// 68f item 2, slow host: the click's reply waits one frame (what the frame sent is answered later), with a pan before it
+/// so the page transform moves between the click and its reply.
+#[test]
+fn a_click_whose_reply_is_late_after_a_pan_still_selects_the_object() {
+    let mut bench = Bench::new(true);
+    let mut empty: Vec<String> = Vec::new();
+    for template in CANVAS_TEMPLATES {
+        bench.step("home.use_template", json!({ "template": template }));
+        for _ in 0..10 {
+            bench.frame();
+        }
+        let layout = bench.layout();
+        let board = layout.panels.iter().find(|panel| panel.id == "board").expect("the board").rect;
+        let nodes: Vec<_> = layout.nodes.iter().filter(|node| node.visible).take(6).cloned().collect();
+        for node in nodes {
+            let at = Pos2::from(centre(node.rect));
+            // A small middle-button pan first (the transform moves), then the click, whose reply is late.
+            let from = Pos2::new(board.x + board.width / 2.0, board.y + board.height - 10.0);
+            bench.frame_with(vec![Event::PointerMoved(from), Event::PointerButton { pos: from, button: egui::PointerButton::Middle, pressed: true, modifiers: Modifiers::NONE }], true);
+            bench.frame_with(vec![Event::PointerMoved(from + egui::vec2(0.0, -30.0)), Event::PointerButton { pos: from, button: egui::PointerButton::Middle, pressed: false, modifiers: Modifiers::NONE }], true);
+            bench.frame_with(vec![Event::PointerMoved(at), Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE }, Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE }], false);
+            bench.frame();
+            bench.frame();
+            if bench.window.app.selected_nodes.is_empty() {
+                empty.push(format!("{template}: {} (page {})", node.node_id, node.page_index));
+            }
+            bench.step("select.clear", json!({}));
+        }
+    }
+    assert!(empty.is_empty(), "clicks that selected nothing: {empty:#?}");
+}
+
+/// 68f item 2, the zoom race: a click whose reply comes after the board zoomed (the page transform moved, and the page is
+/// drawn again at the new zoom's dpi) selects what was clicked. The reply is about the revision on screen, so it answers the
+/// click; asking again with the click's old screen point would hit what the zoomed board shows there now.
+#[test]
+fn a_click_answered_after_the_board_zoomed_selects_what_was_clicked() {
+    let mut bench = Bench::new(true);
+    bench.step("home.use_template", json!({ "template": "dashboard" }));
+    for _ in 0..10 {
+        bench.frame();
+    }
+    let layout = bench.layout();
+    let board = layout.panels.iter().find(|panel| panel.id == "board").expect("the board").rect;
+    let board_rect = Rect::from_min_size(Pos2::new(board.x, board.y), egui::vec2(board.width, board.height));
+    let node = layout.nodes.iter().filter(|node| node.visible && node.node_id.ends_with(".value")).last().expect("a metric value").clone();
+    let at = Pos2::from(centre(node.rect));
+    bench.click_at(at);
+    let clicked = bench.window.app.selected_nodes.clone();
+    assert!(!clicked.is_empty(), "a click on {} selects it", node.node_id);
+    bench.step("select.clear", json!({}));
+    for _ in 0..4 {
+        bench.frame();
+    }
+    let hits_before = bench.window.calls.iter().filter(|(method, _, _)| method == "render.hit_test").count();
+    // The click goes out; before its reply the board zooms threefold about its top left corner and draws a frame.
+    bench.frame_with(vec![Event::PointerMoved(at), primary_button(at, true), primary_button(at, false)], false);
+    bench.window.app.zoom_about(board_rect, board_rect.min, 3.0);
+    bench.frame_with(Vec::new(), false);
+    for _ in 0..6 {
+        bench.frame();
+    }
+    assert_eq!(bench.window.app.selected_nodes, clicked, "the late reply selects what the click was on");
+    let hits = bench.window.calls.iter().filter(|(method, _, _)| method == "render.hit_test").count() - hits_before;
+    assert_eq!(hits, 1, "the reply is not sent again with the click's old point");
 }

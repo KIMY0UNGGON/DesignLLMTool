@@ -58,10 +58,13 @@ mod selection;
 mod settings;
 mod sidebar;
 mod tools;
+mod toolbox;
+#[cfg(test)] mod toolbox_tests;
 mod video_insert;
 mod thumbs;
 mod ui_channel;
 mod ui_test_input;
+mod perf;
 #[cfg(test)] mod ui_test_input_tests;
 pub(crate) use ui_test_input::{ui_test_mode_from_env, ui_test_scale_from_env, UiTestMode};
 /// The UI-test mode, window visibility and dialog refusal of a launch (`smoke`: a smoke capture).
@@ -101,6 +104,7 @@ mod view_fetch;
 mod web_preview;
 mod web_mapping;
 mod web_runtime;
+mod workspace_info;
 #[cfg(test)] mod web_mapping_tests;
 #[cfg(test)] mod repeat_groups_tests;
 #[cfg(test)]
@@ -736,6 +740,10 @@ impl DesktopApp {
         let sent_start = (method == "job.start").then(|| figure_close::SentStart::of(&params)).flatten();
         match self.rpc.call(ticket, method, params) {
             Ok(()) => {
+                let in_flight = self.pending.len();
+                if let Some(test) = self.ui_test.as_mut() {
+                    test.perf.sent(ticket, method, in_flight);
+                }
                 let scoped = matches!(
                     method,
                     "context.read"
@@ -983,9 +991,13 @@ impl eframe::App for DesktopApp {
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
         if self.exit_ctx.is_none() {
             self.exit_ctx = Some(ctx.clone());
+            self.rpc.set_waker(ctx);
         }
         self.parent_hwnd = window_hwnd(frame);
+        // A UI-test window times its frames (68f, perf.rs).
+        let frame_started = self.ui_test.is_some().then(Instant::now);
         self.process_replies(ctx);
+        let replies_took = frame_started.map(|at| at.elapsed());
         self.expire_awaited_starts();
         self.sync_drafts();
         for notice in self.drafts.take_notices() {
@@ -1028,6 +1040,8 @@ impl eframe::App for DesktopApp {
                 self.draw_home_confirmation(ctx);
             }
         }
+        // An icon waiting for its pick is dropped once its toolbox tab was not drawn (68g).
+        self.forget_hidden_toolbox_icon(ctx);
         self.observe_board_memo_gesture(ctx);
         self.finish_board_memo_gesture_if_released(ctx);
         self.draw_board_memo_editor(ctx);
@@ -1045,6 +1059,9 @@ impl eframe::App for DesktopApp {
             self.publish_ui_if_due();
         }
         self.ui_screenshot_events(ctx);
+        if let (Some(test), Some(started), Some(replies)) = (self.ui_test.as_mut(), frame_started, replies_took) {
+            test.perf.frame(started, replies, started.elapsed());
+        }
         self.ui_test_frame_end(ctx);
         ctx.request_repaint_after(Duration::from_secs(1));
         self.smoke_step(ctx);

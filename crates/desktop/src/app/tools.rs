@@ -79,7 +79,7 @@ pub(super) fn preset_menu(ui: &mut Ui, palette: &theme::Palette, add: &mut dyn F
 
 /// The content icon picker inside the insert menu: a search field (Korean or English keywords) and a grid of 32 px
 /// buttons, the icon's purpose as the hover name. Returns the icon clicked.
-fn icon_picker(ui: &mut Ui, palette: &theme::Palette) -> Option<String> {
+pub(super) fn icon_picker(ui: &mut Ui, palette: &theme::Palette) -> Option<String> {
     let query_id = egui::Id::new("icon-picker-query");
     let mut query: String = ui.data(|data| data.get_temp(query_id)).unwrap_or_default();
     ui.add_space(4.0);

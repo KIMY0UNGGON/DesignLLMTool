@@ -344,12 +344,11 @@ impl DesktopApp {
                     }
                 }
             }
-            (ThumbTicket::Asset { artifact_id, revision, dpi, page }, Ok(RpcPayload::Asset { mime, width, height, rgba })) => {
-                if !super::board::is_rgba_png(&mime, width, height, &rgba) {
+            (ThumbTicket::Asset { artifact_id, revision, dpi, page }, Ok(payload @ RpcPayload::Image { .. })) => {
+                let Some(image) = payload.png_image() else {
                     thumb_failed(ctx, &artifact_id, revision, dpi);
                     return;
-                }
-                let image = egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &rgba);
+                };
                 let texture = ctx.load_texture(format!("thumb-{artifact_id}"), image, egui::TextureOptions::LINEAR);
                 with_cache(ctx, |cache| {
                     let entry = cache.entry(artifact_id).or_default();

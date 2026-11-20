@@ -6,8 +6,8 @@ use eframe::egui::{self, Align2, Color32, Context, CornerRadius, Id, Pos2, Rect,
 use super::{board::Tool, page_to_screen, screen_to_page_emu, BoardMemoEditor, BoardMemoGesture, BoardMemoMutation, DesktopApp, PendingAction};
 use crate::theme;
 
-const DEFAULT_MEMO_WIDTH: i64 = 240 * EMU_PER_CSS_PX;
-const DEFAULT_MEMO_HEIGHT: i64 = 140 * EMU_PER_CSS_PX;
+pub(super) const DEFAULT_MEMO_WIDTH: i64 = 240 * EMU_PER_CSS_PX;
+pub(super) const DEFAULT_MEMO_HEIGHT: i64 = 140 * EMU_PER_CSS_PX;
 const DEFAULT_MEMO_COLOR: &str = "#FFF2A8";
 const DEFAULT_TITLE_COLOR: &str = "#20252D";
 /// The card under edit is at least this wide on screen: at a low zoom the card itself leaves no room for a word.
@@ -35,7 +35,7 @@ impl DesktopApp {
     pub(super) fn handle_board_memo_shortcut(&mut self, ctx: &Context) {
         let canvas = self.screen == super::Screen::Editor
             && self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::Canvas);
-        if !canvas || ctx.wants_keyboard_input() {
+        if !canvas || ctx.wants_keyboard_input() || self.key_dialog_open() {
             return;
         }
         // `Delete` on a selected memo removes it (no object is selected with it, `set_selected_ids`); `edit.delete` is for
@@ -55,11 +55,32 @@ impl DesktopApp {
             }
             return;
         }
+        self.handle_board_tool_keys(ctx);
         if !ctx.input(|input| input.key_pressed(egui::Key::N) && input.modifiers == egui::Modifiers::NONE) {
             return;
         }
         ctx.input_mut(|input| { input.consume_key(egui::Modifiers::NONE, egui::Key::N); });
         self.view().tool = Tool::Memo;
+    }
+
+    /// `V` picks the select tool, and Esc leaves the memo tool when no memo is made (a memo made picks the select tool
+    /// itself, `begin_board_memo_at`). Neither acts while a memo editor, an inline text edit or a page section editor owns
+    /// the keys, or a home confirmation covers the window; Esc also waits for an open menu and for a memo save in flight.
+    fn handle_board_tool_keys(&mut self, ctx: &Context) {
+        let keys_free = self.board_memo_editor.is_none()
+            && self.inline_text_edit.is_none()
+            && self.page_section_editor.is_none()
+            && !self.has_home_confirmation()
+            && !self.key_dialog_open();
+        let tool = self.view_ref().tool;
+        if keys_free && tool != Tool::Select && ctx.input(|input| input.key_pressed(egui::Key::V) && input.modifiers == egui::Modifiers::NONE) {
+            ctx.input_mut(|input| { input.consume_key(egui::Modifiers::NONE, egui::Key::V); });
+            self.view().tool = Tool::Select;
+        } else if keys_free && tool == Tool::Memo && self.board_memo_mutation.is_none() && !egui::Popup::is_any_open(ctx)
+            && ctx.input(|input| input.key_pressed(egui::Key::Escape) && input.modifiers == egui::Modifiers::NONE)
+        {
+            self.view().tool = Tool::Select;
+        }
     }
 
     /// Selects memo `memo_id` in place of any selected object.
@@ -114,11 +135,8 @@ impl DesktopApp {
         };
         let ready = self.board_memo_page_ready(&artifact_id, revision, &page_id, page_index, page_size);
         let view = self.view_ref();
-        let locked = self.board_memo_editor.is_some() || self.board_memo_mutation.is_some()
-            || self.page_section_editor.is_some() || self.page_section_mutation.is_some()
-            || self.run_context.is_some() || self.inline_text_edit.is_some();
         let space_down = ctx.input(|input| input.key_down(egui::Key::Space));
-        let interactive = !locked && view.tool != Tool::Hand && !space_down;
+        let interactive = self.board_memo_input_blocked(space_down).is_none();
         let memo_tool = view.tool == Tool::Memo && interactive;
 
         if !ready {
@@ -145,7 +163,9 @@ impl DesktopApp {
                     });
                     if !over_memo {
                         self.region_clicked = true;
-                        self.begin_board_memo_at(page_index, position, page_rect, page_size);
+                        if let Some(top_left) = screen_to_page_emu(position, page_rect, page_size) {
+                            self.begin_board_memo_at(page_index, top_left, page_size);
+                        }
                     }
                 }
             }
@@ -544,19 +564,11 @@ impl DesktopApp {
         let mut check_held = false;
         let mut retry_held = false;
         let retry_allowed = self.board_memo_mutation_retry_allowed(mutation);
-        egui::Area::new(Id::new("board-memo-conflict"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(Pos2::new(board_rect.left() + 16.0, board_rect.top() + 16.0))
-            .show(ctx, |ui| {
-                let palette = theme::palette(ui.ctx());
-                egui::Frame::new()
-                    .fill(palette.surface)
-                    .stroke(Stroke::new(1.0, palette.line))
-                    .corner_radius(CornerRadius::same(8))
-                    .inner_margin(egui::Margin::same(10))
-                    .show(ui, |ui| {
-                        ui.set_max_width(360.0);
-                        ui.heading(if pending { "메모 저장 중" } else if outcome_uncertain { "메모 결과 확인 필요" } else { "메모 변경 보존됨" });
+        use crate::widgets::{dialog_buttons, DialogButton, DialogChoice};
+        let palette = theme::palette(ctx);
+        let title = if pending { "메모 저장 중" } else if outcome_uncertain { "메모 결과 확인 필요" } else { "메모 변경 보존됨" };
+        // A notice at the top middle of the board, stacked with the board's other notices (68d).
+        crate::widgets::dialog(ctx, &palette, Id::new("board-memo-conflict"), title, crate::widgets::DialogPlace::BoardTop(board_rect), |ui| {
                         ui.label(message.as_deref().unwrap_or("작업물의 최신 상태를 확인하고 있습니다. 메모를 보존했습니다."));
                         ui.label(format!(
                             "작업물 {} · 페이지 {} ({}) · 기준 revision {} · 페이지 메모 {}개 → {}개",
@@ -570,26 +582,28 @@ impl DesktopApp {
                         if let Some((_, _, _, memo)) = draft.as_ref() {
                             ui.label("저장되지 않은 메모 초안:");
                             ui.label(egui::RichText::new(truncate(&memo.text, 240)).monospace());
-                            ui.horizontal(|ui| {
-                                if ui.add_enabled(!pending, egui::Button::new("초안과 위치 복사")).clicked() { copy = true; }
-                                if ui.add_enabled(retry_allowed, egui::Button::new("같은 기준으로 다시 시도")).clicked() { retry = true; }
-                                if ui.add_enabled(!pending, egui::Button::new("초안 버리기")).clicked() { discard = true; }
-                            });
+                            let pressed = dialog_buttons(ui, &palette, &[
+                                DialogChoice::new("초안과 위치 복사", DialogButton::Plain).enabled(!pending),
+                                DialogChoice::new("같은 기준으로 다시 시도", DialogButton::Primary).enabled(retry_allowed),
+                                DialogChoice::new("초안 버리기", DialogButton::Danger).enabled(!pending),
+                            ]);
+                            (copy, retry, discard) = (pressed[0].clicked(), pressed[1].clicked(), pressed[2].clicked());
                         } else {
                             ui.label("이동 변경은 최신 상태에 자동 적용하지 않습니다.");
-                            ui.horizontal(|ui| {
-                                if ui.add_enabled(retry_allowed, egui::Button::new("같은 기준으로 다시 시도")).clicked() { retry = true; }
-                                if ui.add_enabled(!pending, egui::Button::new("이동 변경 버리기")).clicked() { discard = true; }
-                            });
+                            let pressed = dialog_buttons(ui, &palette, &[
+                                DialogChoice::new("같은 기준으로 다시 시도", DialogButton::Primary).enabled(retry_allowed),
+                                DialogChoice::new("이동 변경 버리기", DialogButton::Danger).enabled(!pending),
+                            ]);
+                            (retry, discard) = (pressed[0].clicked(), pressed[1].clicked());
                         }
                         if let Some(held_id) = held_edit_id.as_deref() {
                             if let Some(held) = self.held_edits.iter().find(|held| held.id == held_id) {
                                 match held.state {
                                     super::state::HeldEditState::NeedsReview => {
-                                        if ui.button("보류한 메모 상태 확인").clicked() { check_held = true; }
+                                        check_held = dialog_buttons(ui, &palette, &[DialogChoice::new("보류한 메모 상태 확인", DialogButton::Plain)])[0].clicked();
                                     }
                                     super::state::HeldEditState::Ready => {
-                                        if ui.button("보류한 메모 다시 적용").clicked() { retry_held = true; }
+                                        retry_held = dialog_buttons(ui, &palette, &[DialogChoice::new("보류한 메모 다시 적용", DialogButton::Primary)])[0].clicked();
                                     }
                                     super::state::HeldEditState::Checking => { ui.label("보류한 메모의 예약 상태를 확인 중입니다."); }
                                     super::state::HeldEditState::Sending | super::state::HeldEditState::WaitingForJobRelease => {
@@ -598,7 +612,6 @@ impl DesktopApp {
                                 }
                             }
                         }
-                    });
             });
         if copy {
             if let Some((artifact_id, page_id, page_index, memo)) = draft.as_ref() {
@@ -719,7 +732,42 @@ impl DesktopApp {
         })
     }
 
-    fn begin_board_memo_at(&mut self, page_index: u32, position: Pos2, page_rect: Rect, page_size: Size) {
+    /// Why the board takes no memo input now (a new memo, a memo's click or drag), or None when it does: an open memo,
+    /// title or page section edit, an agent's run, an inline text edit, the hand tool, or Space held for a pan.
+    fn board_memo_input_blocked(&self, space_down: bool) -> Option<&'static str> {
+        if self.board_memo_editor.is_some() || self.board_memo_mutation.is_some() {
+            Some("열려 있는 메모 편집이 끝난 뒤 메모를 추가하세요")
+        } else if self.page_section_editor.is_some() || self.page_section_mutation.is_some() {
+            Some("페이지 구역 편집이 끝난 뒤 메모를 추가하세요")
+        } else if self.run_context.is_some() {
+            Some("에이전트의 화면 명령이 끝난 뒤 메모를 추가하세요")
+        } else if self.inline_text_edit.is_some() {
+            Some("텍스트 편집을 끝낸 뒤 메모를 추가하세요")
+        } else if self.view_ref().tool == Tool::Hand {
+            Some("손 도구에서는 메모를 추가할 수 없습니다. 다른 도구를 고르세요")
+        } else if space_down {
+            Some("Space를 놓은 뒤 메모를 추가하세요")
+        } else {
+            None
+        }
+    }
+
+    /// A new memo for the page `page_index` whose centre is at `center` (page EMU), opened for writing: the toolbox tile and
+    /// its drop (68g). It takes the board's own memo conditions (`board_memo_input_blocked`); a refusal says why.
+    pub(super) fn begin_board_memo_centred(&mut self, ctx: &Context, page_index: u32, center: (i64, i64)) -> Result<(), String> {
+        let space_down = ctx.input(|input| input.key_down(egui::Key::Space));
+        if let Some(reason) = self.board_memo_input_blocked(space_down) {
+            return Err(reason.into());
+        }
+        let page_size = self.page_sizes().get(page_index as usize).copied().ok_or("메모를 넣을 페이지를 찾지 못했습니다")?;
+        self.focus_add_page(page_index);
+        let top_left = (center.0 - DEFAULT_MEMO_WIDTH / 2, center.1 - DEFAULT_MEMO_HEIGHT / 2);
+        self.begin_board_memo_at(page_index, top_left, page_size);
+        Ok(())
+    }
+
+    /// Opens a new memo whose top left is `top_left` (page EMU) on the page `page_index`.
+    fn begin_board_memo_at(&mut self, page_index: u32, top_left: (i64, i64), page_size: Size) {
         let Some((artifact_id, revision, page_id, expected)) = self.board_memo_page(page_index) else { return };
         if !self.board_memo_page_ready(&artifact_id, revision, &page_id, page_index, page_size) {
             self.set_error("최신 페이지 그림이 준비될 때까지 메모를 만들 수 없습니다. 초안은 아직 변경하지 않았습니다".into());
@@ -734,7 +782,7 @@ impl DesktopApp {
             self.set_error("페이지의 다른 편집이 끝날 때까지 메모를 만들 수 없습니다".into());
             return;
         }
-        let Some((x, y)) = screen_to_page_emu(position, page_rect, page_size) else { return };
+        let (x, y) = top_left;
         let memo = CanvasBoardMemo {
             kind: CanvasBoardMemoKind::Memo,
             id: designllm_contracts::new_id(),
@@ -754,6 +802,8 @@ impl DesktopApp {
             is_new: true,
             message: None,
         });
+        // The memo tool makes one memo per pick: the tool is back on select while the new memo is written.
+        self.view().tool = Tool::Select;
     }
 
     fn open_board_memo_editor(&mut self, page_index: u32, memo_id: &str) {

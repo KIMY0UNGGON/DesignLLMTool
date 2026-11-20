@@ -63,7 +63,7 @@ impl DesktopApp {
             (PendingAction::PageSectionsChange { token }, RpcPayload::Json(value)) => {
                 self.finish_page_sections_change(&token, &value);
             }
-            (PendingAction::ImageAsset { page_id }, RpcPayload::Json(value)) => self.insert_image(&page_id, value),
+            (PendingAction::ImageAsset { page_id, center }, RpcPayload::Json(value)) => self.insert_image(&page_id, value, center),
             (PendingAction::FigureImageAsset { origin, source_ref }, RpcPayload::Json(value)) => self.add_figure_image_panel(&origin, source_ref, &value),
             (PendingAction::LintWarnings { artifact_id }, RpcPayload::Json(value)) => self.take_lint(&artifact_id, &value),
             (PendingAction::Context, RpcPayload::Json(value)) => self.context_read(value),
@@ -83,23 +83,38 @@ impl DesktopApp {
                 self.flow_find_page_received(&request, value);
             }
             (PendingAction::Render { page_index }, RpcPayload::Json(value)) => self.page_rendered(page_index, value),
-            (PendingAction::PreviewAsset { snapshot, page_index }, RpcPayload::Asset { mime, width, height, rgba }) => {
+            (PendingAction::PreviewAsset { snapshot, page_index }, payload @ RpcPayload::Image { .. }) => {
                 if !self.shows_revision(&snapshot.artifact_id, snapshot.revision) {
                     return;
                 }
-                if !board::is_rgba_png(&mime, width, height, &rgba) {
+                let Some(image) = payload.png_image() else {
                     self.set_error("미리보기 이미지가 올바르지 않습니다".into());
                     return;
-                }
-                self.show_page_preview(ctx, page_index, snapshot, width, height, &rgba);
+                };
+                self.show_page_preview(ctx, page_index, snapshot, image);
             }
             (PendingAction::Transform { .. }, RpcPayload::Json(_)) => {}
             (PendingAction::HitTest { snapshot_id, page_index, transform_id, additive, edit_text }, RpcPayload::Json(value)) => {
-                if self.hit_test_scene_current(&snapshot_id, page_index, &transform_id) {
+                // A reply about the revision on screen answers the click even when the page was drawn again (another dpi, a
+                // region) or the board moved since (a zoom settling): the core mapped the point with the transform the click was
+                // made on, and which node is at a page point depends on the revision only (68f item 2).
+                let exact = self.hit_test_scene_current(&snapshot_id, page_index, &transform_id);
+                let current = exact || self.hit_reply_of_shown_revision(page_index, &value);
+                if !exact {
+                    self.perf_count_stale_hit(&snapshot_id, page_index, &transform_id);
+                }
+                if current {
+                    self.perf_mark("hit_accepted");
+                    if !exact {
+                        self.perf_count("hit_accepted_same_revision");
+                    }
                     self.hit_test_answered(ctx, page_index, additive, edit_text, value);
                     self.cell_nav.text_drag = false;
                     self.hit_answered();
-                } else if !self.retry_stale_hit() {
+                } else if self.retry_stale_hit() {
+                    self.perf_count("hit_stale_retried");
+                } else {
+                    self.perf_count("hit_stale_dropped");
                     // A click answered against a scene that moved on is sent once more (68 item 11); a second stale answer
                     // is said for a double click, the gesture that opens a text.
                     self.cell_nav.text_drag = false;
@@ -109,9 +124,8 @@ impl DesktopApp {
                     self.hit_answered();
                 }
             }
-            (PendingAction::Selection, RpcPayload::Json(_)) => {
-                self.fetch_context();
-            }
+            // The core answers `selection.set` with the context it now holds, as `context.read` does (core `selection_set`).
+            (PendingAction::Selection, RpcPayload::Json(value)) => self.context_read(value),
             (PendingAction::InlineTextChange { session_id }, RpcPayload::Json(value)) => {
                 self.complete_inline_text_change(session_id, &value);
             }
@@ -199,12 +213,10 @@ impl DesktopApp {
                 }
             }
             (PendingAction::RenderRegion { page_index }, RpcPayload::Json(value)) => self.region_rendered(page_index, value),
-            (PendingAction::RegionAsset { snapshot, page_index }, RpcPayload::Asset { mime, width, height, rgba }) => {
+            (PendingAction::RegionAsset { snapshot, page_index }, payload @ RpcPayload::Image { .. }) => {
                 let region = snapshot.preview_transform.as_ref().and_then(|transform| transform.crop);
-                if board::is_rgba_png(&mime, width, height, &rgba) {
-                    if let Some(region) = region {
-                        self.store_region_texture(ctx, page_index, &snapshot, region, width, height, &rgba);
-                    }
+                if let (Some(image), Some(region)) = (payload.png_image(), region) {
+                    self.store_region_image(ctx, page_index, &snapshot, region, image);
                 }
             }
             (PendingAction::ExportPreview { key }, RpcPayload::Json(value)) => {
@@ -245,7 +257,7 @@ impl DesktopApp {
             (PendingAction::PdfEvidenceImport, RpcPayload::Json(value)) => self.pdf_evidence_read(ticket, &value),
             (PendingAction::PollEvents, RpcPayload::Json(value)) => self.handle_events(value),
             (PendingAction::ReleaseDrag, RpcPayload::Json(_)) => {}
-            (_, RpcPayload::Asset { .. }) => self.set_error("예기치 않은 이미지 응답입니다".into()),
+            (_, RpcPayload::Image { .. }) => self.set_error("예기치 않은 이미지 응답입니다".into()),
             (_, RpcPayload::Json(_)) => self.set_error("예기치 않은 작업 응답입니다".into()),
         }
     }
@@ -381,6 +393,7 @@ impl DesktopApp {
                 }
                 self.view_id = snapshot.view_id.clone();
                 self.context = Some(snapshot);
+                self.perf_mark("context_applied");
                 self.resync_edit_state();
                 self.resume_held_edits();
                 self.reconcile_video_insert_after_refresh();
@@ -494,8 +507,8 @@ impl DesktopApp {
     }
 
     /// Shows the decoded preview of a page of the shown revision.
-    fn show_page_preview(&mut self, ctx: &Context, page_index: u32, snapshot: RenderSnapshot, width: u32, height: u32, rgba: &[u8]) {
-        self.store_page_texture(ctx, page_index, &snapshot, width, height, rgba);
+    fn show_page_preview(&mut self, ctx: &Context, page_index: u32, snapshot: RenderSnapshot, image: egui::ColorImage) {
+        self.store_page_image(ctx, page_index, &snapshot, image);
         self.resume_inline_table_cell_after_render(page_index);
         let first_page = snapshot
             .scene
@@ -534,6 +547,18 @@ impl DesktopApp {
             })
         });
         scene_current && self.page_transforms.get(&page_index).is_some_and(|transform| transform.id == transform_id)
+    }
+
+    /// Whether a hit reply names the revision the window shows: the document, its structure, its context and the drawn page
+    /// `page_index` are all of that revision.
+    fn hit_reply_of_shown_revision(&self, page_index: u32, value: &Value) -> bool {
+        let Some(revision) = value.get("revision").and_then(Value::as_u64) else { return false };
+        let answered_page = value.get("page_index").and_then(Value::as_u64).is_none_or(|answered| answered == u64::from(page_index));
+        answered_page && self.active.as_ref().zip(self.artifact.as_ref()).zip(self.context.as_ref()).is_some_and(|((active, artifact), context)| {
+            active.id == artifact.id && artifact.id == context.artifact_id
+                && active.revision == revision && artifact.revision == revision && context.revision == revision
+                && self.page_textures.get(&page_index).is_some_and(|page| page.artifact_id == active.id && page.revision == revision)
+        })
     }
 
     fn hit_test_answered(&mut self, ctx: &Context, page_index: u32, additive: bool, edit_text: bool, mut value: Value) {

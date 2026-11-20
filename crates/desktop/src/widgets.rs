@@ -406,7 +406,7 @@ pub fn dropdown(ui: &mut Ui, palette: &Palette, value: &str, icon: Option<&str>,
 
 /// Cuts `text` with an ellipsis so that it fits `width` points.
 pub fn truncate_to_width(ui: &Ui, text: &str, width: f32, color: Color32) -> String {
-    let font = theme::display_font(false, 13.0);
+    let font = house_font(ui, theme::Type::Body);
     if text_width(ui, text, font.clone(), color) <= width {
         return text.to_owned();
     }
@@ -443,7 +443,7 @@ pub fn text_field(ui: &mut Ui, palette: &Palette, text: &mut String, hint: &str,
         egui::vec2(width, theme::FIELD_HEIGHT),
         TextEdit::singleline(text)
             .hint_text(egui::RichText::new(hint).color(palette.ink_3))
-            .font(theme::display_font(false, 13.0))
+            .font(house_font(ui, theme::Type::Body))
             .margin(egui::Margin::symmetric(8, 4)),
     );
     crate::ui_record::note(ui, hint, &response);
@@ -560,6 +560,468 @@ pub fn callout(ui: &mut Ui, palette: &Palette, text: &str, buttons: &[&str], war
 }
 
 
+/// Where a dialog sits and which keys it answers (GUI_DESIGN §5.1, §5.3; task 68d).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DialogPlace {
+    /// Centred on the window over a backdrop that takes the clicks behind it. Enter, Esc and a press on the backdrop answer it.
+    Modal,
+    /// Centred on the window with no backdrop (a form over the board). Enter and Esc answer it while no modal is open.
+    Screen,
+    /// A notice hung from the top middle of this rectangle (the board), under the notices drawn before it in the same pass, so
+    /// that two notices never overlap. It takes no keys: the board under it keeps them.
+    BoardTop(Rect),
+}
+
+/// The look of a dialog button (GUI_DESIGN §5.1): `Primary` is the one default action (accent), `Plain` a neutral choice,
+/// `Danger` a choice that throws work away (`danger` text), `Warn` accepts a loss (`warn` fill, as the export popover).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DialogButton {
+    Plain,
+    Primary,
+    Danger,
+    Warn,
+}
+
+/// One button of a dialog's button row (`dialog_buttons`).
+#[derive(Clone, Copy, Debug)]
+pub struct DialogChoice<'a> {
+    pub label: &'a str,
+    pub kind: DialogButton,
+    pub enabled: bool,
+    /// Only a person may press it (task 69): it is reported to the UI-test layer as human only.
+    pub human_only: bool,
+}
+
+impl<'a> DialogChoice<'a> {
+    pub fn new(label: &'a str, kind: DialogButton) -> Self {
+        Self { label, kind, enabled: true, human_only: false }
+    }
+
+    pub fn enabled(self, enabled: bool) -> Self {
+        Self { enabled, ..self }
+    }
+
+    pub fn human_only(self) -> Self {
+        Self { human_only: true, ..self }
+    }
+}
+
+/// What a dialog gave back in this frame: the contents' value and the keys it took. The caller maps `enter` to its main
+/// button (not when that button accepts a loss or throws work away) and `dismissed` to its safe choice (cancel, keep
+/// working), each only while that button is shown and enabled.
+#[derive(Debug)]
+pub struct DialogResponse<R> {
+    pub inner: R,
+    /// Enter, with no menu open and no widget of the dialog holding the keyboard (a focused button takes its own Enter).
+    pub enter: bool,
+    /// Esc with no menu open, or (a modal) a press on the backdrop.
+    pub dismissed: bool,
+}
+
+/// Dialog width: the widest floating panel the design allows (`theme::PANEL_MAX`, 420; §4 panels 280–420).
+pub const DIALOG_WIDTH: f32 = theme::PANEL_MAX;
+/// A notice's width on the board: that of the export popover, the other box that floats on the board (`theme::EXPORT_WIDTH`).
+pub const NOTICE_WIDTH: f32 = theme::EXPORT_WIDTH;
+/// A form row of a dialog: the properties panel's row (§5.3: width 320, label column 76, row 32 with a 28 field).
+pub const DIALOG_FORM_WIDTH: f32 = theme::PANEL_WIDTH;
+/// Padding inside the frame, and a notice's distance from the board's top: spacing step 16 (§5.3).
+const DIALOG_PADDING: f32 = 16.0;
+/// Between the title and the body, between buttons and button lines, between stacked notices: spacing step 8 (§5.3).
+const DIALOG_GAP: f32 = 8.0;
+/// What a centred dialog leaves to the window's top and bottom before its body scrolls: spacing step 24 (§5.3).
+const DIALOG_EDGE: f32 = 24.0;
+/// The title's line (`title` 14/20, §5.2).
+const DIALOG_TITLE_LINE: f32 = 20.0;
+/// The backdrop of a modal: black at 0x66 (40 %) in both themes, the alpha of the dark theme's large float shadow layer
+/// (`shadow.float`, dark: `0 4 14 #00000066`). Black, not `ink`: the dark theme's `ink` is light and would whiten the window.
+const BACKDROP_ALPHA: u8 = 0x66;
+/// A button's padding on each side: spacing step 16 (§5.3).
+const DIALOG_BUTTON_PADDING: f32 = 16.0;
+/// No token gives a button's least width. 88 is a four-syllable label at 13 px (about 56) with the 16 padding on each side, so
+/// that two-syllable choices (취소, 복원, 거절) are as wide as the four-syllable ones next to them.
+const DIALOG_BUTTON_MIN_WIDTH: f32 = 88.0;
+
+/// The house face of a role, or egui's proportional face while the app's fonts are not installed (a bare test context).
+fn house_font(ui: &Ui, role: theme::Type) -> FontId {
+    let font = theme::font(role);
+    if ui.fonts(|fonts| fonts.families().contains(&font.family)) {
+        font
+    } else {
+        FontId::new(font.size, egui::FontFamily::Proportional)
+    }
+}
+
+/// A confirmation, recovery or notice window in the house style (GUI_DESIGN §5.1, §5.3): `surface`, a 1 px `line` border,
+/// radius 10, the menu shadow, the title in the title face (14/20 Bold) and the contents centred under it. There is no window
+/// bar and no close cross: the choices are buttons (`dialog_buttons`). A body taller than the window (the board, for a
+/// notice) scrolls. A dialog whose choices end its contents takes `dialog_with_choices`, which keeps them in view.
+pub fn dialog<R>(
+    ctx: &egui::Context,
+    palette: &Palette,
+    id: egui::Id,
+    title: &str,
+    place: DialogPlace,
+    contents: impl FnOnce(&mut Ui) -> R,
+) -> DialogResponse<R> {
+    dialog_with_footer(ctx, palette, id, title, place, contents, |_, inner| inner)
+}
+
+/// `dialog` with its button row under the scrolling body, always in view however long the body is: `contents` draws the body
+/// and returns its value and the choices. Returns that value and, per choice, whether it was pressed in this frame.
+pub fn dialog_with_choices<'c, B>(
+    ctx: &egui::Context,
+    palette: &Palette,
+    id: egui::Id,
+    title: &str,
+    place: DialogPlace,
+    contents: impl FnOnce(&mut Ui) -> (B, Vec<DialogChoice<'c>>),
+) -> DialogResponse<(B, Vec<bool>)> {
+    dialog_with_footer(ctx, palette, id, title, place, contents, |ui, (inner, choices)| {
+        let pressed = dialog_buttons(ui, palette, &choices).iter().map(Response::clicked).collect();
+        (inner, pressed)
+    })
+}
+
+fn dialog_with_footer<B, R>(
+    ctx: &egui::Context,
+    palette: &Palette,
+    id: egui::Id,
+    title: &str,
+    place: DialogPlace,
+    contents: impl FnOnce(&mut Ui) -> B,
+    footer: impl FnOnce(&mut Ui, B) -> R,
+) -> DialogResponse<R> {
+    let width = if matches!(place, DialogPlace::BoardTop(_)) { NOTICE_WIDTH } else { DIALOG_WIDTH };
+    let frame = egui::Frame::new()
+        .fill(palette.surface)
+        .stroke(Stroke::new(1.0, palette.line))
+        .corner_radius(CornerRadius::same(theme::RADIUS_FLOAT))
+        .inner_margin(egui::Margin::same(DIALOG_PADDING as i8))
+        // A Frame takes one shadow layer: the larger one of the menu's two.
+        .shadow(theme::shadow(ctx, theme::Elevation::Menu)[1]);
+    // Notices stack down the board: each starts 8 under the one drawn before it in this pass.
+    let stack_id = egui::Id::new("dialog-board-notices");
+    let pass = ctx.cumulative_pass_nr();
+    let (top, room) = match place {
+        DialogPlace::BoardTop(board) => {
+            let top = ctx
+                .data(|data| data.get_temp::<(u64, f32)>(stack_id))
+                .filter(|(stacked, _)| *stacked == pass)
+                .map_or(board.top() + DIALOG_PADDING, |(_, next)| next);
+            (top, board.bottom() - DIALOG_PADDING - top)
+        }
+        _ => (0.0, ctx.content_rect().height() - 2.0 * DIALOG_EDGE),
+    };
+    let title_room = if title.is_empty() { 0.0 } else { DIALOG_TITLE_LINE + DIALOG_GAP };
+    // The button row is measured as it is drawn; the body scrolls in what the last frame's row left.
+    let footer_id = id.with("dialog-footer-height");
+    let footer_room = ctx.data(|data| data.get_temp::<f32>(footer_id)).unwrap_or(0.0);
+    // The room less the padding and the border on both sides and the item spacing above and below the body.
+    let spacing = ctx.style().spacing.item_spacing.y;
+    let body_room = (room - 2.0 * (DIALOG_PADDING + 1.0 + spacing) - title_room - footer_room).max(theme::CONTROL_HEIGHT);
+    let body = move |ui: &mut Ui| {
+        // The frame is `width` wide: the contents, the padding and the 1 px border on each side.
+        ui.set_width(width - 2.0 * (DIALOG_PADDING + 1.0));
+        // An area offers its contents the size it had last frame: without this the body could not grow past it (a form whose
+        // next step is taller would keep the last step's height and scroll).
+        ui.set_max_height(title_room + body_room + footer_room);
+        ui.vertical_centered(|ui| {
+            if !title.is_empty() {
+                ui.label(egui::RichText::new(title).font(house_font(ui, theme::Type::Title)).color(palette.ink));
+                ui.add_space(DIALOG_GAP);
+            }
+            let inner = egui::ScrollArea::vertical()
+                .id_salt("dialog-body")
+                .max_height(body_room)
+                .auto_shrink([false, true])
+                .show(ui, |ui| ui.vertical_centered(contents).inner)
+                .inner;
+            let before = ui.cursor().min.y;
+            let inner = footer(ui, inner);
+            let measured = ui.cursor().min.y - before;
+            ui.ctx().data_mut(|data| data.insert_temp(footer_id, measured.max(0.0)));
+            inner
+        })
+        .inner
+    };
+    // The frame a dialog first shows in takes no keys: the Enter or Esc that opened it is not its answer.
+    let shown_id = id.with("dialog-shown-frame");
+    let frame_nr = ctx.cumulative_frame_nr();
+    let fresh = ctx.data(|data| data.get_temp::<u64>(shown_id)).is_none_or(|last| last + 1 < frame_nr);
+    ctx.data_mut(|data| data.insert_temp(shown_id, frame_nr));
+    // Keys go to one dialog only, the last opened (the top one), never while an IME composes, and never to a menu's Esc.
+    let keys_free = !fresh && !egui::Popup::is_any_open(ctx) && !ime_in_use(ctx);
+    match place {
+        DialogPlace::Modal => {
+            let on_top = top_of_dialogs(ctx, id);
+            let shown = egui::Modal::new(id)
+                .backdrop_color(Color32::from_black_alpha(BACKDROP_ALPHA))
+                .frame(frame)
+                .show(ctx, body);
+            let layer = shown.response.layer_id;
+            let focus_inside = ctx
+                .memory(|memory| memory.focused())
+                .and_then(|focused| ctx.read_response(focused))
+                .is_some_and(|focused| focused.layer_id == layer);
+            let live = keys_free && on_top && shown.is_top_modal;
+            let enter = live && !focus_inside && take_dialog_key(ctx, egui::Key::Enter);
+            // What egui's `ModalResponse::should_close` answers (Esc on the top modal with no menu open, or the backdrop
+            // pressed), with Esc read as `take_dialog_key` reads it.
+            let dismissed = (live && take_dialog_key(ctx, egui::Key::Escape)) || (!fresh && shown.backdrop_response.clicked());
+            DialogResponse { inner: shown.inner, enter, dismissed }
+        }
+        DialogPlace::Screen => {
+            let on_top = top_of_dialogs(ctx, id);
+            let area = egui::Area::new(id)
+                .order(egui::Order::Foreground)
+                .movable(false)
+                .fade_in(false)
+                .anchor(Align2::CENTER_CENTER, [0.0, 0.0]);
+            let shown = area.show(ctx, |ui| frame.show(ui, body).inner);
+            let live = keys_free && on_top && ctx.memory(|memory| memory.top_modal_layer()).is_none();
+            let enter = live && ctx.memory(|memory| memory.focused()).is_none() && take_dialog_key(ctx, egui::Key::Enter);
+            let dismissed = live && take_dialog_key(ctx, egui::Key::Escape);
+            DialogResponse { inner: shown.inner, enter, dismissed }
+        }
+        DialogPlace::BoardTop(board) => {
+            let area = egui::Area::new(id)
+                .order(egui::Order::Foreground)
+                .movable(false)
+                .fade_in(false)
+                .pivot(Align2::CENTER_TOP)
+                .fixed_pos(Pos2::new(board.center().x, top));
+            let shown = area.show(ctx, |ui| frame.show(ui, body).inner);
+            ctx.data_mut(|data| data.insert_temp(stack_id, (pass, shown.response.rect.bottom() + DIALOG_GAP)));
+            DialogResponse { inner: shown.inner, enter: false, dismissed: false }
+        }
+    }
+}
+
+/// The dialogs that take keys (modal and centred), each with the frame it opened in and the last frame it was drawn in.
+#[derive(Clone, Default)]
+struct DialogStack(Vec<(egui::Id, u64, u64)>);
+
+/// Records `id` as drawn in this frame and answers whether it is the top one: of the dialogs drawn in this frame or the last,
+/// the one opened last (egui raises a newly shown area above the others). One that closed last frame still counts for a frame,
+/// so that the key that closed it does not answer the one under it as well.
+fn top_of_dialogs(ctx: &egui::Context, id: egui::Id) -> bool {
+    let key = egui::Id::new("dialog-stack");
+    let frame = ctx.cumulative_frame_nr();
+    let mut stack = ctx.data(|data| data.get_temp::<DialogStack>(key)).unwrap_or_default();
+    stack.0.retain(|(_, _, last)| last + 1 >= frame);
+    match stack.0.iter_mut().find(|(shown, _, _)| *shown == id) {
+        Some(entry) => entry.2 = frame,
+        None => stack.0.push((id, frame, frame)),
+    }
+    let top = stack.0.iter().max_by_key(|(_, opened, _)| *opened).map(|(shown, _, _)| *shown);
+    ctx.data_mut(|data| data.insert_temp(key, stack));
+    top == Some(id)
+}
+
+/// Whether an IME composes: an IME event in this frame (a commit's Enter, a cancel's Esc), or a composition left open by the
+/// frames before (kept from frame to frame).
+fn ime_in_use(ctx: &egui::Context) -> bool {
+    let key = egui::Id::new("dialog-ime");
+    let composing = ctx.data(|data| data.get_temp::<bool>(key)).unwrap_or(false);
+    let events = ctx.input(|input| {
+        input.events.iter().filter_map(|event| match event { egui::Event::Ime(ime) => Some(ime.clone()), _ => None }).collect::<Vec<_>>()
+    });
+    // The events set the state absolutely (the last one wins), so a second dialog in the same frame reads the same answer.
+    let composing = events.iter().fold(composing, |composing, ime| match ime {
+        egui::ImeEvent::Preedit(text) => !text.is_empty(),
+        egui::ImeEvent::Commit(_) | egui::ImeEvent::Disabled => false,
+        egui::ImeEvent::Enabled => composing,
+    });
+    ctx.data_mut(|data| data.insert_temp(key, composing));
+    composing || !events.is_empty()
+}
+
+/// Takes the press event of Enter or Esc (no modifier, not a repeat of a held key) for the dialog drawn now. The board and the
+/// window's shortcuts leave these keys alone while a dialog that takes keys is open (`DesktopApp::key_dialog_open`), so the
+/// event is still in the frame's input.
+fn take_dialog_key(ctx: &egui::Context, key: egui::Key) -> bool {
+    ctx.input_mut(|input| {
+        let index = input.events.iter().position(|event| {
+            matches!(event, egui::Event::Key { key: pressed_key, pressed: true, repeat: false, modifiers, .. }
+                if *pressed_key == key && modifiers.is_none())
+        });
+        index.map(|index| input.events.remove(index)).is_some()
+    })
+}
+
+fn dialog_button_font(ui: &Ui, kind: DialogButton) -> FontId {
+    house_font(ui, if kind == DialogButton::Primary { theme::Type::Strong } else { theme::Type::Body })
+}
+
+fn dialog_button_width(ui: &Ui, label: &str, kind: DialogButton) -> f32 {
+    (text_width(ui, label, dialog_button_font(ui, kind), Color32::WHITE) + 2.0 * DIALOG_BUTTON_PADDING).max(DIALOG_BUTTON_MIN_WIDTH)
+}
+
+/// The buttons of a dialog (GUI_DESIGN §5.1): 8 under what precedes them, 8 apart, each line centred, and wrapped onto a new
+/// line (8 below) when the dialog's width is used up. Each button is reported to the UI-test layer, human only where its
+/// choice says so. Returns the buttons' responses in the order of `choices`.
+pub fn dialog_buttons(ui: &mut Ui, palette: &Palette, choices: &[DialogChoice<'_>]) -> Vec<Response> {
+    let widths: Vec<f32> = choices.iter().map(|choice| dialog_button_width(ui, choice.label, choice.kind)).collect();
+    let room = ui.available_width();
+    let mut lines: Vec<std::ops::Range<usize>> = Vec::new();
+    let (mut start, mut used) = (0, 0.0);
+    for (index, width) in widths.iter().enumerate() {
+        if index > start && used + DIALOG_GAP + width > room {
+            lines.push(start..index);
+            (start, used) = (index, *width);
+        } else {
+            used = if index == start { *width } else { used + DIALOG_GAP + width };
+        }
+    }
+    if start < choices.len() {
+        lines.push(start..choices.len());
+    }
+    ui.add_space(DIALOG_GAP);
+    let mut responses = Vec::with_capacity(choices.len());
+    for (number, line) in lines.into_iter().enumerate() {
+        if number > 0 {
+            ui.add_space(DIALOG_GAP);
+        }
+        let total = widths[line.clone()].iter().sum::<f32>() + DIALOG_GAP * (line.len() - 1) as f32;
+        ui.allocate_ui_with_layout(
+            egui::vec2(total.min(room), theme::CONTROL_HEIGHT),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = DIALOG_GAP;
+                for choice in &choices[line] {
+                    let response = dialog_button(ui, palette, choice.label, choice.kind, choice.enabled);
+                    if choice.human_only {
+                        crate::ui_record::note_human_only(ui, choice.label, &response);
+                    } else {
+                        crate::ui_record::note(ui, choice.label, &response);
+                    }
+                    responses.push(response);
+                }
+            },
+        );
+    }
+    responses
+}
+
+/// One dialog button: 32 high, radius 6, 16 padding, at least 88 wide. `Primary` takes the bold label. A disabled main button
+/// (`Primary`, `Warn`) drops its fill to `surface-2` with `ink-3` text (4.5:1, §5.1), so that it reads as off beside the
+/// outlined ones; a disabled outlined button keeps `surface` with `ink-3` text and a `line` border. The keyboard focus is
+/// the 2 px `accent` ring 2 px outside (§5.4). The caller (`dialog_buttons`) reports it to the UI-test layer.
+pub fn dialog_button(ui: &mut Ui, palette: &Palette, label: &str, kind: DialogButton, enabled: bool) -> Response {
+    let font = dialog_button_font(ui, kind);
+    let width = dialog_button_width(ui, label, kind);
+    // The colours below are the disabled look: painted without the half opacity egui gives a disabled ui, so that `ink-3`
+    // keeps its 4.5:1 on `surface-2`.
+    let painter = ui.painter().clone();
+    ui.add_enabled_ui(enabled, |ui| {
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, theme::CONTROL_HEIGHT), Sense::click());
+        let hover = enabled && response.hovered();
+        let (fill, ink, outline) = match (kind, enabled) {
+            (DialogButton::Primary, true) => (if hover { palette.accent_ink } else { palette.accent }, palette.on_accent, None),
+            (DialogButton::Warn, true) => (if hover { palette.warn.gamma_multiply(0.92) } else { palette.warn }, palette.on_warn, None),
+            (DialogButton::Primary | DialogButton::Warn, false) => (palette.surface_2, palette.ink_3, None),
+            (DialogButton::Danger, true) => (if hover { palette.danger_soft } else { palette.surface }, palette.danger, Some(palette.line_strong)),
+            (DialogButton::Plain, true) => (if hover { palette.surface_2 } else { palette.surface }, palette.ink, Some(palette.line_strong)),
+            (DialogButton::Danger | DialogButton::Plain, false) => (palette.surface, palette.ink_3, Some(palette.line)),
+        };
+        let corner = CornerRadius::same(theme::RADIUS_CONTROL);
+        painter.rect_filled(rect, corner, fill);
+        if let Some(outline) = outline {
+            painter.rect_stroke(rect, corner, Stroke::new(1.0, outline), StrokeKind::Inside);
+        }
+        painter.text(rect.center(), Align2::CENTER_CENTER, label, font, ink);
+        if response.has_focus() {
+            painter.rect_stroke(
+                rect.expand(2.0),
+                CornerRadius::same(theme::RADIUS_CONTROL + 2),
+                Stroke::new(2.0, palette.accent),
+                StrokeKind::Outside,
+            );
+        }
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+        response
+    })
+    .inner
+}
+
+/// One row of a dialog form, centred in the dialog: a `DIALOG_FORM_WIDTH` block, 32 high, with `label` in the 76 column
+/// (caption, `ink-2`, cut to fit) and `field` after it, given the width left. With an empty label the field has the block.
+pub fn dialog_row<R>(ui: &mut Ui, palette: &Palette, label: &str, field: impl FnOnce(&mut Ui, f32) -> R) -> R {
+    let width = DIALOG_FORM_WIDTH.min(ui.available_width());
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, theme::PROPERTY_ROW),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_min_size(egui::vec2(width, theme::PROPERTY_ROW));
+            ui.spacing_mut().item_spacing.x = DIALOG_GAP;
+            let mut room = width;
+            if !label.is_empty() {
+                let column = theme::LABEL_COLUMN - DIALOG_GAP;
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(column, theme::PROPERTY_ROW), Sense::hover());
+                let shown = truncate_to_width(ui, label, column, palette.ink_2);
+                ui.painter().text(Pos2::new(rect.left(), rect.center().y), Align2::LEFT_CENTER, shown, house_font(ui, theme::Type::Caption), palette.ink_2);
+                room -= theme::LABEL_COLUMN;
+            }
+            field(ui, room)
+        },
+    )
+    .inner
+}
+
+/// A `dropdown` whose menu lists `options` as menu rows, the current one checked. Returns the index picked this frame.
+pub fn dropdown_menu(ui: &mut Ui, palette: &Palette, options: &[&str], current: Option<usize>, width: f32) -> Option<usize> {
+    let shown = current.and_then(|index| options.get(index)).copied().unwrap_or_default();
+    let button = dropdown(ui, palette, shown, None, width);
+    let mut picked = None;
+    egui::Popup::from_toggle_button_response(&button)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.set_width(width.max(200.0));
+            for (index, label) in options.iter().enumerate() {
+                if menu_item(ui, palette, None, label, "", Some(index) == current).clicked() {
+                    picked = Some(index);
+                    ui.close();
+                }
+            }
+        });
+    picked
+}
+
+/// A check box in the house style: a 16 px box (radius 4, `line-strong` border; on: `accent` with an `on-accent` check)
+/// and the label after it 8 apart, body `ink`, wrapped to the width. Rows are at least 28 high (a field's height). Pressing
+/// the row toggles `checked`; the focus ring is the 2 px `accent` ring 2 px outside the box (§5.4).
+pub fn checkbox(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str) -> Response {
+    let width = ui.available_width().min(DIALOG_FORM_WIDTH);
+    let enabled = ui.is_enabled();
+    let ink = if enabled { palette.ink } else { palette.ink_3 };
+    let text_left = theme::ICON_SMALL + DIALOG_GAP;
+    let galley = ui.painter().layout(label.to_owned(), house_font(ui, theme::Type::Body), ink, (width - text_left).max(1.0));
+    let height = (galley.size().y + 8.0).max(theme::FIELD_HEIGHT);
+    let (rect, mut response) = ui.allocate_exact_size(egui::vec2(width, height), Sense::click());
+    if response.clicked() {
+        *checked = !*checked;
+        response.mark_changed();
+    }
+    let square = Rect::from_min_size(Pos2::new(rect.left(), rect.top() + (theme::FIELD_HEIGHT - theme::ICON_SMALL) / 2.0), Vec2::splat(theme::ICON_SMALL));
+    let corner = CornerRadius::same(theme::RADIUS_SMALL);
+    if *checked {
+        ui.painter().rect_filled(square, corner, if enabled { palette.accent } else { palette.surface_3 });
+        icons::paint(ui, square, "check", if enabled { palette.on_accent } else { palette.ink_3 });
+    } else {
+        ui.painter().rect_filled(square, corner, if response.hovered() && enabled { palette.surface_2 } else { palette.surface });
+        ui.painter().rect_stroke(square, corner, Stroke::new(1.0, if enabled { palette.line_strong } else { palette.line }), StrokeKind::Inside);
+    }
+    let text_top = rect.top() + ((theme::FIELD_HEIGHT - galley.size().y) / 2.0).max(4.0);
+    ui.painter().galley(Pos2::new(rect.left() + text_left, text_top), galley, ink);
+    if response.has_focus() {
+        ui.painter().rect_stroke(square.expand(2.0), CornerRadius::same(theme::RADIUS_SMALL + 2), Stroke::new(2.0, palette.accent), StrokeKind::Outside);
+    }
+    let state = *checked;
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, state, label));
+    crate::ui_record::note(ui, label, &response);
+    response
+}
+
 /// A 1 px `line` separator across the available width.
 pub fn divider(ui: &mut Ui, palette: &Palette) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), Sense::hover());
@@ -626,5 +1088,179 @@ mod tests {
         assert_eq!(parse_hex("#12345"), None);
         assert_eq!(parse_hex("#GG0000"), None);
         assert_eq!(normalise_hex("#1e7f4f"), "#1E7F4F");
+    }
+
+    fn screen_input(events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))),
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn key(key: egui::Key) -> egui::Event {
+        egui::Event::Key { key, physical_key: Some(key), pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }
+    }
+
+    /// A press and its release in one frame (egui counts a press of a key still down as a repeat).
+    fn tap(key: egui::Key) -> Vec<egui::Event> {
+        let release = egui::Event::Key { key, physical_key: Some(key), pressed: false, repeat: false, modifiers: egui::Modifiers::NONE };
+        vec![self::key(key), release]
+    }
+
+    /// What one frame of a test dialog gave back, where egui placed it, and the frame's output.
+    struct Shown {
+        response: DialogResponse<Vec<Rect>>,
+        rect: Rect,
+    }
+
+    /// Runs one frame of one dialog and returns its response (the buttons' rectangles) and its area.
+    fn shown(
+        ctx: &egui::Context,
+        place: DialogPlace,
+        choices: &[DialogChoice<'_>],
+        events: Vec<egui::Event>,
+    ) -> (Shown, egui::FullOutput) {
+        let mut last = None;
+        let id = egui::Id::new(("test-dialog", format!("{place:?}")));
+        let output = ctx.run(screen_input(events), |ctx| {
+            let palette = theme::palette(ctx);
+            last = Some(dialog(ctx, &palette, id, "제목", place, |ui| {
+                ui.label("본문");
+                dialog_buttons(ui, &palette, choices).iter().map(|response| response.rect).collect::<Vec<_>>()
+            }));
+        });
+        let rect = ctx.memory(|memory| memory.area_rect(id)).expect("the dialog's area");
+        (Shown { response: last.expect("the dialog was drawn"), rect }, output)
+    }
+
+    #[test]
+    fn a_dialog_is_centred_on_the_screen_with_its_buttons_centred_under_the_text_in_both_forms() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let choices = [DialogChoice::new("계속 작업", DialogButton::Primary), DialogChoice::new("버리기", DialogButton::Danger)];
+        for place in [DialogPlace::Screen, DialogPlace::Modal] {
+            for _ in 0..2 {
+                shown(&ctx, place, &choices, Vec::new());
+            }
+            let (Shown { response, rect }, _) = shown(&ctx, place, &choices, Vec::new());
+            assert!((rect.center().x - 400.0).abs() < 1.0 && (rect.center().y - 300.0).abs() < 1.0, "{place:?}: {rect:?}");
+            assert!((rect.width() - DIALOG_WIDTH).abs() < 1.0, "{place:?}: the dialog is {} wide", rect.width());
+            let row = response.inner[0].union(response.inner[1]);
+            assert!((row.center().x - 400.0).abs() < 1.0, "{place:?}: the buttons sit in the middle ({row:?})");
+            assert!((response.inner[0].top() - response.inner[1].top()).abs() < 0.5, "one line");
+        }
+    }
+
+    #[test]
+    fn a_button_row_wider_than_the_dialog_wraps_and_each_line_stays_centred() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let labels = ["예약 해제 다시 시도", "초안 복사", "같은 기준으로 다시 시도", "보드 초안을 버리고 예약 만료를 기다리며 닫기"];
+        let choices: Vec<DialogChoice<'_>> = labels.iter().map(|label| DialogChoice::new(label, DialogButton::Plain)).collect();
+        for _ in 0..2 {
+            shown(&ctx, DialogPlace::Screen, &choices, Vec::new());
+        }
+        let (Shown { response, rect }, _) = shown(&ctx, DialogPlace::Screen, &choices, Vec::new());
+        let inside = rect.shrink(DIALOG_PADDING - 0.5);
+        let mut lines: Vec<Rect> = Vec::new();
+        for rect in &response.inner {
+            assert!(inside.contains_rect(*rect), "{rect:?} stays inside {inside:?}");
+            match lines.iter_mut().find(|line| (line.top() - rect.top()).abs() < 0.5) {
+                Some(line) => *line = line.union(*rect),
+                None => lines.push(*rect),
+            }
+        }
+        assert!(lines.len() >= 2, "the row wraps: {lines:?}");
+        for line in &lines {
+            assert!((line.center().x - rect.center().x).abs() < 1.0, "each line is centred: {line:?} in {rect:?}");
+        }
+        for pair in lines.windows(2) {
+            assert!(pair[1].top() >= pair[0].bottom() + DIALOG_GAP - 0.5, "lines do not overlap: {pair:?}");
+        }
+    }
+
+    #[test]
+    fn notices_on_a_board_hang_from_its_top_middle_and_stack_without_overlapping() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let board = Rect::from_min_max(Pos2::new(272.0, 44.0), Pos2::new(780.0, 600.0));
+        let mut rects = Vec::new();
+        for _ in 0..3 {
+            rects.clear();
+            let _ = ctx.run(screen_input(Vec::new()), |ctx| {
+                let palette = theme::palette(ctx);
+                for name in ["first", "second"] {
+                    dialog(ctx, &palette, egui::Id::new(name), name, DialogPlace::BoardTop(board), |ui| {
+                        ui.label("본문");
+                        dialog_buttons(ui, &palette, &[DialogChoice::new("초안 버리기", DialogButton::Danger)]);
+                    });
+                }
+            });
+            for name in ["first", "second"] {
+                rects.push(ctx.memory(|memory| memory.area_rect(egui::Id::new(name))).expect("the notice's area"));
+            }
+        }
+        assert!((rects[0].top() - (board.top() + DIALOG_PADDING)).abs() < 1.0, "the first hangs 16 under the board's top: {rects:?}");
+        assert!(rects[1].top() >= rects[0].bottom() + DIALOG_GAP - 0.5, "the second stacks under it: {rects:?}");
+        for rect in &rects {
+            assert!((rect.center().x - board.center().x).abs() < 1.0, "centred on the board: {rect:?}");
+            assert!((rect.width() - NOTICE_WIDTH).abs() < 1.0, "{rect:?}");
+        }
+    }
+
+    #[test]
+    fn enter_and_escape_answer_a_dialog_but_not_in_its_first_frame_and_never_a_notice() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let choices = [DialogChoice::new("취소", DialogButton::Plain)];
+        for place in [DialogPlace::Screen, DialogPlace::Modal] {
+            let (first, _) = shown(&ctx, place, &choices, [tap(egui::Key::Enter), tap(egui::Key::Escape)].concat());
+            assert!(!first.response.enter && !first.response.dismissed, "{place:?}: the frame it opens in takes no keys");
+            let (enter, _) = shown(&ctx, place, &choices, tap(egui::Key::Enter));
+            assert!(enter.response.enter && !enter.response.dismissed, "{place:?}: Enter");
+            let (escape, _) = shown(&ctx, place, &choices, tap(egui::Key::Escape));
+            assert!(escape.response.dismissed && !escape.response.enter, "{place:?}: Esc");
+        }
+        let board = DialogPlace::BoardTop(Rect::from_min_size(Pos2::new(0.0, 40.0), Vec2::new(800.0, 560.0)));
+        shown(&ctx, board, &choices, Vec::new());
+        let (notice, _) = shown(&ctx, board, &choices, [tap(egui::Key::Enter), tap(egui::Key::Escape)].concat());
+        assert!(!notice.response.enter && !notice.response.dismissed, "a notice leaves the keys to the board");
+    }
+
+    #[test]
+    fn a_disabled_main_button_drops_its_fill_to_surface_2_and_its_label_to_ink_3() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let palette = theme::palette(&ctx);
+        let choices = [
+            DialogChoice::new("다시 시도", DialogButton::Primary).enabled(false),
+            DialogChoice::new("이 손실을 허용하고 내보내기", DialogButton::Warn).enabled(false),
+        ];
+        shown(&ctx, DialogPlace::Screen, &choices, Vec::new());
+        let (Shown { response, .. }, output) = shown(&ctx, DialogPlace::Screen, &choices, Vec::new());
+        fn walk(shape: &egui::epaint::Shape, out: &mut Vec<egui::epaint::Shape>) {
+            match shape {
+                egui::epaint::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, out)),
+                other => out.push(other.clone()),
+            }
+        }
+        let mut shapes = Vec::new();
+        output.shapes.iter().for_each(|clipped| walk(&clipped.shape, &mut shapes));
+        for rect in &response.inner {
+            let fill = shapes.iter().find_map(|shape| match shape {
+                egui::epaint::Shape::Rect(drawn) if drawn.rect == *rect && drawn.fill != Color32::TRANSPARENT => Some(drawn.fill),
+                _ => None,
+            });
+            assert_eq!(fill, Some(palette.surface_2), "{rect:?}: a disabled main button is filled with surface-2");
+        }
+        let labels: Vec<Color32> = shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                egui::epaint::Shape::Text(text) if ["다시 시도", "이 손실을 허용하고 내보내기"].contains(&text.galley.text()) => Some(text.fallback_color),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(labels, [palette.ink_3, palette.ink_3], "their labels are ink-3, not faded further");
     }
 }

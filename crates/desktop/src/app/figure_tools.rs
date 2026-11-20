@@ -16,7 +16,7 @@ use designllm_contracts::{
 };
 use designllm_contracts::figure_rules::{PAPER_EVIDENCE_ORIGIN, USER_AUTHORED_ORIGIN};
 use eframe::egui::{
-    self, Align, Align2, Context, Grid, Id, Layout, Rect, RichText, ScrollArea, TextEdit, Ui,
+    self, Align, Context, Grid, Id, Layout, Rect, RichText, ScrollArea, TextEdit, Ui,
 };
 
 use super::{
@@ -29,7 +29,7 @@ use crate::{
     figure_layout::{free_diagram_node_bounds, tiled_panel_bounds},
     rpc::RpcPayload,
     theme,
-    widgets::field_with_button,
+    widgets::{self, DialogButton, DialogChoice},
 };
 
 const PLOT_KINDS: [(&str, &str); 3] = [("bar", "막대"), ("line", "선"), ("scatter", "산점도")];
@@ -123,13 +123,6 @@ const COLUMN_TYPES: [(&str, &str); 4] = [
     ("count", "개수"),
     ("text", "텍스트"),
 ];
-
-fn column_type_label(data_type: &str) -> &'static str {
-    COLUMN_TYPES
-        .iter()
-        .find(|(name, _)| *name == data_type)
-        .map_or("", |(_, label)| *label)
-}
 
 /// The type and unit each column of `dataset` has now, in file order.
 fn declarations_of(dataset: &Dataset) -> Vec<ColumnDeclaration> {
@@ -1555,109 +1548,132 @@ impl DesktopApp {
             FigureForm::Chart => "차트 추가",
             FigureForm::Evidence => "근거 추가",
         };
-        let mut open = true;
-        egui::Window::new(title)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
-            .open(&mut open)
-            .show(ctx, |ui| {
-                ui.set_width(380.0);
-                match form {
-                    FigureForm::Chart => self.draw_chart_form(ui),
-                    FigureForm::Evidence => self.draw_evidence_form(ui),
+        // No window bar and no close cross (GUI_DESIGN §5.1): `취소` closes the form as the cross did, and so does Esc. Enter is
+        // the step's main button while it is enabled (a path field ends with Enter, then the dialog takes it).
+        let palette = theme::palette(ctx);
+        // The step's buttons stay under its fields, in view however many columns a table has (`dialog_with_choices`).
+        let shown = widgets::dialog_with_choices(ctx, &palette, Id::new(title), title, widgets::DialogPlace::Screen, |ui| {
+            let answer = match form {
+                FigureForm::Chart => self.draw_chart_form(ui, &palette),
+                FigureForm::Evidence => self.draw_evidence_form(ui, &palette),
+            };
+            ((answer.presses, answer.main), answer.choices)
+        });
+        let ((presses, main), pressed) = shown.inner;
+        let press = presses
+            .iter()
+            .zip(pressed)
+            .find(|(_, pressed)| *pressed)
+            .map(|(press, _)| *press)
+            .or(main.filter(|_| shown.enter))
+            .or(shown.dismissed.then_some(FormPress::Cancel));
+        match press {
+            Some(FormPress::Cancel) => {
+                self.figure_form = None;
+                self.csv_draft = None;
+            }
+            Some(FormPress::AddEvidence) => self.import_pdf_evidence(),
+            Some(FormPress::ImportCsv) => self.import_csv_source(),
+            Some(FormPress::Declare) => {
+                if let Some(request) = self.csv_draft.as_ref().map(CsvImportDraft::declaration_request) {
+                    self.call("source.import_csv", request, PendingAction::CsvDeclaredImport);
                 }
-            });
-        if !open {
-            self.figure_form = None;
-            self.csv_draft = None;
+            }
+            Some(FormPress::AddChart) => self.add_csv_data(true),
+            Some(FormPress::AddData) => self.add_csv_data(false),
+            Some(FormPress::Regroup) => {
+                if let Some(draft) = self.csv_draft.as_mut() {
+                    draft.reopen_declaration();
+                }
+            }
+            None => {}
         }
     }
 
-    fn draw_evidence_form(&mut self, ui: &mut Ui) {
+    fn draw_evidence_form(&mut self, ui: &mut Ui, palette: &theme::Palette) -> FormAnswer {
         let focus = std::mem::take(&mut self.focus_popup_field);
-        ui.horizontal(|ui| {
-            ui.label("쪽");
-            ui.add(TextEdit::singleline(&mut self.pdf_page).desired_width(48.0));
-        });
+        widgets::dialog_row(ui, palette, "쪽", |ui, _| widgets::text_field(ui, palette, &mut self.pdf_page, "쪽", 64.0));
+        let path = widgets::dialog_row(ui, palette, "PDF", |ui, width| widgets::text_field(ui, palette, &mut self.pdf_path, "PDF 파일 경로", width));
+        if focus {
+            path.request_focus();
+        }
         let page_ok = self.pdf_page.trim().parse::<u32>().is_ok_and(|page| page > 0);
         let wait = figure_wait_reason(self.requests_on_their_way());
         let ready = page_ok && !self.pdf_path.trim().is_empty() && wait.is_none();
-        if field_with_button(ui, &mut self.pdf_path, "PDF 파일 경로", "근거 추가", ready, focus) {
-            self.import_pdf_evidence();
-        }
         if let Some(reason) = wait {
             ui.label(RichText::new(reason).color(theme::MUTED));
         }
+        FormAnswer::of(
+            vec![DialogChoice::new("취소", DialogButton::Plain), DialogChoice::new("근거 추가", DialogButton::Primary).enabled(ready)],
+            vec![FormPress::Cancel, FormPress::AddEvidence],
+            ready.then_some(FormPress::AddEvidence),
+        )
     }
 
-    /// The chart window: the file path, then the declaration of the table's columns, then the chart.
-    fn draw_chart_form(&mut self, ui: &mut Ui) {
+    /// The chart form: the file path, then the declaration of the table's columns, then the chart.
+    fn draw_chart_form(&mut self, ui: &mut Ui, palette: &theme::Palette) -> FormAnswer {
         match self.csv_draft.as_ref().map(|draft| draft.step) {
             None => {
                 let focus = std::mem::take(&mut self.focus_popup_field);
-                let ready = !self.csv_path.trim().is_empty();
-                if field_with_button(ui, &mut self.csv_path, "CSV 또는 TSV 파일 경로", "가져오기", ready, focus) {
-                    self.import_csv_source();
+                let path = widgets::dialog_row(ui, palette, "파일", |ui, width| {
+                    widgets::text_field(ui, palette, &mut self.csv_path, "CSV 또는 TSV 파일 경로", width)
+                });
+                if focus {
+                    path.request_focus();
                 }
+                let ready = !self.csv_path.trim().is_empty();
+                FormAnswer::of(
+                    vec![DialogChoice::new("취소", DialogButton::Plain), DialogChoice::new("가져오기", DialogButton::Primary).enabled(ready)],
+                    vec![FormPress::Cancel, FormPress::ImportCsv],
+                    ready.then_some(FormPress::ImportCsv),
+                )
             }
-            Some(CsvStep::Columns) => self.draw_columns_step(ui),
-            Some(CsvStep::Chart) => self.draw_chart_step(ui),
+            // Each step has its own widget ids, so the path field's keyboard focus does not pass to the next step's first field.
+            Some(CsvStep::Columns) => ui.push_id("csv-columns", |ui| self.draw_columns_step(ui, palette)).inner,
+            Some(CsvStep::Chart) => ui.push_id("csv-chart", |ui| self.draw_chart_step(ui, palette)).inner,
         }
     }
 
     /// One row per header column: its type and, for a numeric column, its unit. The rows start from
     /// the types the import inferred; the confirmed declaration is what the table is read with.
-    fn draw_columns_step(&mut self, ui: &mut Ui) {
+    fn draw_columns_step(&mut self, ui: &mut Ui, palette: &theme::Palette) -> FormAnswer {
         let Some(mut draft) = self.csv_draft.take() else {
-            return;
+            return FormAnswer::default();
         };
-        ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-            Grid::new("csv-columns").num_columns(3).spacing([10.0, 8.0]).show(ui, |ui| {
-                for (index, column) in draft.columns.iter_mut().enumerate() {
-                    ui.horizontal(|ui| {
-                        ui.set_width(120.0);
-                        ui.add(egui::Label::new(column.name.as_str()).truncate());
-                    });
-                    egui::ComboBox::from_id_salt(("csv-column-type", index))
-                        .width(84.0)
-                        .selected_text(column_type_label(&column.data_type))
-                        .show_ui(ui, |ui| {
-                            for (data_type, label) in COLUMN_TYPES {
-                                ui.selectable_value(&mut column.data_type, data_type.to_owned(), label);
-                            }
-                        });
+        let types: Vec<&str> = COLUMN_TYPES.iter().map(|(_, label)| *label).collect();
+        // However many columns the file has, the dialog's body scrolls (`widgets::dialog`): a scroll area of its own inside it
+        // would size itself to the body's last height and stay that small.
+        {
+            for column in &mut draft.columns {
+                widgets::dialog_row(ui, palette, &column.name, |ui, width| {
+                    let current = COLUMN_TYPES.iter().position(|(data_type, _)| *data_type == column.data_type);
+                    if let Some(picked) = widgets::dropdown_menu(ui, palette, &types, current, width - UNIT_WIDTH - 8.0) {
+                        column.data_type = COLUMN_TYPES[picked].0.to_owned();
+                    }
                     // A unit belongs to numeric columns only; it goes away with the type.
                     let numeric = column.data_type == "numeric";
                     if !numeric {
                         column.unit.clear();
                     }
-                    ui.add_enabled(
-                        numeric,
-                        TextEdit::singleline(&mut column.unit)
-                            .hint_text(if numeric { "단위" } else { "" })
-                            .desired_width(72.0),
-                    );
-                    ui.end_row();
-                }
-            });
-        });
-        ui.add_space(4.0);
+                    ui.add_enabled_ui(numeric, |ui| widgets::text_field(ui, palette, &mut column.unit, if numeric { "단위" } else { "" }, UNIT_WIDTH));
+                });
+            }
+        }
         let waiting = self
             .pending
             .values()
             .any(|pending| matches!(pending.action, PendingAction::CsvDeclaredImport));
-        let confirmed = ui.add_enabled(!waiting, egui::Button::new("확인")).clicked();
-        let request = confirmed.then(|| draft.declaration_request());
         self.csv_draft = Some(draft);
-        if let Some(request) = request {
-            self.call("source.import_csv", request, PendingAction::CsvDeclaredImport);
-        }
+        FormAnswer::of(
+            vec![DialogChoice::new("취소", DialogButton::Plain), DialogChoice::new("확인", DialogButton::Primary).enabled(!waiting)],
+            vec![FormPress::Cancel, FormPress::Declare],
+            (!waiting).then_some(FormPress::Declare),
+        )
     }
 
-    fn draw_chart_step(&mut self, ui: &mut Ui) {
+    fn draw_chart_step(&mut self, ui: &mut Ui, palette: &theme::Palette) -> FormAnswer {
         let Some(mut draft) = self.csv_draft.take() else {
-            return;
+            return FormAnswer::default();
         };
         let held = self.figure_document().and_then(|figure| {
             figure
@@ -1672,66 +1688,40 @@ impl DesktopApp {
                 .map_or_else(|| draft.dataset.version_hash.clone(), |dataset| dataset.version_hash.clone()),
         };
         let before = (draft.plot_kind.clone(), draft.x_column.clone(), draft.y_column.clone());
-        Grid::new("chart-form").num_columns(2).spacing([10.0, 8.0]).show(ui, |ui| {
-            ui.label("종류");
-            let kind_label = PLOT_KINDS
-                .iter()
-                .find(|(kind, _)| *kind == draft.plot_kind)
-                .map_or("", |(_, label)| *label);
-            egui::ComboBox::from_id_salt("chart-kind")
-                .selected_text(kind_label)
-                .show_ui(ui, |ui| {
-                    for (kind, label) in PLOT_KINDS {
-                        ui.selectable_value(&mut draft.plot_kind, kind.to_owned(), label);
-                    }
-                });
-            ui.end_row();
-
-            ui.label("X축");
-            ui.horizontal(|ui| {
-                let columns = x_columns(&draft.dataset, &draft.plot_kind)
-                    .into_iter()
-                    .map(|column| (column.id.clone(), column.name.clone()))
-                    .collect::<Vec<_>>();
-                let selected = columns
-                    .iter()
-                    .find(|(id, _)| *id == draft.x_column)
-                    .map(|(_, name)| name.clone())
-                    .unwrap_or_default();
-                egui::ComboBox::from_id_salt("chart-x")
-                    .selected_text(selected)
-                    .show_ui(ui, |ui| {
-                        for (id, name) in columns {
-                            ui.selectable_value(&mut draft.x_column, id, name);
-                        }
-                    });
-                if draft.x_is_numeric() {
-                    ui.add(TextEdit::singleline(&mut draft.x_unit).hint_text("단위").desired_width(72.0));
-                }
-            });
-            ui.end_row();
-
-            ui.label("Y축");
-            ui.horizontal(|ui| {
-                let columns = y_columns(&draft.dataset, &draft.x_column)
-                    .into_iter()
-                    .map(|column| (column.id.clone(), column.name.clone()))
-                    .collect::<Vec<_>>();
-                let selected = columns
-                    .iter()
-                    .find(|(id, _)| *id == draft.y_column)
-                    .map(|(_, name)| name.clone())
-                    .unwrap_or_default();
-                egui::ComboBox::from_id_salt("chart-y")
-                    .selected_text(selected)
-                    .show_ui(ui, |ui| {
-                        for (id, name) in columns {
-                            ui.selectable_value(&mut draft.y_column, id, name);
-                        }
-                    });
-                ui.add(TextEdit::singleline(&mut draft.y_unit).hint_text("단위").desired_width(72.0));
-            });
-            ui.end_row();
+        widgets::dialog_row(ui, palette, "종류", |ui, width| {
+            let kinds: Vec<&str> = PLOT_KINDS.iter().map(|(_, label)| *label).collect();
+            let current = PLOT_KINDS.iter().position(|(kind, _)| *kind == draft.plot_kind);
+            if let Some(picked) = widgets::dropdown_menu(ui, palette, &kinds, current, width) {
+                draft.plot_kind = PLOT_KINDS[picked].0.to_owned();
+            }
+        });
+        widgets::dialog_row(ui, palette, "X축", |ui, width| {
+            let columns = x_columns(&draft.dataset, &draft.plot_kind)
+                .into_iter()
+                .map(|column| (column.id.clone(), column.name.clone()))
+                .collect::<Vec<_>>();
+            let names: Vec<&str> = columns.iter().map(|(_, name)| name.as_str()).collect();
+            let current = columns.iter().position(|(id, _)| *id == draft.x_column);
+            let numeric = draft.x_is_numeric();
+            let field = if numeric { width - UNIT_WIDTH - 8.0 } else { width };
+            if let Some(picked) = widgets::dropdown_menu(ui, palette, &names, current, field) {
+                draft.x_column = columns[picked].0.clone();
+            }
+            if numeric {
+                widgets::text_field(ui, palette, &mut draft.x_unit, "단위", UNIT_WIDTH);
+            }
+        });
+        widgets::dialog_row(ui, palette, "Y축", |ui, width| {
+            let columns = y_columns(&draft.dataset, &draft.x_column)
+                .into_iter()
+                .map(|column| (column.id.clone(), column.name.clone()))
+                .collect::<Vec<_>>();
+            let names: Vec<&str> = columns.iter().map(|(_, name)| name.as_str()).collect();
+            let current = columns.iter().position(|(id, _)| *id == draft.y_column);
+            if let Some(picked) = widgets::dropdown_menu(ui, palette, &names, current, width - UNIT_WIDTH - 8.0) {
+                draft.y_column = columns[picked].0.clone();
+            }
+            widgets::text_field(ui, palette, &mut draft.y_unit, "단위", UNIT_WIDTH);
         });
         if (before.0.as_str(), before.1.as_str()) != (draft.plot_kind.as_str(), draft.x_column.as_str()) {
             draft.repair_columns();
@@ -1741,29 +1731,49 @@ impl DesktopApp {
             ui.label(RichText::new(reason).color(theme::MUTED));
         }
         let can_plot = draft.plot_spec(dataset_ref).is_some();
-        let (mut add_chart, mut add_data, mut regroup) = (false, false, false);
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            add_chart = ui.add_enabled(can_plot, egui::Button::new("차트 추가")).clicked();
-            add_data = ui
-                .add_enabled(held.is_none(), egui::Button::new("자료만 추가"))
-                .clicked();
-            // A table the figure already holds keeps its declared types; only a new one can be re-declared.
-            if held.is_none() {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    regroup = ui.button("열 형식").clicked();
-                });
-            }
-        });
-        if regroup {
-            draft.reopen_declaration();
-        }
         self.csv_draft = Some(draft);
-        if add_chart {
-            self.add_csv_data(true);
-        } else if add_data {
-            self.add_csv_data(false);
+        // A table the figure already holds keeps its declared types; only a new one can be re-declared.
+        let mut choices = vec![DialogChoice::new("취소", DialogButton::Plain)];
+        let mut presses = vec![FormPress::Cancel];
+        if held.is_none() {
+            choices.push(DialogChoice::new("열 형식", DialogButton::Plain));
+            presses.push(FormPress::Regroup);
         }
+        choices.push(DialogChoice::new("자료만 추가", DialogButton::Plain).enabled(held.is_none()));
+        presses.push(FormPress::AddData);
+        choices.push(DialogChoice::new("차트 추가", DialogButton::Primary).enabled(can_plot));
+        presses.push(FormPress::AddChart);
+        FormAnswer::of(choices, presses, can_plot.then_some(FormPress::AddChart))
+    }
+}
+
+/// The width of a unit field beside a column or axis menu.
+const UNIT_WIDTH: f32 = 72.0;
+
+/// A press of a figure form button, or Enter while the step's main button is enabled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FormPress {
+    Cancel,
+    AddEvidence,
+    ImportCsv,
+    Declare,
+    AddChart,
+    AddData,
+    Regroup,
+}
+
+/// What a step of the figure form asks for: its buttons (drawn under the scrolling body by `draw_figure_form`), what each one
+/// does, and the main button that Enter presses while it is enabled.
+#[derive(Default)]
+struct FormAnswer {
+    choices: Vec<DialogChoice<'static>>,
+    presses: Vec<FormPress>,
+    main: Option<FormPress>,
+}
+
+impl FormAnswer {
+    fn of(choices: Vec<DialogChoice<'static>>, presses: Vec<FormPress>, main: Option<FormPress>) -> Self {
+        Self { choices, presses, main }
     }
 }
 

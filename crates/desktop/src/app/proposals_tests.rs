@@ -124,7 +124,7 @@ fn a_row_draws_its_preview_render_as_its_picture() {
             _ => None,
         })
         .expect("the preview's picture is read");
-    let picture = RpcPayload::Asset { mime: "image/png".into(), width: 2, height: 2, rgba: vec![255; 16] };
+    let picture = RpcPayload::Image { mime: "image/png".into(), image: egui::ColorImage::from_rgba_unmultiplied([2, 2], &[255; 16]) };
     h.replies.send(RpcReply { ticket, result: Ok(picture) }).expect("the window listens");
     h.app.process_replies(&h.ctx);
     assert!(thumbs::picture_of(&h.ctx, "proposal:p1").is_some(), "the row shows the preview render");
@@ -350,7 +350,7 @@ fn picture_arrives(h: &mut Harness, id: &str) {
             _ => None,
         })
         .expect("the preview's picture is read");
-    let picture = RpcPayload::Asset { mime: "image/png".into(), width: 2, height: 2, rgba: vec![255; 16] };
+    let picture = RpcPayload::Image { mime: "image/png".into(), image: egui::ColorImage::from_rgba_unmultiplied([2, 2], &[255; 16]) };
     h.replies.send(RpcReply { ticket, result: Ok(picture) }).expect("the window listens");
     h.app.process_replies(&h.ctx);
 }

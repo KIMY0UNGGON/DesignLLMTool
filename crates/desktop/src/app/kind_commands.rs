@@ -95,6 +95,15 @@ fn paragraphs(document: &FlowDocument) -> Vec<(&str, &designllm_contracts::Parag
 }
 
 const MAX_CANVAS_TABLE_CELLS: usize = 10_000;
+/// The rows of a new Canvas table when `rows` is not given.
+pub(super) const CANVAS_TABLE_DEFAULT_ROWS: usize = 2;
+
+/// The size (EMU) of a new Canvas table of `rows` rows on a page of `page`: two thirds of the page wide, 36 px a row. The
+/// toolbox's drag preview (68g) draws the same size.
+pub(super) fn canvas_table_size(page: designllm_contracts::Size, rows: usize) -> (i64, i64) {
+    let row_height = 36 * designllm_contracts::EMU_PER_CSS_PX;
+    (page.width.saturating_mul(2) / 3, row_height.saturating_mul(rows as i64))
+}
 
 /// `10000` as `10,000`, for the words of a refusal.
 fn thousands(value: usize) -> String {
@@ -1071,11 +1080,14 @@ impl DesktopApp {
 
     fn add_canvas_table(&mut self, args: &Value) -> Result<(), String> {
         self.ensure_canvas_table_write_supported()?;
-        let rows = table_index(args, "rows", 2, MAX_CANVAS_TABLE_CELLS)?;
+        let rows = table_index(args, "rows", CANVAS_TABLE_DEFAULT_ROWS, MAX_CANVAS_TABLE_CELLS)?;
         let columns = table_index(args, "columns", 2, designllm_contracts::MAX_GRID_COLUMNS as usize)?;
         if rows == 0 || columns == 0 || rows.checked_mul(columns).is_none_or(|count| count > MAX_CANVAS_TABLE_CELLS) {
             return Err(format!("표는 1–{}개의 셀과 1–{}개의 열을 지원합니다", thousands(MAX_CANVAS_TABLE_CELLS), designllm_contracts::MAX_GRID_COLUMNS));
         }
+        // A table with `at` is centred on it, on that page, which becomes the current one (68g toolbox); without it, the top
+        // centre of the current page.
+        let at = self.take_add_at(args)?;
         let (page_id, page_size) = {
             let Some(ArtifactBody::Canvas(document)) = self.artifact.as_ref().map(|artifact| &artifact.body) else {
                 return Err("캔버스 작업물이 열려 있지 않습니다".into());
@@ -1083,13 +1095,15 @@ impl DesktopApp {
             let page = document.pages.get(self.view_ref().page_index as usize).ok_or("표를 넣을 페이지를 고르세요")?;
             (page.id.clone(), page.size)
         };
-        let row_height = 36 * designllm_contracts::EMU_PER_CSS_PX;
-        let width = page_size.width.saturating_mul(2) / 3;
-        let bounds = Rect {
-            x: page_size.width.saturating_sub(width) / 2,
-            y: 40 * designllm_contracts::EMU_PER_CSS_PX,
-            width,
-            height: row_height.saturating_mul(rows as i64),
+        let (width, height) = canvas_table_size(page_size, rows);
+        let bounds = match at {
+            Some(at) => Rect { x: at.center.0 - width / 2, y: at.center.1 - height / 2, width, height },
+            None => Rect {
+                x: page_size.width.saturating_sub(width) / 2,
+                y: 40 * designllm_contracts::EMU_PER_CSS_PX,
+                width,
+                height,
+            },
         };
         let (expected_selection, expected_page, expected_selection_generation) = self.selection_commit_guard()?;
         let table_id = new_id();
@@ -1272,17 +1286,25 @@ impl DesktopApp {
     fn add_content_icon(&mut self, args: &Value) -> Result<(), String> {
         let name = text(args, "icon").unwrap_or_default();
         let (path, icon) = crate::content_icons::path_of(name).ok_or("없는 아이콘입니다")?;
+        // With `at` (68g toolbox) the icon is centred on it, on that page, which becomes the current one; without it, at
+        // (40, 40) of the current page.
+        let at = self.take_add_at(args)?;
+        let index = self.page_index as usize;
         let page_id = match self.artifact.as_ref().map(|artifact| &artifact.body) {
-            Some(ArtifactBody::Canvas(document)) => document.pages.get(self.page_index as usize).map(|page| page.id.clone()),
-            Some(ArtifactBody::Slides(document)) => document.pages.get(self.page_index as usize).map(|page| page.id.clone()),
+            Some(ArtifactBody::Canvas(document)) => document.pages.get(index).map(|page| page.id.clone()),
+            Some(ArtifactBody::Slides(document)) => document.pages.get(index).map(|page| page.id.clone()),
             _ => None,
         }
         .ok_or("아이콘을 넣을 페이지가 없습니다")?;
         let size = (number(args, "size").unwrap_or(48.0).clamp(8.0, 2000.0) * EMU_PER_CSS_PX as f64).round() as i64;
+        let (x, y) = match at {
+            Some(at) => (at.center.0 - size / 2, at.center.1 - size / 2),
+            None => (40 * EMU_PER_CSS_PX, 40 * EMU_PER_CSS_PX),
+        };
         let node = designllm_contracts::Node {
             id: new_id(),
             kind: NodeKind::Path,
-            bounds: designllm_contracts::Rect { x: 40 * EMU_PER_CSS_PX, y: 40 * EMU_PER_CSS_PX, width: size, height: size },
+            bounds: designllm_contracts::Rect { x, y, width: size, height: size },
             text: String::new(),
             style: designllm_contracts::Style {
                 fill: "transparent".into(),

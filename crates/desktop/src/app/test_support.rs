@@ -596,11 +596,12 @@ pub(super) fn settle_work(work: &Receiver<Work>, app: &mut DesktopApp, ctx: &Con
     panic!("the window keeps asking the host for more");
 }
 
-/// The preview PNG of a snapshot as the RPC worker delivers it: read back in one chunk and decoded to RGBA.
+/// The preview PNG of a snapshot as the RPC worker delivers it: read back in one chunk and decoded to egui pixels.
 pub(super) fn preview_pixels(host: &mut Host, asset: &AssetRef) -> RpcPayload {
     let png = super::link_flow_tests::bytes_of(host, asset);
     let rgba = image::load_from_memory_with_format(&png, image::ImageFormat::Png).expect("a PNG").to_rgba8();
-    RpcPayload::Asset { mime: asset.mime.clone(), width: rgba.width(), height: rgba.height(), rgba: rgba.into_raw() }
+    let image = eframe::egui::ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw());
+    RpcPayload::Image { mime: asset.mime.clone(), image }
 }
 
 /// A primary-button press or release at `position`.

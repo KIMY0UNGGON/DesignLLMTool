@@ -164,18 +164,17 @@ impl GraphemeAdapter {
             Event::Ime(ImeEvent::Commit(text)) => Some(text.clone()),
             _ => None,
         }).collect();
-        let has_ime_commit_event = !ime_commits.is_empty();
+        // A preedit before the frame's last commit is that commit's and is not shown: the commit replaces it. Windows sends
+        // a syllable's commit and the next syllable's first preedit in one message, so a preedit after the last commit is
+        // the next composition's and is shown.
+        let last_commit = input.events.iter().rposition(|event| matches!(event, Event::Ime(ImeEvent::Commit(_))));
 
-        for event in std::mem::take(&mut input.events) {
+        for (index, event) in std::mem::take(&mut input.events).into_iter().enumerate() {
             match &event {
                 Event::Ime(ImeEvent::Enabled) => {
                     if !self.ime_active {
-                        self.ime_generation = self.ime_generation.saturating_add(1);
-                        self.ime_started = true;
-                        self.ime_base_text = Some(text.clone());
-                        self.ime_base_selection = Some((primary, secondary));
+                        self.begin_composition(text, primary, secondary);
                     }
-                    self.ime_active = true;
                     forwarded.push(event);
                 }
                 Event::Ime(ImeEvent::Disabled) => {
@@ -222,8 +221,16 @@ impl GraphemeAdapter {
                     forwarded.push(event);
                     self.ime_active = false;
                 }
-                Event::Ime(ImeEvent::Preedit(_)) if has_ime_commit_event => {}
-                Event::Ime(ImeEvent::Preedit(_)) => forwarded.push(event),
+                // A preedit whose `Enabled` this editor did not see (an earlier frame's input taken before the editor saw
+                // it) opens its composition here, so egui's preedit is undone before the commit is mapped.
+                Event::Ime(ImeEvent::Preedit(preedit)) => {
+                    if has_focus && !self.ime_active && !preedit.is_empty() {
+                        self.begin_composition(text, primary, secondary);
+                    }
+                    if last_commit.is_none_or(|last| index > last) {
+                        forwarded.push(event);
+                    }
+                }
                 Event::Text(inserted) if has_focus && self.ime_active => {
                     if let Some(index) = ime_commits.iter().position(|commit| commit == inserted) {
                         ime_commits.remove(index);
@@ -333,6 +340,16 @@ impl GraphemeAdapter {
 
         self.selection = Some((primary, secondary));
         scalar_range_to_grapheme_range(text, primary.min(secondary)..primary.max(secondary))
+    }
+
+    /// Opens a composition: its generation is counted from here, and the text and caret it starts from are kept, so the
+    /// preedit can be shown and then replaced by the commit.
+    fn begin_composition(&mut self, text: &str, primary: usize, secondary: usize) {
+        self.ime_generation = self.ime_generation.saturating_add(1);
+        self.ime_started = true;
+        self.ime_active = true;
+        self.ime_base_text = Some(text.to_owned());
+        self.ime_base_selection = Some((primary, secondary));
     }
 
     fn apply_input_text(
@@ -880,6 +897,55 @@ mod tests {
         assert_eq!(edits.len(), 1, "the paired Text event does not duplicate the IME commit");
         assert_eq!(edits[0].range, 1..1, "the operation uses the original committed caret");
         assert_eq!(edits[0].text, "한");
+    }
+
+    /// 68c: Windows sends a syllable's commit and the next syllable's start in one frame (egui events of winit 0.30.13 and
+    /// egui-winit 0.33.3). The commit carries the generation of the composition that made it, the next composition gets
+    /// the next generation, and its preedit is shown.
+    #[test]
+    fn a_commit_and_the_next_composition_in_one_frame_keep_their_own_generations() {
+        let ctx = Context::default();
+        let id = Id::new("ime-windows-order-editor");
+        ctx.memory_mut(|memory| memory.request_focus(id));
+        let mut text = String::new();
+        let output = draw_text(&ctx, id, &mut text, test_input(Vec::new()));
+        set_cursor(&ctx, id, 0);
+        let mut adapter = GraphemeAdapter::default();
+        adapter.record_layout(&output);
+        let ime = Event::Ime;
+
+        let mut frames = vec![
+            vec![ime(ImeEvent::Enabled), ime(ImeEvent::Preedit("ㅎ".into()))],
+            vec![ime(ImeEvent::Preedit("한".into()))],
+            vec![ime(ImeEvent::Disabled), ime(ImeEvent::Commit("한".into())), ime(ImeEvent::Disabled), ime(ImeEvent::Enabled), ime(ImeEvent::Preedit("ㄱ".into()))],
+            vec![ime(ImeEvent::Preedit("글".into()))],
+            vec![ime(ImeEvent::Disabled), ime(ImeEvent::Commit("글".into())), ime(ImeEvent::Disabled), ime(ImeEvent::Disabled)],
+        ].into_iter();
+        let mut play = |adapter: &mut GraphemeAdapter, text: &mut String| {
+            let mut input = test_input(frames.next().expect("a frame"));
+            adapter.raw_input_hook(&ctx, &mut input, id, text);
+            let edits = adapter.take_input_edits();
+            draw_text(&ctx, id, text, input);
+            edits
+        };
+        assert!(play(&mut adapter, &mut text).is_empty());
+        assert!(play(&mut adapter, &mut text).is_empty());
+        assert_eq!((adapter.ime_generation(), text.as_str()), (1, "한"));
+
+        let edits = play(&mut adapter, &mut text);
+        assert_eq!(edits.len(), 1);
+        assert_eq!((edits[0].text.as_str(), edits[0].range.clone(), edits[0].ime_generation), ("한", 0..0, 1), "the commit is the first composition's");
+        assert!(adapter.is_ime_active() && adapter.take_ime_started(), "the next composition is open");
+        assert_eq!(adapter.ime_generation(), 2);
+        assert_eq!(text, "한ㄱ", "the next syllable's first preedit is shown after the commit");
+
+        assert!(play(&mut adapter, &mut text).is_empty());
+        assert_eq!(text, "한글");
+        let edits = play(&mut adapter, &mut text);
+        assert_eq!(edits.len(), 1);
+        assert_eq!((edits[0].text.as_str(), edits[0].range.clone(), edits[0].ime_generation), ("글", 1..1, 2), "the second commit is the second composition's");
+        assert!(!adapter.is_ime_active());
+        assert_eq!(text, "한글", "each syllable once");
     }
 
     #[test]

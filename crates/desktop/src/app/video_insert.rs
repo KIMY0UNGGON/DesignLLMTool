@@ -52,7 +52,12 @@ impl DesktopApp {
     }
 
     pub(super) fn begin_canvas_video_insert(&mut self) -> Result<(), String> {
-        let intent = self.video_insert_intent()?;
+        self.begin_canvas_video_insert_at(None)
+    }
+
+    /// The video insert of the insert menu (`None`) or of a toolbox tile, which puts the video's centre at `at` (68g).
+    pub(super) fn begin_canvas_video_insert_at(&mut self, at: Option<super::toolbox::AddAt>) -> Result<(), String> {
+        let intent = self.video_insert_intent(at)?;
         let Some(path) = crate::dialogs::open_video(self.parent_hwnd) else {
             return Ok(());
         };
@@ -362,7 +367,7 @@ impl DesktopApp {
         }
     }
 
-    fn video_insert_intent(&self) -> Result<VideoInsertIntent, String> {
+    pub(super) fn video_insert_intent(&self, at: Option<super::toolbox::AddAt>) -> Result<VideoInsertIntent, String> {
         if self.video_insert.is_some() {
             return Err("진행 중인 동영상 추가가 끝날 때까지 기다리세요".into());
         }
@@ -400,7 +405,7 @@ impl DesktopApp {
         let ArtifactBody::Canvas(document) = &artifact.body else {
             return Err("Canvas에서만 동영상을 추가할 수 있습니다".into());
         };
-        let page_index = self.view_ref().page_index;
+        let page_index = at.map_or(self.view_ref().page_index, |at| at.page_index);
         let page = document.pages.get(page_index as usize).ok_or("현재 페이지를 찾지 못했습니다")?;
         Ok(VideoInsertIntent {
             token: new_id(),
@@ -408,6 +413,7 @@ impl DesktopApp {
             expected_revision: artifact.revision,
             page_index,
             page_id: page.id.clone(),
+            center: at.map(|at| at.center),
             view_id: self.view_id.clone(),
             expected_selection: context.selection.clone(),
             selection_generation: self.selection_generation,
@@ -795,16 +801,16 @@ impl DesktopApp {
             pending.stage = VideoInsertStage::Applying;
             pending.message = None;
         }
-        let Some((node_id, source_path)) = self.video_insert.as_ref()
+        let Some((node_id, source_path, center)) = self.video_insert.as_ref()
             .filter(|pending| pending.intent.token == token)
-            .map(|pending| (pending.node_id.clone(), pending.source_path.clone()))
+            .map(|pending| (pending.node_id.clone(), pending.source_path.clone(), pending.intent.center))
         else {
             self.cleanup_video_poster_temp(token);
             self.video_insert = None;
             self.set_error("동영상 추가 상태가 바뀌어 노드를 만들지 않았습니다".into());
             return;
         };
-        let node = video_node(node_id, &source_path, source_asset, asset);
+        let node = video_node(node_id, &source_path, source_asset, asset, center);
         let ticket = self.apply_changes(
             vec![Operation::AddNode { page_id: intent.page_id.clone(), parent_id: None, node }],
             [Intent::Content].into_iter().collect(),
@@ -881,16 +887,16 @@ impl DesktopApp {
     }
 }
 
-fn video_node(node_id: String, source_path: &std::path::Path, source: AssetRef, poster: AssetRef) -> Node {
+fn video_node(node_id: String, source_path: &std::path::Path, source: AssetRef, poster: AssetRef, center: Option<(i64, i64)>) -> Node {
+    let (width, height) = (320 * designllm_contracts::EMU_PER_CSS_PX, 180 * designllm_contracts::EMU_PER_CSS_PX);
+    let (x, y) = match center {
+        Some((cx, cy)) => (cx - width / 2, cy - height / 2),
+        None => (40 * designllm_contracts::EMU_PER_CSS_PX, 40 * designllm_contracts::EMU_PER_CSS_PX),
+    };
     Node {
         id: node_id,
         kind: NodeKind::Video,
-        bounds: Rect {
-            x: 40 * designllm_contracts::EMU_PER_CSS_PX,
-            y: 40 * designllm_contracts::EMU_PER_CSS_PX,
-            width: 320 * designllm_contracts::EMU_PER_CSS_PX,
-            height: 180 * designllm_contracts::EMU_PER_CSS_PX,
-        },
+        bounds: Rect { x, y, width, height },
         text: String::new(),
         style: Style::default(),
         asset: Some(source),

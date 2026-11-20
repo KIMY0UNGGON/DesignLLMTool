@@ -18,6 +18,8 @@ pub(super) struct GuiSettings {
     pub runtime: String,
     pub model: String,
     pub effort: String,
+    /// Backups (`backup_path` of `store_migrated`) whose migration notice the user confirmed, so it is not shown again.
+    pub seen_store_backups: BTreeSet<String>,
 }
 
 /// Where the settings of `workspace` are kept.
@@ -78,6 +80,7 @@ impl DesktopApp {
             self.ai_effort = settings.effort.clone();
         }
         self.ai_model = settings.model.clone();
+        self.home.workspace_info.seen_backups = settings.seen_store_backups;
         self.settings_path = Some(path);
         self.drafts = super::drafts::DraftBook::open(super::drafts::drafts_path(workspace));
         self
@@ -85,18 +88,32 @@ impl DesktopApp {
 
     /// Writes the current choices to the settings file (nothing happens without a workspace path).
     pub(super) fn save_settings(&mut self) {
-        let Some(path) = self.settings_path.clone() else {
-            return;
+        if self.write_settings().is_err() {
+            self.set_error(String::from("화면 설정을 저장하지 못했습니다"));
+        }
+    }
+
+    /// Writes the confirmed migration notices (`seen_store_backups`). A failure is told once a session: the notice comes
+    /// back at the next start, and a later confirmation does not raise the error again.
+    pub(super) fn save_seen_store_backups(&mut self) {
+        if self.write_settings().is_err() && !std::mem::replace(&mut self.home.workspace_info.save_failure_told, true) {
+            self.set_error(String::from("이주 알림 확인을 저장하지 못했습니다. 다음에 열 때 다시 보일 수 있습니다"));
+        }
+    }
+
+    /// Writes the settings as the window holds them (nothing happens without a workspace path).
+    fn write_settings(&self) -> std::io::Result<()> {
+        let Some(path) = self.settings_path.as_deref() else {
+            return Ok(());
         };
         let settings = GuiSettings {
             starred: self.home.starred.clone(),
             runtime: self.ai_runtime.clone(),
             model: self.ai_model.clone(),
             effort: self.ai_effort.clone(),
+            seen_store_backups: self.home.workspace_info.seen_backups.clone(),
         };
-        if store(&path, &settings).is_err() {
-            self.set_error(String::from("화면 설정을 저장하지 못했습니다"));
-        }
+        store(path, &settings)
     }
 }
 
@@ -114,11 +131,23 @@ mod tests {
             runtime: "codex".into(),
             model: String::new(),
             effort: "max".into(),
+            seen_store_backups: ["backups/a.db".to_owned()].into_iter().collect(),
         };
         store(&path, &settings).expect("written");
         assert_eq!(load(&path), settings);
         std::fs::write(&path, "not json").expect("overwritten");
         assert_eq!(load(&path), GuiSettings::default());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_settings_file_without_seen_backups_loads_with_none_seen() {
+        let root = std::env::temp_dir().join(format!("designllm-gui-old-settings-{}", designllm_contracts::new_id()));
+        let path = settings_path(&root);
+        write_atomic(&path, r#"{"starred":["p"],"runtime":"claude","model":"","effort":""}"#).expect("written");
+        let settings = load(&path);
+        assert_eq!(settings.starred.len(), 1);
+        assert!(settings.seen_store_backups.is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 

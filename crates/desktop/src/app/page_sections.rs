@@ -1,7 +1,7 @@
 //! Desktop editing for Canvas page section markers. Membership follows the existing page order.
 
 use designllm_contracts::{ArtifactBody, ArtifactKind, CanvasPageSection, CAPABILITY_EXTENSION_PAGE_SECTIONS};
-use eframe::egui::{self, Context, CornerRadius, Id, Pos2, Stroke};
+use eframe::egui::{Context, Id};
 use serde_json::Value;
 
 use super::{DesktopApp, PendingAction};
@@ -143,16 +143,15 @@ impl DesktopApp {
         let message = editor.message.clone();
         let can_edit = message.is_none() && self.run_context.is_none();
         let mut name = editor.section.name.clone();
-        let mut save = false;
-        let mut delete = false;
-        let mut cancel = false;
-        let mut copy = false;
-        egui::Window::new(if is_new { "페이지 섹션 추가" } else { "페이지 섹션" })
-            .id(Id::new(("page-section-editor", artifact_id.as_str(), section_id.as_str())))
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.set_min_width(300.0);
+        use crate::widgets::{DialogButton, DialogChoice};
+        let palette = crate::theme::palette(ctx);
+        let shown = crate::widgets::dialog_with_choices(
+            ctx,
+            &palette,
+            Id::new(("page-section-editor", artifact_id.as_str(), section_id.as_str())),
+            if is_new { "페이지 섹션 추가" } else { "페이지 섹션" },
+            crate::widgets::DialogPlace::Screen,
+            |ui| {
                 if let Some(message) = message.as_deref() {
                     ui.label(message);
                 } else if self.run_context.is_some() {
@@ -160,17 +159,31 @@ impl DesktopApp {
                 } else {
                     ui.label(format!("시작 페이지 {} · {}", page_index + 1, start_page_id));
                 }
+                ui.add_space(4.0);
                 ui.add_enabled_ui(can_edit, |ui| {
-                    ui.label("섹션 이름");
-                    ui.add(egui::TextEdit::singleline(&mut name).desired_width(300.0));
+                    crate::widgets::dialog_row(ui, &palette, "섹션 이름", |ui, width| crate::widgets::text_field(ui, &palette, &mut name, "섹션 이름", width));
                 });
-                ui.horizontal(|ui| {
-                    if can_edit && ui.button("저장").clicked() { save = true; }
-                    if can_edit && !is_new && ui.button("섹션 삭제").clicked() { delete = true; }
-                    if ui.button(if can_edit { "취소" } else { "초안 버리기" }).clicked() { cancel = true; }
-                    if !can_edit && ui.button("초안 복사").clicked() { copy = true; }
-                });
-            });
+                let mut choices = Vec::new();
+                if can_edit {
+                    choices.push(DialogChoice::new("저장", DialogButton::Primary));
+                    if !is_new {
+                        choices.push(DialogChoice::new("섹션 삭제", DialogButton::Danger));
+                    }
+                    choices.push(DialogChoice::new("취소", DialogButton::Plain));
+                } else {
+                    choices.push(DialogChoice::new("초안 버리기", DialogButton::Danger));
+                    choices.push(DialogChoice::new("초안 복사", DialogButton::Plain));
+                }
+                (choices.iter().map(|choice| choice.label).collect::<Vec<_>>(), choices)
+            },
+        );
+        // While the section can be edited, Enter saves (the name field ends with Enter, then the dialog takes it) and Esc is
+        // `취소`. A draft that can no longer be applied takes no keys: its `초안 버리기` throws the draft away.
+        let (labels, pressed) = shown.inner;
+        let clicked = |label: &str| labels.iter().zip(&pressed).any(|(shown, pressed)| *shown == label && *pressed);
+        let (save, delete, cancel, copy) = (clicked("저장"), clicked("섹션 삭제"), clicked("취소") || clicked("초안 버리기"), clicked("초안 복사"));
+        let save = save || (can_edit && shown.enter);
+        let cancel = cancel || (can_edit && shown.dismissed);
         if let Some(active_editor) = self.page_section_editor.as_mut() {
             if active_editor.section.id == section_id && active_editor.artifact_id == artifact_id {
                 active_editor.section.name = name;
@@ -196,46 +209,39 @@ impl DesktopApp {
         let draft = mutation.editor.as_ref().map(|editor| editor.section.clone());
         let page_index = mutation.editor.as_ref().map(|editor| editor.page_index).unwrap_or(0);
         let held_edit_id = mutation.held_edit_id.clone();
-        let mut copy = false;
-        let mut retry = false;
-        let mut discard = false;
-        let mut check_held = false;
-        let mut retry_held = false;
-        egui::Area::new(Id::new("page-section-conflict"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(Pos2::new(board_rect.left() + 16.0, board_rect.top() + 72.0))
-            .show(ctx, |ui| {
-                let palette = theme::palette(ui.ctx());
-                egui::Frame::new().fill(palette.surface).stroke(Stroke::new(1.0, palette.line))
-                    .corner_radius(CornerRadius::same(8)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
-                        ui.set_max_width(360.0);
-                        ui.heading(if pending { "섹션 저장 중" } else if mutation.outcome_uncertain { "섹션 결과 확인 필요" } else { "섹션 변경 보존됨" });
-                        ui.label(message.as_deref().unwrap_or("최신 섹션 상태를 확인할 수 없습니다. 초안을 보존했습니다."));
-                        if let Some(section) = draft.as_ref() {
-                            ui.label(format!("섹션: {} · 시작 페이지 {}", section.name, page_index + 1));
-                            ui.horizontal(|ui| {
-                                if ui.add_enabled(!pending, egui::Button::new("초안 복사")).clicked() { copy = true; }
-                                if ui.add_enabled(retry_allowed, egui::Button::new("같은 기준으로 다시 시도")).clicked() { retry = true; }
-                                if ui.add_enabled(!pending, egui::Button::new("초안 버리기")).clicked() { discard = true; }
-                            });
-                        } else if ui.add_enabled(!pending, egui::Button::new("변경 버리기")).clicked() { discard = true; }
-                        if let Some(held_id) = held_edit_id.as_deref() {
-                            if let Some(held) = self.held_edits.iter().find(|held| held.id == held_id) {
-                                match held.state {
-                                    super::state::HeldEditState::NeedsReview => {
-                                        if ui.button("보류한 섹션 상태 확인").clicked() { check_held = true; }
-                                    }
-                                    super::state::HeldEditState::Ready => {
-                                        if ui.button("보류한 섹션 다시 적용").clicked() { retry_held = true; }
-                                    }
-                                    super::state::HeldEditState::Checking => { ui.label("보류한 섹션의 예약 상태를 확인 중입니다."); }
-                                    super::state::HeldEditState::Sending | super::state::HeldEditState::WaitingForJobRelease => {
-                                        ui.label("보류한 섹션 변경을 처리 중입니다.");
-                                    }
-                                }
+        use crate::widgets::{dialog_buttons, DialogButton, DialogChoice};
+        let (mut copy, mut retry, mut discard, mut check_held, mut retry_held) = (false, false, false, false, false);
+        let palette = theme::palette(ctx);
+        let title = if pending { "섹션 저장 중" } else if mutation.outcome_uncertain { "섹션 결과 확인 필요" } else { "섹션 변경 보존됨" };
+        crate::widgets::dialog(ctx, &palette, Id::new("page-section-conflict"), title, crate::widgets::DialogPlace::BoardTop(board_rect), |ui| {
+                ui.label(message.as_deref().unwrap_or("최신 섹션 상태를 확인할 수 없습니다. 초안을 보존했습니다."));
+                if let Some(section) = draft.as_ref() {
+                    ui.label(format!("섹션: {} · 시작 페이지 {}", section.name, page_index + 1));
+                    let pressed = dialog_buttons(ui, &palette, &[
+                        DialogChoice::new("초안 복사", DialogButton::Plain).enabled(!pending),
+                        DialogChoice::new("같은 기준으로 다시 시도", DialogButton::Primary).enabled(retry_allowed),
+                        DialogChoice::new("초안 버리기", DialogButton::Danger).enabled(!pending),
+                    ]);
+                    (copy, retry, discard) = (pressed[0].clicked(), pressed[1].clicked(), pressed[2].clicked());
+                } else {
+                    discard = dialog_buttons(ui, &palette, &[DialogChoice::new("변경 버리기", DialogButton::Danger).enabled(!pending)])[0].clicked();
+                }
+                if let Some(held_id) = held_edit_id.as_deref() {
+                    if let Some(held) = self.held_edits.iter().find(|held| held.id == held_id) {
+                        match held.state {
+                            super::state::HeldEditState::NeedsReview => {
+                                check_held = dialog_buttons(ui, &palette, &[DialogChoice::new("보류한 섹션 상태 확인", DialogButton::Plain)])[0].clicked();
+                            }
+                            super::state::HeldEditState::Ready => {
+                                retry_held = dialog_buttons(ui, &palette, &[DialogChoice::new("보류한 섹션 다시 적용", DialogButton::Primary)])[0].clicked();
+                            }
+                            super::state::HeldEditState::Checking => { ui.label("보류한 섹션의 예약 상태를 확인 중입니다."); }
+                            super::state::HeldEditState::Sending | super::state::HeldEditState::WaitingForJobRelease => {
+                                ui.label("보류한 섹션 변경을 처리 중입니다.");
                             }
                         }
-                    });
+                    }
+                }
             });
         if copy {
             if let Some(editor) = self.page_section_mutation.as_ref().and_then(|mutation| mutation.editor.as_ref()) {

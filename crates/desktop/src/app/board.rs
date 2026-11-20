@@ -28,6 +28,8 @@ pub(super) const SETTLE: Duration = Duration::from_millis(120);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum LeftTab {
     Layers,
+    /// The insert tiles of a canvas or slides (68g toolbox, `toolbox.rs`).
+    Tools,
     Ai,
 }
 
@@ -162,9 +164,15 @@ pub(super) struct RegionTexture {
     pub px: Vec2,
 }
 
-/// Whether an `asset.read` answer is a decoded PNG a texture can be made from: a non-empty image with four bytes per pixel.
-pub(super) fn is_rgba_png(mime: &str, width: u32, height: u32, rgba: &[u8]) -> bool {
-    mime == "image/png" && width > 0 && height > 0 && rgba.len() == width as usize * height as usize * 4
+/// Whether a click on the board is a double click. egui counts any two clicks within 0.3 s as one, wherever they land
+/// (`InputOptions::max_double_click_delay`), and a double click opens a text: a quick click on another object would open
+/// that object's text instead of selecting it, and the clicks after it would only end the edit (68f item 2). It counts
+/// only where the click before it landed (egui's own click distance, 6 points). Every board click passes here.
+pub(super) fn board_double_click(ctx: &Context, position: Pos2, double: bool) -> bool {
+    let id = Id::new("board-last-click");
+    let last = ctx.data(|data| data.get_temp::<Pos2>(id));
+    ctx.data_mut(|data| data.insert_temp(id, position));
+    double && last.is_some_and(|last| last.distance(position) <= 6.0)
 }
 
 /// The default size of a page before the core has reported one.
@@ -330,7 +338,12 @@ impl DesktopApp {
             self.view().pan += step;
             moved = true;
         }
-        if !response.hovered() {
+        // egui hovers only the topmost interactive widget under the pointer, so a node region over the board takes the
+        // hover from the board's own response. The wheel (zoom, and the plain wheel's pan, as design tools do over objects) is the
+        // board's when the pointer is on the board's layer, not over a panel or a popup, and no other widget is being dragged.
+        let other_drag = ctx.dragged_id().is_some_and(|id| id != response.id);
+        let over_board = !other_drag && hover.is_some_and(|pos| board_rect.contains(pos) && ctx.layer_id_at(pos) == Some(response.layer_id));
+        if !over_board {
             return moved;
         }
         let zoom_factor = if (pinch - 1.0).abs() > 1e-4 {
@@ -433,6 +446,7 @@ impl DesktopApp {
         self.tick_inline_cells(ctx);
         if self.inline_text_edit.is_none()
             && !self.host_lost()
+            && !self.key_dialog_open()
             && self.view_ref().tool != Tool::Memo
             && !ctx.wants_keyboard_input()
             && ctx.input(|input| input.key_pressed(egui::Key::Enter)
@@ -499,10 +513,12 @@ impl DesktopApp {
             // text alike); on empty board it clears the selection.
             // A click off the memos leaves the memo selection (a memo's own click marks `region_clicked`).
             self.selected_board_memo = None;
+            self.perf_count("click_board");
             match response.interact_pointer_pos().and_then(|pos| page_at(&slots, origin, view.zoom, pos).map(|page| (page, pos))) {
                 Some((page, pos)) => {
                     self.focus_page(page);
-                    self.hit_test_page(page, pos, ctx.pixels_per_point(), super::multi::additive_modifier(ctx), response.double_clicked());
+                    let double = board_double_click(ctx, pos, response.double_clicked());
+                    self.hit_test_page(page, pos, ctx.pixels_per_point(), super::multi::additive_modifier(ctx), double);
                 }
                 None => self.select_clear(),
             }
@@ -718,6 +734,7 @@ impl DesktopApp {
             if let Some(click) = self.interact_with_region_passing(ui, key, page_index, rect, &source.node_id, source.bounds, page.size, region, pass_through) {
                 self.region_clicked = true;
                 self.focus_page(page_index);
+                self.perf_count("click_region");
                 self.hit_test_page(page_index, click.position, ctx.pixels_per_point(), super::multi::additive_modifier(ctx), click.double_clicked);
             }
         }
@@ -908,6 +925,7 @@ impl DesktopApp {
             if ctx.input(|input| input.key_pressed(egui::Key::Escape))
                 && !self.text_adapter.is_ime_active()
                 && !edit.ime_cancelled_frame
+                && !self.key_dialog_open()
             {
                 self.finish_inline_text_edit();
             }
@@ -917,39 +935,37 @@ impl DesktopApp {
     fn draw_inline_text_conflict(&mut self, ctx: &Context, _ui: &mut Ui) {
         let Some(edit) = self.inline_text_edit.as_ref()
             .filter(|edit| edit.conflict.is_some()).cloned() else { return };
-        let position = self.board_rect.map_or(Pos2::new(16.0, 56.0), |rect| Pos2::new(rect.left() + 16.0, rect.top() + 16.0));
-        let mut retry = false;
-        let mut retry_release = false;
-        let mut discard = false;
-        let mut copy_draft = false;
-        egui::Area::new(Id::new("inline-text-conflict"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(position)
-            .show(ctx, |ui| {
-                let palette = theme::palette(ui.ctx());
-                egui::Frame::new().fill(palette.surface).stroke(egui::Stroke::new(1.0, palette.line))
-                    .corner_radius(CornerRadius::same(8)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
-                        ui.set_max_width(360.0);
-                        ui.label(edit.conflict.as_deref().unwrap_or_default());
-                        if edit.retry_same_request {
-                            ui.label("마지막 입력의 확정 결과가 불명확합니다. 재시도는 같은 request_id로 확인하며, 초안을 버려도 이미 확정된 입력은 남을 수 있습니다.");
-                        }
-                        ui.label("적용되지 않은 초안:");
-                        let preview: String = self.text_draft.chars().take(240).collect();
-                        ui.label(egui::RichText::new(preview).monospace());
-                        ui.horizontal(|ui| {
-                            if edit.reservation_release_failed && ui.button("예약 해제 다시 시도").clicked() { retry_release = true; }
-                            let can_copy = !edit.composing && !self.text_adapter.is_ime_active();
-                            if ui.add_enabled(can_copy, egui::Button::new("초안 복사")).clicked() { copy_draft = true; }
-                            let can_retry = edit.retry_allowed && !edit.queue.is_empty() && !edit.composing && !self.text_adapter.is_ime_active()
-                                && edit.in_flight.is_none() && !edit.reservation_pending && !edit.layout_pending;
-                            if ui.add_enabled(can_retry, egui::Button::new("다시 시도")).clicked() { retry = true; }
-                            let can_discard = !edit.composing && !self.text_adapter.is_ime_active()
-                                && edit.in_flight.is_none() && !edit.reservation_pending;
-                            if ui.add_enabled(can_discard, egui::Button::new("초안 버리기")).clicked() { discard = true; }
-                        });
-                    });
+        use crate::widgets::{DialogButton, DialogChoice};
+        let palette = theme::palette(ctx);
+        // A notice on the board, under the other notices: it takes no keys, so Esc and typing stay the inline editor's.
+        let board = self.board_rect.unwrap_or_else(|| ctx.content_rect());
+        let shown = crate::widgets::dialog_with_choices(ctx, &palette, Id::new("inline-text-conflict"), "", crate::widgets::DialogPlace::BoardTop(board), |ui| {
+                ui.label(edit.conflict.as_deref().unwrap_or_default());
+                if edit.retry_same_request {
+                    ui.label("마지막 입력의 확정 결과가 불명확합니다. 재시도는 같은 request_id로 확인하며, 초안을 버려도 이미 확정된 입력은 남을 수 있습니다.");
+                }
+                ui.label("적용되지 않은 초안:");
+                let preview: String = self.text_draft.chars().take(240).collect();
+                ui.label(egui::RichText::new(preview).monospace());
+                let can_copy = !edit.composing && !self.text_adapter.is_ime_active();
+                let can_retry = edit.retry_allowed && !edit.queue.is_empty() && !edit.composing && !self.text_adapter.is_ime_active()
+                    && edit.in_flight.is_none() && !edit.reservation_pending && !edit.layout_pending;
+                let can_discard = !edit.composing && !self.text_adapter.is_ime_active()
+                    && edit.in_flight.is_none() && !edit.reservation_pending;
+                let mut choices = vec![
+                    DialogChoice::new("초안 복사", DialogButton::Plain).enabled(can_copy),
+                    DialogChoice::new("다시 시도", DialogButton::Primary).enabled(can_retry),
+                    DialogChoice::new("초안 버리기", DialogButton::Danger).enabled(can_discard),
+                ];
+                if edit.reservation_release_failed {
+                    choices.insert(0, DialogChoice::new("예약 해제 다시 시도", DialogButton::Plain));
+                }
+                ((), choices)
             });
+        let pressed = shown.inner.1;
+        let last = pressed.len() - 1;
+        let (copy_draft, retry, discard) = (pressed[last - 2], pressed[last - 1], pressed[last]);
+        let retry_release = edit.reservation_release_failed && pressed[0];
         if copy_draft { ctx.copy_text(self.text_draft.clone()); }
         if retry { self.retry_inline_text_edits(); }
         if retry_release { self.release_inline_text_target(edit.id); }
@@ -1035,11 +1051,13 @@ impl DesktopApp {
         self.cell_nav.note_hit(page_index, position, pixels_per_point, additive, edit_text);
         let (Some(page), Some(transform)) = (self.page_textures.get(&page_index), self.page_transforms.get(&page_index)) else {
             if edit_text { self.set_error("페이지를 그리는 중입니다. 잠시 뒤 다시 누르세요".into()); }
+            self.perf_count("hit_quiet_no_page");
             return;
         };
         let snapshot_id = page.snapshot_id.clone();
         let transform_id = transform.id.clone();
         let Some(context) = self.context.as_ref() else {
+            self.perf_count("hit_quiet_no_context");
             return;
         };
         let resend = self.core_transform_id.as_ref().is_some_and(|held| *held != transform_id).then(|| transform.clone());
@@ -1154,9 +1172,11 @@ impl DesktopApp {
     }
 
     /// Keeps a region texture (the snapshot's `preview_transform.crop` names its page rectangle).
-    pub(super) fn store_region_texture(&mut self, ctx: &Context, page_index: u32, snapshot: &designllm_contracts::RenderSnapshot, region: designllm_contracts::Rect, width: u32, height: u32, rgba: &[u8]) {
-        let image = egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], rgba);
+    pub(super) fn store_region_image(&mut self, ctx: &Context, page_index: u32, snapshot: &designllm_contracts::RenderSnapshot, region: designllm_contracts::Rect, image: egui::ColorImage) {
+        let (width, height) = (image.width() as u32, image.height() as u32);
+        let started = std::time::Instant::now();
         let texture = ctx.load_texture(format!("page-{page_index}-region"), image, TextureOptions::LINEAR);
+        self.perf_texture(width, height, started.elapsed());
         let px = Vec2::new(width as f32, height as f32);
         self.region_textures.insert(page_index, RegionTexture { region, dpi: snapshot.profile.dpi, revision: snapshot.revision, texture, px });
     }
@@ -1180,13 +1200,21 @@ impl DesktopApp {
     }
 
     /// Texture for a page, decoded from the core's PNG.
+    #[cfg(test)]
     pub(super) fn store_page_texture(&mut self, ctx: &Context, page_index: u32, snapshot: &designllm_contracts::RenderSnapshot, width: u32, height: u32, rgba: &[u8]) {
+        let image = egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], rgba);
+        self.store_page_image(ctx, page_index, snapshot, image);
+    }
+
+    /// `store_page_texture` for a picture already in texture pixels (`RpcPayload::png_image`).
+    pub(super) fn store_page_image(&mut self, ctx: &Context, page_index: u32, snapshot: &designllm_contracts::RenderSnapshot, image: egui::ColorImage) {
         let Some(render_page) = snapshot.scene.pages.iter().find(|page| page.page_index == page_index).cloned() else {
             return;
         };
-        let size = [width as usize, height as usize];
-        let image = egui::ColorImage::from_rgba_unmultiplied(size, rgba);
+        let (width, height) = (image.width() as u32, image.height() as u32);
+        let started = std::time::Instant::now();
         let texture = ctx.load_texture(format!("page-{page_index}"), image, TextureOptions::LINEAR);
+        self.perf_texture(width, height, started.elapsed());
         self.page_textures.insert(
             page_index,
             PageTexture {

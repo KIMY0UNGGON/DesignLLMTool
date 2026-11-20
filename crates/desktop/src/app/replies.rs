@@ -4,6 +4,14 @@ use super::{messages::change_result_unknown, state::{ui_run_success_result, Save
 impl DesktopApp {
     pub(super) fn process_replies(&mut self, ctx: &Context) {
         let replies: Vec<RpcReply> = self.rpc.poll().collect();
+        if let Some(test) = self.ui_test.as_mut() {
+            for timing in self.rpc.timings() {
+                test.perf.timed(timing);
+            }
+            for reply in &replies {
+                test.perf.answered(reply.ticket, reply.result.is_err());
+            }
+        }
         for reply in replies {
             self.note_host_reply(reply.ticket, reply.result.as_ref().err());
             if let Some(sent) = self.job_starts.remove(&reply.ticket) {

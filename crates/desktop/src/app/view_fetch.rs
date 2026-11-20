@@ -15,6 +15,7 @@ impl DesktopApp {
 
     pub(super) fn update_workspace_notices(&mut self, workspace_id: &str, diagnostics: Option<Vec<Diagnostic>>) {
         let Some(diagnostics) = diagnostics else { return };
+        self.home.workspace_info.read(&diagnostics);
         let mut keys = Vec::new();
         let mut messages = Vec::new();
         for diagnostic in diagnostics.into_iter().filter(|diagnostic| !diagnostic.blocking) {
@@ -22,6 +23,11 @@ impl DesktopApp {
             let fingerprint = serde_json::to_string(&diagnostic).unwrap_or_default();
             let key = format!("{}:{}", workspace_id, sha256(fingerprint.as_bytes()));
             if self.acknowledged_workspace_notices.contains(&key) {
+                continue;
+            }
+            // The migration notice comes once per backup, until the user confirms it; the core keeps reporting it (MCP,
+            // records) and the workspace information keeps showing the backup.
+            if !self.home.workspace_info.notice_due(&key, &diagnostic) {
                 continue;
             }
             if !messages.contains(&message) {
@@ -34,8 +40,14 @@ impl DesktopApp {
         }
     }
 
+    /// The user confirmed the workspace notice: it stays away for this session, and a migration notice in it for good
+    /// (`seen_store_backups`).
     pub(super) fn acknowledge_workspace_notice(&mut self) {
-        self.acknowledged_workspace_notices.extend(self.notices.acknowledge_workspace());
+        let keys = self.notices.acknowledge_workspace();
+        if self.home.workspace_info.confirm(&keys) {
+            self.save_seen_store_backups();
+        }
+        self.acknowledged_workspace_notices.extend(keys);
     }
 
     pub(super) fn activate(&mut self, summary: ArtifactSummary) {
@@ -252,6 +264,8 @@ impl DesktopApp {
         let ticket = self.next_ticket;
         self.next_ticket += 1;
         self.rpc.read_asset(ticket, asset)?;
+        let in_flight = self.pending.len();
+        if let Some(test) = self.ui_test.as_mut() { test.perf.sent(ticket, "asset.read", in_flight); }
         self.pending.insert(ticket, PendingRequest {
             action,
             method: "asset.read".into(),

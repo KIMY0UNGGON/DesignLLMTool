@@ -466,6 +466,19 @@ impl DesktopApp {
         ctx.send_viewport_cmd(ViewportCommand::Close);
     }
 
+    /// Whether a dialog that answers Enter and Esc is open (68d: the close and switch questions, the lost host, the agent's
+    /// model-run approval, the export losses, the figure form, the page section editor). While one is, the board and the
+    /// window's shortcuts leave the keys to it (`handle_shortcuts`, the board's Enter and the inline editor's Esc, the memo keys).
+    pub(super) fn key_dialog_open(&self) -> bool {
+        self.close_confirmation_open
+            || self.pending_switch.is_some()
+            || self.host_link.lost
+            || self.has_home_confirmation()
+            || self.export_confirmation.is_some()
+            || self.figure_form.is_some()
+            || self.page_section_editor.is_some()
+    }
+
     pub(super) fn draw_held_edit_close_dialog(&mut self, ctx: &Context) {
         if !self.close_confirmation_open { return; }
         let warning = self.held_edit_close_warning();
@@ -474,75 +487,80 @@ impl DesktopApp {
             self.close_confirmation_open = false;
             return;
         }
-        let mut keep_working = false;
-        let mut discard_and_close = false;
-        let mut close_without_saving = false;
-        let mut close_after_release_failure = false;
-        let mut retry_release = false;
-        let mut retry_reservation_check = false;
-        let mut cancel_video_insert = false;
-        egui::Modal::new(Id::new("held-edit-close-confirmation")).show(ctx, |ui| {
-            ui.set_max_width(440.0);
-            ui.heading("보류된 변경");
+        let palette = crate::theme::palette(ctx);
+        use crate::widgets::{DialogButton, DialogChoice};
+        /// What each button of the question does.
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum Answer { Keep, CancelVideo, RetryRelease, RetryCheck, CloseAfterFailure, Discard }
+        let keep = (Answer::Keep, DialogChoice::new("계속 작업", DialogButton::Primary));
+        // The buttons stay under the text, in view however long it is (`dialog_with_choices`).
+        let shown = crate::widgets::dialog_with_choices(ctx, &palette, Id::new("held-edit-close-confirmation"), "보류된 변경", crate::widgets::DialogPlace::Modal, |ui| {
             if let Some(text) = warning.as_deref() {
                 ui.label(text);
             }
             if drafts_unsaved {
                 ui.label("초안을 저장하지 못했습니다. 그래도 닫을까요?");
             }
+            let mut answers = Vec::new();
             if self.image_crop_apply_pending() {
                 ui.label("이미지 자르기 적용 결과를 기다리는 동안에는 닫을 수 없습니다.");
-                if ui.button("계속 작업").clicked() { keep_working = true; }
+                answers.push(keep);
             } else if self.video_insert.as_ref().is_some_and(PendingVideoInsert::close_wait_required) {
                 let cancel_allowed = self.video_insert.as_ref().is_some_and(|pending| {
                     !pending.cancel_requested
                         && !matches!(pending.stage, VideoInsertStage::Applying | VideoInsertStage::OutcomeUncertain)
                 });
                 ui.label("동영상 검사·가져오기 또는 노드 추가 결과가 돌아오는 동안에는 닫을 수 없습니다.");
-                if cancel_allowed && ui.button("동영상 추가 취소 후 정리 기다리기").clicked() {
-                    cancel_video_insert = true;
+                if cancel_allowed {
+                    answers.push((Answer::CancelVideo, DialogChoice::new("동영상 추가 취소 후 정리 기다리기", DialogButton::Plain)));
                 }
-                if ui.button("계속 작업").clicked() { keep_working = true; }
+                answers.push(keep);
             } else if self.board_memo_request_in_flight() || self.page_section_request_in_flight() {
                 ui.label("메모 또는 섹션 저장 결과를 기다리는 동안에는 닫을 수 없습니다.");
-                if ui.button("계속 작업").clicked() { keep_working = true; }
+                answers.push(keep);
             } else if self.close_after_inline_cleanup || self.close_release_pending {
                 ui.label("진행 중인 입력 결과와 예약 해제를 확인 중입니다.");
             } else if self.close_release_failed {
-                ui.horizontal(|ui| {
-                    if self.close_reservation_id.is_some() && ui.button("예약 해제 다시 시도").clicked() { retry_release = true; }
-                    if self.close_reservation_id.is_none() && self.inline_text_edit.is_some() && ui.button("예약 상태 다시 확인").clicked() { retry_reservation_check = true; }
-                    let close_label = if self.board_memo_editor.is_some() || self.board_memo_mutation.is_some() || self.board_memo_gesture.is_some()
-                        || self.page_section_editor.is_some() || self.page_section_mutation.is_some()
-                    {
-                        "보드 초안을 버리고 예약 만료를 기다리며 닫기"
-                    } else {
-                        "예약 만료를 기다리며 닫기"
-                    };
-                    let close = ui.button(close_label);
-                    crate::ui_record::note_human_only(ui, close_label, &close);
-                    if close.clicked() { close_after_release_failure = true; }
-                });
+                if self.close_reservation_id.is_some() {
+                    answers.push((Answer::RetryRelease, DialogChoice::new("예약 해제 다시 시도", DialogButton::Plain)));
+                } else if self.inline_text_edit.is_some() {
+                    answers.push((Answer::RetryCheck, DialogChoice::new("예약 상태 다시 확인", DialogButton::Plain)));
+                }
+                let discards_board = self.board_memo_editor.is_some() || self.board_memo_mutation.is_some() || self.board_memo_gesture.is_some()
+                    || self.page_section_editor.is_some() || self.page_section_mutation.is_some();
+                let close_label = if discards_board {
+                    "보드 초안을 버리고 예약 만료를 기다리며 닫기"
+                } else {
+                    "예약 만료를 기다리며 닫기"
+                };
+                let kind = if discards_board { DialogButton::Danger } else { DialogButton::Plain };
+                answers.push((Answer::CloseAfterFailure, DialogChoice::new(close_label, kind).human_only()));
             } else {
                 // A figure job that runs on its own is not discarded by closing: the button then only closes.
                 let discard_label = self.close_discard_label(drafts_unsaved);
                 if let Some(note) = self.held_drop_note(drafts_unsaved) { ui.label(note); }
-                ui.horizontal(|ui| {
-                    if ui.button("계속 작업").clicked() { keep_working = true; }
-                    let discard = ui.button(discard_label);
-                    crate::ui_record::note_human_only(ui, discard_label, &discard);
-                    if discard.clicked() {
-                        if drafts_unsaved { close_without_saving = true; } else { discard_and_close = true; }
-                    }
-                });
+                answers.push(keep);
+                answers.push((Answer::Discard, DialogChoice::new(discard_label, DialogButton::Danger).human_only()));
             }
+            let choices = answers.iter().map(|(_, choice)| *choice).collect();
+            (answers.into_iter().map(|(answer, _)| answer).collect::<Vec<_>>(), choices)
         });
+        let (answers, pressed) = shown.inner;
+        let pressed: Vec<Answer> = answers.iter().zip(pressed).filter(|(_, pressed)| *pressed).map(|(answer, _)| *answer).collect();
+        // Where `계속 작업` is offered it is the main and the safe choice: Enter, Esc and a press on the backdrop keep working.
+        let keep_working = pressed.contains(&Answer::Keep) || (answers.contains(&Answer::Keep) && (shown.enter || shown.dismissed));
         if keep_working { self.keep_working_after_close_request(ctx); }
-        if cancel_video_insert { let _ = self.cancel_canvas_video_insert(); }
-        if discard_and_close { self.discard_held_edits_and_close(ctx); }
-        if close_without_saving { self.close_discarding(ctx, false); }
-        if retry_release { self.retry_close_reservation_release(); }
-        if retry_reservation_check { self.retry_close_reservation_check(); }
-        if close_after_release_failure { self.force_close_after_release_failure(ctx); }
+        if pressed.contains(&Answer::CancelVideo) { let _ = self.cancel_canvas_video_insert(); }
+        if pressed.contains(&Answer::Discard) {
+            if drafts_unsaved { self.close_discarding(ctx, false); } else { self.discard_held_edits_and_close(ctx); }
+        }
+        if pressed.contains(&Answer::RetryRelease) { self.retry_close_reservation_release(); }
+        if pressed.contains(&Answer::RetryCheck) { self.retry_close_reservation_check(); }
+        if pressed.contains(&Answer::CloseAfterFailure) { self.force_close_after_release_failure(ctx); }
     }
 }
+
+// The dialogs and notices of task 68d through `App::update` (`dialog_tests.rs` beside this file).
+#[cfg(test)]
+#[path = "dialog_tests.rs"]
+mod dialog_tests;
