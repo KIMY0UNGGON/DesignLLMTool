@@ -1,0 +1,17 @@
+[package]
+name = "designllm-pptx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "PresentationML (PPTX) codec: preserving open, edit, verify, and create for DesignLLMTool"
+
+[dependencies]
+designllm-contracts.workspace = true
+designllm-package.workspace = true
+# Font-name matching (`face_matches_family`) for the substitution report of PPTX export.
+designllm-render.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# XML parsing with byte ranges. MIT OR Apache-2.0, MSRV 1.60. Same version as designllm-package.
+roxmltree = "0.21.2"

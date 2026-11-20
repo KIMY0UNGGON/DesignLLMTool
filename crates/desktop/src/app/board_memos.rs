@@ -1,0 +1,970 @@
+//! Canvas board memos are local editor overlays backed by page-scoped Canvas operations.
+
+use designllm_contracts::{ArtifactBody, ArtifactKind, CanvasBoardMemo, CanvasBoardMemoKind, Rect as EmuRect, Size, CAPABILITY_EXTENSION_BOARD_TITLES, EMU_PER_CSS_PX};
+use eframe::egui::{self, Align2, Color32, Context, CornerRadius, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+
+use super::{board::Tool, page_to_screen, screen_to_page_emu, BoardMemoEditor, BoardMemoGesture, BoardMemoMutation, DesktopApp, PendingAction};
+use crate::theme;
+
+const DEFAULT_MEMO_WIDTH: i64 = 240 * EMU_PER_CSS_PX;
+const DEFAULT_MEMO_HEIGHT: i64 = 140 * EMU_PER_CSS_PX;
+const DEFAULT_MEMO_COLOR: &str = "#FFF2A8";
+const DEFAULT_TITLE_COLOR: &str = "#20252D";
+
+impl DesktopApp {
+    pub(super) fn board_titles_write_supported(&self) -> bool {
+        self.context.as_ref()
+            .and_then(|context| context.capability_extensions.get(CAPABILITY_EXTENSION_BOARD_TITLES))
+            .is_some_and(|support| support.write == designllm_contracts::Support::Supported)
+    }
+
+    pub(super) fn handle_board_memo_shortcut(&mut self, ctx: &Context) {
+        let canvas = self.screen == super::Screen::Editor
+            && self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::Canvas);
+        if !canvas || ctx.wants_keyboard_input() || !ctx.input(|input| {
+            input.key_pressed(egui::Key::N) && input.modifiers == egui::Modifiers::NONE
+        }) {
+            return;
+        }
+        ctx.input_mut(|input| { input.consume_key(egui::Modifiers::NONE, egui::Key::N); });
+        self.view().tool = Tool::Memo;
+    }
+
+    /// Draws page-local board annotations outside the rendered page scene and its export path.
+    pub(super) fn draw_board_memos(
+        &mut self,
+        ctx: &Context,
+        ui: &mut Ui,
+        page_index: u32,
+        page_size: Size,
+        page_rect: Rect,
+    ) {
+        let Some((artifact_id, revision, page_id, memos)) = self.board_memo_page(page_index) else {
+            return;
+        };
+        let ready = self.board_memo_page_ready(&artifact_id, revision, &page_id, page_index, page_size);
+        let view = self.view_ref();
+        let locked = self.board_memo_editor.is_some() || self.board_memo_mutation.is_some()
+            || self.page_section_editor.is_some() || self.page_section_mutation.is_some()
+            || self.run_context.is_some() || self.inline_text_edit.is_some();
+        let space_down = ctx.input(|input| input.key_down(egui::Key::Space));
+        let interactive = !locked && view.tool != Tool::Hand && !space_down;
+        let memo_tool = view.tool == Tool::Memo && interactive;
+
+        if !ready {
+            ui.painter().text(
+                page_rect.left_top() + Vec2::new(8.0, 8.0),
+                Align2::LEFT_TOP,
+                "메모 위치를 갱신하는 중입니다",
+                egui::FontId::proportional(12.0),
+                theme::palette(ctx).ink_2,
+            );
+            return;
+        }
+
+        if memo_tool {
+            let response = ui.interact(
+                page_rect,
+                Id::new(("board-memo-page", artifact_id.as_str(), page_id.as_str())),
+                Sense::click(),
+            );
+            if response.clicked() {
+                if let Some(position) = response.interact_pointer_pos() {
+                    let over_memo = memos.iter().any(|memo| {
+                        page_to_screen(memo.bounds, page_size, page_rect).contains(position)
+                    });
+                    if !over_memo {
+                        self.region_clicked = true;
+                        self.begin_board_memo_at(page_index, position, page_rect, page_size);
+                    }
+                }
+            }
+        }
+
+        for memo in &memos {
+            let mut screen_rect = page_to_screen(memo.bounds, page_size, page_rect);
+            if screen_rect.width() < 12.0 || screen_rect.height() < 12.0 {
+                continue;
+            }
+            let title_supported = memo.kind != CanvasBoardMemoKind::Title || self.board_titles_write_supported();
+            if interactive && title_supported && self.board_memo_editor.is_none() && self.board_memo_mutation.is_none() {
+                let response = ui.interact(
+                    screen_rect,
+                    Id::new(("board-memo", artifact_id.as_str(), memo.id.as_str())),
+                    Sense::click_and_drag(),
+                );
+                if response.drag_started() {
+                    self.region_clicked = true;
+                    self.selected_board_memo = Some(memo.id.clone());
+                    self.board_memo_gesture = Some(BoardMemoGesture {
+                        artifact_id: artifact_id.clone(),
+                        revision,
+                        page_id: page_id.clone(),
+                        page_index,
+                        // Where the press began: egui reports the drag only after the click distance (see edit_fields.rs).
+                        start: ui.input(|input| input.pointer.press_origin()).or(response.interact_pointer_pos()).unwrap_or(screen_rect.center()),
+                        page_rect,
+                        page_size,
+                        tool_at_start: view.tool,
+                        space_down_at_start: space_down,
+                        zoom_at_start: view.zoom,
+                        pan_at_start: view.pan,
+                        transform_id_at_start: self.page_transforms.get(&page_index).map(|transform| transform.id.clone()),
+                        invalidated: false,
+                        memo_id: Some(memo.id.clone()),
+                        original_bounds: Some(memo.bounds),
+                        expected: memos.clone(),
+                        memo: memo.clone(),
+                    });
+                }
+                if response.dragged() {
+                    self.region_clicked = true;
+                    if let Some(gesture) = self.board_memo_gesture.as_ref().filter(|gesture| gesture.memo_id.as_deref() == Some(memo.id.as_str())) {
+                        let delta = response.interact_pointer_pos().unwrap_or(gesture.start) - gesture.start;
+                        let bounds = moved_bounds(
+                            gesture.original_bounds.unwrap_or(gesture.memo.bounds),
+                            delta,
+                            gesture.page_rect,
+                            gesture.page_size,
+                        );
+                        screen_rect = page_to_screen(bounds, page_size, page_rect);
+                    }
+                }
+                if response.double_clicked() {
+                    self.region_clicked = true;
+                    self.selected_board_memo = Some(memo.id.clone());
+                    self.open_board_memo_editor(page_index, &memo.id);
+                } else if response.clicked() {
+                    self.region_clicked = true;
+                    self.selected_board_memo = Some(memo.id.clone());
+                }
+            }
+
+            let is_title = memo.kind == CanvasBoardMemoKind::Title;
+            let color = crate::widgets::parse_hex(&memo.color).unwrap_or(if is_title {
+                theme::palette(ctx).ink
+            } else {
+                Color32::from_rgb(255, 242, 168)
+            });
+            if !is_title {
+                ui.painter().rect_filled(screen_rect, CornerRadius::same(4), color);
+            }
+            let selected = self.selected_board_memo.as_deref() == Some(memo.id.as_str());
+            if selected {
+                ui.painter().rect_stroke(
+                    screen_rect,
+                    CornerRadius::same(4),
+                    Stroke::new(1.5, theme::palette(ctx).accent),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            let first_line = memo.text.lines().next().unwrap_or_default();
+            let preview = truncate(first_line, 42);
+            ui.painter().text(
+                screen_rect.shrink(8.0).left_top(),
+                Align2::LEFT_TOP,
+                preview,
+                if is_title { theme::font(theme::Type::BoardTitle) } else { egui::FontId::proportional(14.0) },
+                if is_title { color } else { Color32::from_rgb(40, 38, 29) },
+            );
+        }
+
+    }
+
+    pub(super) fn draw_board_memo_editor(&mut self, ctx: &Context) {
+        if self.board_memo_editor.as_ref().is_some_and(|editor| editor.message.is_none() && !self.board_memo_editor_is_current(editor)) {
+            if let Some(editor) = self.board_memo_editor.as_mut() {
+                editor.message = Some("작업물 또는 메모가 바뀌었습니다. 이 초안은 최신 상태에 자동 적용하지 않습니다.".into());
+            }
+        }
+        let Some(editor) = self.board_memo_editor.as_ref() else { return };
+        let artifact_id = editor.artifact_id.clone();
+        let memo_id = editor.memo.id.clone();
+        let page_index = editor.page_index;
+        let is_new = editor.is_new;
+        let message = editor.message.clone();
+        let run_context_busy = self.run_context.is_some();
+        let can_edit = message.is_none() && !run_context_busy;
+        let mut text = editor.memo.text.clone();
+        let mut color = editor.memo.color.clone();
+        let mut save = false;
+        let mut cancel = false;
+        let mut delete = false;
+        let mut copy = false;
+        let is_title = editor.memo.kind == CanvasBoardMemoKind::Title;
+        let title = if is_title { "보드 제목" } else if is_new { "새 보드 메모" } else { "보드 메모" };
+        egui::Window::new(title)
+            .id(Id::new(("board-memo-editor", artifact_id.as_str(), memo_id.as_str())))
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.set_min_width(300.0);
+                if let Some(message) = message.as_deref() {
+                    ui.label(message);
+                } else if run_context_busy {
+                    ui.label("앱 요청이 끝난 뒤 편집할 수 있습니다. 현재 초안은 보존됩니다.");
+                } else {
+                    ui.label(format!("페이지 {} · 보드 주석", page_index + 1));
+                }
+                ui.add_enabled_ui(can_edit, |ui| {
+                    ui.label(if is_title { "제목" } else { "메모" });
+                    if is_title {
+                        ui.add(egui::TextEdit::singleline(&mut text).desired_width(300.0));
+                    } else {
+                        ui.add(egui::TextEdit::multiline(&mut text).desired_rows(6).desired_width(300.0));
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label(if is_title { "글자 색" } else { "색상" });
+                        ui.add(egui::TextEdit::singleline(&mut color).desired_width(100.0));
+                    });
+                });
+                if crate::widgets::parse_hex(&color).is_none() {
+                    ui.colored_label(theme::palette(ui.ctx()).danger, "색상은 #RRGGBB 형식이어야 합니다.");
+                }
+                ui.horizontal(|ui| {
+                    if can_edit && ui.button("저장").clicked() { save = true; }
+                    if can_edit && !is_new && ui.button("삭제").clicked() { delete = true; }
+                    if ui.button(if can_edit { "취소" } else { "초안 버리기" }).clicked() { cancel = true; }
+                    if !can_edit && ui.button("초안 복사").clicked() { copy = true; }
+                });
+            });
+        if let Some(active_editor) = self.board_memo_editor.as_mut() {
+            if active_editor.memo.id == memo_id && active_editor.artifact_id == artifact_id {
+                active_editor.memo.text = text;
+                active_editor.memo.color = color;
+            }
+        }
+        if copy {
+            if let Some(editor) = self.board_memo_editor.as_ref() { ctx.copy_text(memo_copy_payload(editor)); }
+        }
+        if save { self.save_board_memo_editor(); }
+        if delete { self.delete_board_memo_editor(); }
+        if cancel {
+            if is_new { self.selected_board_memo = None; }
+            self.clear_note_draft(&memo_id);
+            self.board_memo_editor = None;
+        }
+    }
+
+    pub(super) fn draw_board_memo_mutation(&mut self, ctx: &Context) {
+        let Some(mutation) = self.board_memo_mutation.as_ref() else { return };
+        let Some(board_rect) = self.board_rect else { return };
+        let token = mutation.token.clone();
+        let artifact_id = mutation.artifact_id.clone();
+        let page_id = mutation.page_id.clone();
+        let page_index = mutation.page_index;
+        let revision = mutation.revision;
+        let expected_count = mutation.expected.len();
+        let desired_count = mutation.desired.len();
+        let message = mutation.message.clone();
+        let pending = mutation.pending || self.board_memo_request_in_flight();
+        let outcome_uncertain = mutation.outcome_uncertain;
+        let draft = mutation.editor.as_ref().map(|editor| (
+            editor.artifact_id.clone(), editor.page_id.clone(), editor.page_index, editor.memo.clone(),
+        ));
+        let held_edit_id = mutation.held_edit_id.clone();
+        let mut discard = false;
+        let mut copy = false;
+        let mut retry = false;
+        let mut check_held = false;
+        let mut retry_held = false;
+        let retry_allowed = self.board_memo_mutation_retry_allowed(mutation);
+        egui::Area::new(Id::new("board-memo-conflict"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(Pos2::new(board_rect.left() + 16.0, board_rect.top() + 16.0))
+            .show(ctx, |ui| {
+                let palette = theme::palette(ui.ctx());
+                egui::Frame::new()
+                    .fill(palette.surface)
+                    .stroke(Stroke::new(1.0, palette.line))
+                    .corner_radius(CornerRadius::same(8))
+                    .inner_margin(egui::Margin::same(10))
+                    .show(ui, |ui| {
+                        ui.set_max_width(360.0);
+                        ui.heading(if pending { "메모 저장 중" } else if outcome_uncertain { "메모 결과 확인 필요" } else { "메모 변경 보존됨" });
+                        ui.label(message.as_deref().unwrap_or("작업물의 최신 상태를 확인하고 있습니다. 메모를 보존했습니다."));
+                        ui.label(format!(
+                            "작업물 {} · 페이지 {} ({}) · 기준 revision {} · 페이지 메모 {}개 → {}개",
+                            artifact_id,
+                            page_index + 1,
+                            page_id,
+                            revision,
+                            expected_count,
+                            desired_count,
+                        ));
+                        if let Some((_, _, _, memo)) = draft.as_ref() {
+                            ui.label("저장되지 않은 메모 초안:");
+                            ui.label(egui::RichText::new(truncate(&memo.text, 240)).monospace());
+                            ui.horizontal(|ui| {
+                                if ui.add_enabled(!pending, egui::Button::new("초안과 위치 복사")).clicked() { copy = true; }
+                                if ui.add_enabled(retry_allowed, egui::Button::new("같은 기준으로 다시 시도")).clicked() { retry = true; }
+                                if ui.add_enabled(!pending, egui::Button::new("초안 버리기")).clicked() { discard = true; }
+                            });
+                        } else {
+                            ui.label("이동 변경은 최신 상태에 자동 적용하지 않습니다.");
+                            ui.horizontal(|ui| {
+                                if ui.add_enabled(retry_allowed, egui::Button::new("같은 기준으로 다시 시도")).clicked() { retry = true; }
+                                if ui.add_enabled(!pending, egui::Button::new("이동 변경 버리기")).clicked() { discard = true; }
+                            });
+                        }
+                        if let Some(held_id) = held_edit_id.as_deref() {
+                            if let Some(held) = self.held_edits.iter().find(|held| held.id == held_id) {
+                                match held.state {
+                                    super::state::HeldEditState::NeedsReview => {
+                                        if ui.button("보류한 메모 상태 확인").clicked() { check_held = true; }
+                                    }
+                                    super::state::HeldEditState::Ready => {
+                                        if ui.button("보류한 메모 다시 적용").clicked() { retry_held = true; }
+                                    }
+                                    super::state::HeldEditState::Checking => { ui.label("보류한 메모의 예약 상태를 확인 중입니다."); }
+                                    super::state::HeldEditState::Sending | super::state::HeldEditState::WaitingForJobRelease => {
+                                        ui.label("보류한 메모 변경을 처리 중입니다.");
+                                    }
+                                }
+                            }
+                        }
+                    });
+            });
+        if copy {
+            if let Some((artifact_id, page_id, page_index, memo)) = draft.as_ref() {
+                ctx.copy_text(memo_copy_payload_parts(artifact_id, page_id, *page_index, memo));
+            }
+        }
+        if retry { self.retry_board_memo_mutation(&token); }
+        if discard { self.discard_board_memo_mutation(&token); }
+        if check_held {
+            if let Some(held_id) = held_edit_id.as_deref() { self.check_held_edit(held_id); }
+        }
+        if retry_held {
+            if let Some(held_id) = held_edit_id.as_deref() { self.confirm_held_edit_retry(held_id); }
+        }
+    }
+
+    pub(super) fn finish_board_memo_gesture_if_released(&mut self, ctx: &Context) {
+        let (released, position) = ctx.input(|input| (
+            input.pointer.button_released(egui::PointerButton::Primary),
+            input.pointer.latest_pos(),
+        ));
+        if !released { return; }
+        self.finish_board_memo_gesture_at(position);
+    }
+
+    pub(super) fn observe_board_memo_gesture(&mut self, ctx: &Context) {
+        let Some(gesture) = self.board_memo_gesture.as_ref() else { return };
+        let page_index = gesture.page_index;
+        let current_view = self.view_ref();
+        let current_tool = current_view.tool;
+        let current_page_state = self.current_memo_page_state(page_index);
+        let same_target_page = current_page_state.as_ref().is_some_and(|(artifact_id, page_id, _)| {
+            artifact_id == &gesture.artifact_id && page_id == &gesture.page_id
+        });
+        let current_page_rect = current_page_state.as_ref().map(|(_, _, rect)| *rect);
+        let current_transform_id = self.page_transforms.get(&page_index).map(|transform| transform.id.clone());
+        let space_down = ctx.input(|input| input.key_down(egui::Key::Space));
+        let space_changed_this_frame = ctx.input(|input| input.events.iter().any(|event| matches!(
+            event,
+            egui::Event::Key { key: egui::Key::Space, .. }
+        )));
+        if let Some(gesture) = self.board_memo_gesture.as_mut() {
+            observe_gesture_transform(
+                gesture,
+                current_tool,
+                space_down,
+                space_changed_this_frame,
+                current_view.zoom,
+                current_view.pan,
+                same_target_page,
+                current_page_rect,
+                current_transform_id.as_deref(),
+            );
+        }
+    }
+
+    fn current_memo_page_state(&self, page_index: u32) -> Option<(String, String, Rect)> {
+        if self.screen != super::Screen::Editor { return None; }
+        let active = self.active.as_ref().filter(|active| active.kind == ArtifactKind::Canvas)?;
+        let artifact = self.artifact.as_ref().filter(|artifact| artifact.kind == ArtifactKind::Canvas && artifact.id == active.id)?;
+        let page_id = match &artifact.body {
+            ArtifactBody::Canvas(document) => document.pages.get(page_index as usize)?.id.clone(),
+            _ => return None,
+        };
+        let board_rect = self.board_rect?;
+        let view = self.view_ref();
+        let slots = crate::board::arrange(active.kind, &self.page_sizes(), view.zoom);
+        let slot = slots.iter().find(|slot| slot.page_index == page_index)?;
+        Some((artifact.id.clone(), page_id, crate::board::to_screen(slot.world, board_rect.min + view.pan, view.zoom)))
+    }
+
+    fn finish_board_memo_gesture_at(&mut self, position: Option<Pos2>) {
+        let Some(gesture) = self.board_memo_gesture.take() else { return };
+        if gesture.invalidated {
+            self.set_error("메모를 끄는 동안 도구나 화면 변환이 바뀌어 이동을 취소했습니다. 기존 메모는 유지했습니다".into());
+            return;
+        }
+        let position = position.unwrap_or(gesture.start);
+        let bounds = moved_bounds(
+            gesture.original_bounds.unwrap_or(gesture.memo.bounds),
+            position - gesture.start,
+            gesture.page_rect,
+            gesture.page_size,
+        );
+        if bounds == gesture.memo.bounds { return; }
+        if self.board_memo_page_ready(&gesture.artifact_id, gesture.revision, &gesture.page_id, gesture.page_index, gesture.page_size)
+            && self.run_context.is_none()
+        {
+            self.submit_memo_move(gesture, bounds);
+        } else {
+            self.preserve_stale_memo_move(gesture, bounds);
+        }
+    }
+
+    pub(super) fn board_memo_page(&self, page_index: u32) -> Option<(String, u64, String, Vec<CanvasBoardMemo>)> {
+        let active = self.active.as_ref()?;
+        let artifact = self.artifact.as_ref()?;
+        let document = match &artifact.body {
+            ArtifactBody::Canvas(document) if active.kind == ArtifactKind::Canvas && artifact.kind == ArtifactKind::Canvas => document,
+            _ => return None,
+        };
+        let page = document.pages.get(page_index as usize)?;
+        let memos = document.board_memos.iter().filter(|memo| memo.page_id == page.id).cloned().collect();
+        Some((artifact.id.clone(), artifact.revision, page.id.clone(), memos))
+    }
+
+    fn board_memo_page_ready(&self, artifact_id: &str, revision: u64, page_id: &str, page_index: u32, page_size: Size) -> bool {
+        let current = self.active.as_ref().zip(self.context.as_ref()).zip(self.artifact.as_ref())
+            .is_some_and(|((active, context), artifact)| {
+                active.id == artifact_id && artifact.id == artifact_id && context.artifact_id == artifact_id
+                    && active.revision == revision && context.revision == revision && artifact.revision == revision
+            }) && self.board_memo_page(page_index).is_some_and(|(id, seen_revision, seen_page_id, _)| {
+                id == artifact_id && seen_revision == revision && seen_page_id == page_id
+            });
+        current && self.page_textures.get(&page_index).is_some_and(|page| {
+            page.artifact_id == artifact_id && page.revision == revision && page.page.page_index == page_index
+                && page.page.size == page_size && !page.snapshot_id.is_empty()
+        })
+    }
+
+    fn begin_board_memo_at(&mut self, page_index: u32, position: Pos2, page_rect: Rect, page_size: Size) {
+        let Some((artifact_id, revision, page_id, expected)) = self.board_memo_page(page_index) else { return };
+        if !self.board_memo_page_ready(&artifact_id, revision, &page_id, page_index, page_size) {
+            self.set_error("최신 페이지 그림이 준비될 때까지 메모를 만들 수 없습니다. 초안은 아직 변경하지 않았습니다".into());
+            return;
+        }
+        if self.board_memo_editor.is_some() || self.board_memo_mutation.is_some()
+            || self.page_section_editor.is_some() || self.page_section_mutation.is_some()
+        {
+            return;
+        }
+        if self.memo_page_reserved(&artifact_id, &page_id, &expected) {
+            self.set_error("페이지의 다른 편집이 끝날 때까지 메모를 만들 수 없습니다".into());
+            return;
+        }
+        let Some((x, y)) = screen_to_page_emu(position, page_rect, page_size) else { return };
+        let memo = CanvasBoardMemo {
+            kind: CanvasBoardMemoKind::Memo,
+            id: designllm_contracts::new_id(),
+            page_id: page_id.clone(),
+            bounds: EmuRect { x, y, width: DEFAULT_MEMO_WIDTH, height: DEFAULT_MEMO_HEIGHT },
+            text: String::new(),
+            color: DEFAULT_MEMO_COLOR.into(),
+        };
+        self.selected_board_memo = Some(memo.id.clone());
+        self.board_memo_editor = Some(BoardMemoEditor {
+            artifact_id,
+            revision,
+            page_id,
+            page_index,
+            expected,
+            memo,
+            is_new: true,
+            message: None,
+        });
+    }
+
+    fn open_board_memo_editor(&mut self, page_index: u32, memo_id: &str) {
+        if self.board_memo_editor.is_some() || self.board_memo_mutation.is_some()
+            || self.page_section_editor.is_some() || self.page_section_mutation.is_some()
+        { return; }
+        let Some((artifact_id, revision, page_id, expected)) = self.board_memo_page(page_index) else { return };
+        let Some(memo) = expected.iter().find(|memo| memo.id == memo_id).cloned() else { return };
+        let Some(page_size) = self.page_sizes().get(page_index as usize).copied() else { return };
+        if !self.board_memo_page_ready(&artifact_id, revision, &page_id, page_index, page_size) {
+            self.set_error("최신 페이지 그림을 기다리는 동안 메모를 열지 않았습니다".into());
+            return;
+        }
+        if self.memo_page_reserved(&artifact_id, &page_id, &expected) {
+            self.set_error("페이지의 다른 편집이 진행 중입니다".into());
+            return;
+        }
+        self.selected_board_memo = Some(memo.id.clone());
+        self.board_memo_editor = Some(BoardMemoEditor {
+            artifact_id,
+            revision,
+            page_id,
+            page_index,
+            expected,
+            memo,
+            is_new: false,
+            message: None,
+        });
+    }
+
+    pub(super) fn open_board_title_editor(&mut self, page_index: u32) {
+        if !self.board_titles_write_supported() {
+            self.set_error("이 작업물에서는 보드 제목을 편집할 수 없습니다".into());
+            return;
+        }
+        if self.board_memo_editor.is_some() || self.board_memo_mutation.is_some()
+            || self.page_section_editor.is_some() || self.page_section_mutation.is_some()
+        { return; }
+        let Some((artifact_id, revision, page_id, expected)) = self.board_memo_page(page_index) else { return };
+        if let Some(title) = expected.iter().find(|memo| memo.kind == CanvasBoardMemoKind::Title) {
+            self.open_board_memo_editor(page_index, &title.id);
+            return;
+        }
+        let Some(page_size) = self.page_sizes().get(page_index as usize).copied() else { return };
+        if !self.board_memo_page_ready(&artifact_id, revision, &page_id, page_index, page_size) {
+            self.set_error("최신 페이지 그림을 기다리는 동안 보드 제목을 열지 않았습니다".into());
+            return;
+        }
+        if self.memo_page_reserved(&artifact_id, &page_id, &expected) {
+            self.set_error("페이지의 다른 편집이 진행 중입니다".into());
+            return;
+        }
+        let memo = CanvasBoardMemo {
+            kind: CanvasBoardMemoKind::Title,
+            id: designllm_contracts::new_id(),
+            page_id: page_id.clone(),
+            bounds: EmuRect {
+                x: 48 * EMU_PER_CSS_PX,
+                y: 28 * EMU_PER_CSS_PX,
+                width: page_size.width.saturating_sub(96 * EMU_PER_CSS_PX).max(240 * EMU_PER_CSS_PX),
+                height: 64 * EMU_PER_CSS_PX,
+            },
+            text: String::new(),
+            color: DEFAULT_TITLE_COLOR.into(),
+        };
+        self.selected_board_memo = Some(memo.id.clone());
+        self.board_memo_editor = Some(BoardMemoEditor {
+            artifact_id,
+            revision,
+            page_id,
+            page_index,
+            expected,
+            memo,
+            is_new: true,
+            message: None,
+        });
+    }
+
+    fn board_memo_editor_is_current(&self, editor: &BoardMemoEditor) -> bool {
+        if !self.board_memo_page_ready(
+            &editor.artifact_id,
+            editor.revision,
+            &editor.page_id,
+            editor.page_index,
+            self.page_sizes().get(editor.page_index as usize).copied().unwrap_or_default(),
+        ) {
+            return false;
+        }
+        let Some((artifact_id, revision, page_id, current)) = self.board_memo_page(editor.page_index) else { return false };
+        artifact_id == editor.artifact_id && revision == editor.revision && page_id == editor.page_id
+            && current == editor.expected
+    }
+
+    fn memo_page_reserved(&self, artifact_id: &str, page_id: &str, memos: &[CanvasBoardMemo]) -> bool {
+        if self.reservations_for.as_deref() != Some(artifact_id) { return false; }
+        self.reservations.iter().flat_map(|reservation| reservation.node_ids.iter())
+            .chain(self.user_reservations.iter().flat_map(|reservation| reservation.node_ids.iter()))
+            .any(|id| id == page_id || memos.iter().any(|memo| &memo.id == id))
+    }
+
+    pub(super) fn save_board_memo_editor(&mut self) {
+        let Some(editor) = self.board_memo_editor.clone() else { return };
+        if self.run_context.is_some() {
+            self.set_error("앱 요청이 끝난 뒤 메모를 저장하세요. 초안은 보존했습니다".into());
+            return;
+        }
+        if crate::widgets::parse_hex(&editor.memo.color).is_none() {
+            self.set_error("색상은 #RRGGBB 형식이어야 합니다".into());
+            return;
+        }
+        if editor.memo.kind == CanvasBoardMemoKind::Title && editor.memo.text.trim().is_empty() {
+            self.set_error("보드 제목을 입력하세요".into());
+            return;
+        }
+        if editor.memo.bounds.width <= 0 || editor.memo.bounds.height <= 0 {
+            self.set_error("메모 크기가 올바르지 않습니다".into());
+            return;
+        }
+        if !self.board_memo_editor_is_current(&editor) || self.memo_page_reserved(&editor.artifact_id, &editor.page_id, &editor.expected) {
+            if let Some(editor) = self.board_memo_editor.as_mut() {
+                editor.message = Some("작업물, 페이지 또는 메모 예약이 바뀌었습니다. 최신 상태에 자동 적용하지 않습니다.".into());
+            }
+            return;
+        }
+        let Some(desired) = replace_page_memo(&editor.expected, &editor.memo, editor.is_new) else {
+            if let Some(editor) = self.board_memo_editor.as_mut() { editor.message = Some("메모 대상이 더 이상 페이지에 없습니다. 초안은 보존했습니다.".into()); }
+            return;
+        };
+        if editor.memo.page_id != editor.page_id {
+            if let Some(editor) = self.board_memo_editor.as_mut() { editor.message = Some("메모의 페이지가 달라졌습니다. 초안을 보존했습니다".into()); }
+            return;
+        }
+        let selected_memo_id = editor.memo.id.clone();
+        self.submit_board_memo_change(editor, desired, Some(selected_memo_id));
+    }
+
+    fn delete_board_memo_editor(&mut self) {
+        let Some(editor) = self.board_memo_editor.clone().filter(|editor| !editor.is_new) else { return };
+        if self.run_context.is_some() {
+            self.set_error("앱 요청이 끝난 뒤 메모를 삭제하세요. 초안은 보존했습니다".into());
+            return;
+        }
+        if !self.board_memo_editor_is_current(&editor) || self.memo_page_reserved(&editor.artifact_id, &editor.page_id, &editor.expected) {
+            if let Some(editor) = self.board_memo_editor.as_mut() {
+                editor.message = Some("작업물 또는 예약이 바뀌었습니다. 메모 삭제를 보내지 않았고 초안을 보존했습니다.".into());
+            }
+            return;
+        }
+        let Some(desired) = remove_page_memo(&editor.expected, &editor.memo.id) else {
+            if let Some(editor) = self.board_memo_editor.as_mut() { editor.message = Some("삭제할 메모를 찾지 못했습니다. 초안을 보존했습니다".into()); }
+            return;
+        };
+        self.submit_board_memo_change(editor, desired, None);
+    }
+
+    fn submit_memo_move(&mut self, gesture: BoardMemoGesture, bounds: EmuRect) {
+        if self.run_context.is_some() {
+            self.preserve_stale_memo_move(gesture, bounds);
+            return;
+        }
+        let artifact_id = gesture.artifact_id;
+        let page_id = gesture.page_id;
+        let revision = gesture.revision;
+        let page_index = gesture.page_index;
+        let expected = gesture.expected;
+        let memo_id = gesture.memo.id.clone();
+        let mut memo = gesture.memo;
+        memo.bounds = bounds;
+        let Some(desired) = replace_page_memo(&expected, &memo, false) else { return };
+        let editor = BoardMemoEditor {
+            artifact_id: artifact_id.clone(),
+            revision,
+            page_id: page_id.clone(),
+            page_index,
+            expected,
+            memo,
+            is_new: false,
+            message: None,
+        };
+        let current = self.board_memo_editor_is_current(&editor)
+            && !self.memo_page_reserved(&artifact_id, &page_id, &editor.expected);
+        self.submit_board_memo_change_with_message(
+            editor,
+            desired,
+            Some(memo_id),
+            (!current).then(|| "작업물 또는 메모 예약이 바뀌었습니다. 이동 초안은 보존했고 최신 상태에 적용하지 않았습니다.".into()),
+        );
+    }
+
+    fn preserve_stale_memo_move(&mut self, gesture: BoardMemoGesture, bounds: EmuRect) {
+        let revision = gesture.revision;
+        let page_index = gesture.page_index;
+        let memo_id = gesture.memo.id.clone();
+        let mut memo = gesture.memo;
+        memo.bounds = bounds;
+        let Some(desired) = replace_page_memo(&gesture.expected, &memo, false) else { return };
+        let editor = BoardMemoEditor {
+            artifact_id: gesture.artifact_id,
+            revision,
+            page_id: gesture.page_id,
+            page_index,
+            expected: gesture.expected,
+            memo,
+            is_new: false,
+            message: None,
+        };
+        self.submit_board_memo_change_with_message(
+            editor,
+            desired,
+            Some(memo_id),
+            Some("페이지가 삭제되었거나 페이지 그림이 바뀌는 동안 이동했습니다. 이동 의도는 보존했지만 적용하지 않았습니다. 최신 화면에서 다시 움직이세요.".into()),
+        );
+    }
+
+    fn submit_board_memo_change(
+        &mut self,
+        editor: BoardMemoEditor,
+        desired: Vec<CanvasBoardMemo>,
+        selected_memo_id: Option<String>,
+    ) {
+        self.submit_board_memo_change_with_message(editor, desired, selected_memo_id, None);
+    }
+
+    fn submit_board_memo_change_with_message(
+        &mut self,
+        editor: BoardMemoEditor,
+        desired: Vec<CanvasBoardMemo>,
+        selected_memo_id: Option<String>,
+        message: Option<String>,
+    ) {
+        let token = designllm_contracts::new_id();
+        let args = serde_json::json!({ "page_id": editor.page_id, "expected": editor.expected, "memos": desired });
+        let retry_allowed = message.is_none();
+        self.board_memo_editor = None;
+        self.board_memo_mutation = Some(BoardMemoMutation {
+            token: token.clone(),
+            artifact_id: editor.artifact_id.clone(),
+            revision: editor.revision,
+            page_id: editor.page_id.clone(),
+            page_index: editor.page_index,
+            expected: editor.expected.clone(),
+            desired,
+            selected_memo_id,
+            editor: Some(editor),
+            message,
+            pending: false,
+            held_edit_id: None,
+            retry_allowed,
+            outcome_uncertain: false,
+        });
+        if self.run_context.is_some() {
+            if let Some(mutation) = self.board_memo_mutation.as_mut().filter(|mutation| mutation.token == token) {
+                mutation.message = Some("앱 요청 중에는 메모를 변경하지 않았습니다. 초안은 보존했습니다.".into());
+                mutation.retry_allowed = false;
+            }
+            return;
+        }
+        if self.board_memo_mutation.as_ref().is_some_and(|mutation| mutation.message.is_some()) {
+            self.set_error("메모 변경은 보존했지만 최신 상태가 달라 적용하지 않았습니다. 초안을 복사하세요".into());
+            return;
+        }
+        // The change goes through the memo command (operation_commands.rs), which completes it as this mutation's own change.
+        if self.invoke("canvas.board_memos.set", args).is_ok() {
+            if let Some(mutation) = self.board_memo_mutation.as_mut().filter(|mutation| mutation.token == token) {
+                mutation.pending = true;
+            }
+        } else {
+            let held_id = self.held_edits.iter().find(|held| {
+                matches!(&held.apply.after_action, PendingAction::BoardMemosChange { token: held_token } if held_token == &token)
+            }).map(|held| held.id.clone());
+            if let Some(mutation) = self.board_memo_mutation.as_mut().filter(|mutation| mutation.token == token) {
+                mutation.held_edit_id = held_id;
+                mutation.message.get_or_insert_with(|| "메모 변경 요청을 보내지 못했습니다. 초안을 보존했습니다.".into());
+                mutation.retry_allowed = mutation.held_edit_id.is_none();
+            }
+        }
+    }
+
+    pub(super) fn fail_board_memo_change(&mut self, token: &str, error: &designllm_contracts::DltError) {
+        let uncertain = matches!(
+            &error.code,
+            &designllm_contracts::ErrorCode::Io
+                | &designllm_contracts::ErrorCode::Internal
+                | &designllm_contracts::ErrorCode::HostNotRunning
+                | &designllm_contracts::ErrorCode::Unavailable
+                | &designllm_contracts::ErrorCode::StorageFailure
+        );
+        let mut refresh_current = false;
+        if let Some(mutation) = self.board_memo_mutation.as_mut().filter(|mutation| mutation.token == token) {
+            mutation.pending = false;
+            mutation.outcome_uncertain = uncertain;
+            mutation.retry_allowed = !uncertain && (error.retryable || error.code == designllm_contracts::ErrorCode::TargetBusy);
+            refresh_current = self.active.as_ref().is_some_and(|active| active.id == mutation.artifact_id);
+            mutation.message = Some(if uncertain {
+                format!("{} 요청 결과가 불명확합니다. 이미 작업물에 반영됐을 수 있습니다. 메모 내용과 위치를 복사하고 최신 상태를 확인하세요.", super::user_error(error))
+            } else {
+                format!("{} 메모 초안은 보존했고 최신 상태에 자동 적용하지 않습니다.", super::user_error(error))
+            });
+        }
+        if uncertain && refresh_current { self.refresh_active(); }
+    }
+
+    pub(super) fn finish_board_memo_change(&mut self, token: &str, value: &serde_json::Value) {
+        if self.board_memo_mutation.as_ref().is_some_and(|mutation| mutation.token == token) {
+            if let Some(mutation) = self.board_memo_mutation.take() {
+                self.clear_applied_note_draft(&mutation);
+                self.selected_board_memo = mutation.selected_memo_id.filter(|id| !id.is_empty());
+            }
+        }
+        self.committed(value);
+    }
+
+    pub(super) fn finish_board_memo_change_offscreen(&mut self, token: &str) {
+        if self.board_memo_mutation.as_ref().is_none_or(|mutation| mutation.token != token) { return; }
+        let Some(mutation) = self.board_memo_mutation.take() else { return };
+        self.clear_applied_note_draft(&mutation);
+        self.selected_board_memo = mutation.selected_memo_id.filter(|id| !id.is_empty());
+    }
+
+    /// The change of a memo was applied: the memo's draft is done.
+    fn clear_applied_note_draft(&mut self, mutation: &BoardMemoMutation) {
+        if let Some(memo_id) = mutation.editor.as_ref().map(|editor| editor.memo.id.clone()) {
+            self.clear_note_draft(&memo_id);
+        }
+    }
+
+    /// Puts a recovered memo draft back into the memo editor, on the page it was made for.
+    pub(super) fn restore_board_memo_draft(&mut self, memo: CanvasBoardMemo, page_index: u32, is_new: bool) {
+        let Some((artifact_id, revision, page_id, expected)) = self.board_memo_page(page_index) else { return };
+        self.selected_board_memo = Some(memo.id.clone());
+        self.board_memo_editor = Some(BoardMemoEditor {
+            artifact_id,
+            revision,
+            page_id,
+            page_index,
+            expected,
+            memo,
+            is_new,
+            message: None,
+        });
+    }
+
+    fn discard_board_memo_mutation(&mut self, token: &str) {
+        let Some(mutation) = self.board_memo_mutation.as_ref().filter(|mutation| mutation.token == token && !mutation.pending) else { return };
+        let held_id = mutation.held_edit_id.clone();
+        let memo_id = mutation.editor.as_ref().map(|editor| editor.memo.id.clone());
+        if let Some(held_id) = held_id {
+            if self.held_edits.iter().find(|held| held.id == held_id).is_some_and(|held| held.state != super::state::HeldEditState::Sending) {
+                self.held_edits.retain(|held| held.id != held_id);
+                if self.held_refusal_id.as_deref() == Some(held_id.as_str()) {
+                    self.held_refusal_id = None;
+                    self.refusal = None;
+                    self.refusal_ids.clear();
+                    self.refusal_fixes.clear();
+                }
+                self.refresh_held_edit_notice();
+            }
+        }
+        self.board_memo_mutation = None;
+        // The discarded memo's draft goes with it, and no editor keeps showing that text (it would save the draft again).
+        if let Some(memo_id) = memo_id {
+            if self.board_memo_editor.as_ref().is_some_and(|editor| editor.memo.id == memo_id) {
+                self.board_memo_editor = None;
+            }
+            self.clear_note_draft(&memo_id);
+        }
+    }
+
+    fn board_memo_mutation_retry_allowed(&self, mutation: &BoardMemoMutation) -> bool {
+        if mutation.pending || !mutation.retry_allowed || mutation.held_edit_id.is_some() || self.run_context.is_some() { return false; }
+        let Some(page_size) = self.page_sizes().get(mutation.page_index as usize).copied() else { return false };
+        if !self.board_memo_page_ready(&mutation.artifact_id, mutation.revision, &mutation.page_id, mutation.page_index, page_size) {
+            return false;
+        }
+        let Some((artifact_id, revision, page_id, current)) = self.board_memo_page(mutation.page_index) else { return false };
+        artifact_id == mutation.artifact_id && revision == mutation.revision && page_id == mutation.page_id
+            && current == mutation.expected && !self.memo_page_reserved(&mutation.artifact_id, &mutation.page_id, &mutation.expected)
+    }
+
+    fn retry_board_memo_mutation(&mut self, token: &str) {
+        let Some(mutation) = self.board_memo_mutation.as_ref().filter(|mutation| mutation.token == token) else { return };
+        if !self.board_memo_mutation_retry_allowed(mutation) { return; }
+        let args = serde_json::json!({ "page_id": mutation.page_id, "expected": mutation.expected, "memos": mutation.desired });
+        if let Some(current) = self.board_memo_mutation.as_mut().filter(|current| current.token == token) {
+            current.message = None;
+            current.retry_allowed = false;
+        }
+        // The retry goes through the memo command, which completes it as this mutation's own change. `pending` is set when it is sent.
+        if self.invoke("canvas.board_memos.set", args).is_ok() {
+            if let Some(current) = self.board_memo_mutation.as_mut().filter(|current| current.token == token) {
+                current.pending = true;
+            }
+        } else {
+            let held_id = self.held_edits.iter().find(|held| {
+                matches!(&held.apply.after_action, PendingAction::BoardMemosChange { token: held_token } if held_token == token)
+            }).map(|held| held.id.clone());
+            if let Some(current) = self.board_memo_mutation.as_mut().filter(|current| current.token == token) {
+                current.held_edit_id = held_id;
+                current.message.get_or_insert_with(|| "메모 재시도를 보내지 못했습니다. 초안을 보존했습니다.".into());
+                current.retry_allowed = current.held_edit_id.is_none();
+            }
+        }
+    }
+}
+
+fn observe_gesture_transform(
+    gesture: &mut BoardMemoGesture,
+    current_tool: Tool,
+    space_down: bool,
+    space_changed_this_frame: bool,
+    current_zoom: f32,
+    current_pan: Vec2,
+    same_target_page: bool,
+    current_page_rect: Option<Rect>,
+    current_transform_id: Option<&str>,
+) {
+    let changed = same_target_page && (
+        current_tool != gesture.tool_at_start
+            || space_down != gesture.space_down_at_start
+            || space_changed_this_frame
+            || current_zoom.to_bits() != gesture.zoom_at_start.to_bits()
+            || current_pan != gesture.pan_at_start
+            || current_page_rect != Some(gesture.page_rect)
+            || current_transform_id != gesture.transform_id_at_start.as_deref()
+    );
+    gesture.invalidated |= changed;
+}
+
+fn replace_page_memo(expected: &[CanvasBoardMemo], memo: &CanvasBoardMemo, is_new: bool) -> Option<Vec<CanvasBoardMemo>> {
+    if expected.iter().any(|item| item.page_id != memo.page_id) { return None; }
+    let mut desired = expected.to_vec();
+    if is_new {
+        if desired.iter().any(|item| item.id == memo.id) { return None; }
+        desired.push(memo.clone());
+    } else {
+        let target = desired.iter_mut().find(|item| item.id == memo.id)?;
+        *target = memo.clone();
+    }
+    Some(desired)
+}
+
+fn remove_page_memo(expected: &[CanvasBoardMemo], memo_id: &str) -> Option<Vec<CanvasBoardMemo>> {
+    expected.iter().any(|memo| memo.id == memo_id).then(|| {
+        expected.iter().filter(|memo| memo.id != memo_id).cloned().collect()
+    })
+}
+
+fn memo_copy_payload(editor: &BoardMemoEditor) -> String {
+    memo_copy_payload_parts(&editor.artifact_id, &editor.page_id, editor.page_index, &editor.memo)
+}
+
+fn memo_copy_payload_parts(artifact_id: &str, page_id: &str, page_index: u32, memo: &CanvasBoardMemo) -> String {
+    let kind = if memo.kind == CanvasBoardMemoKind::Title { "보드 제목" } else { "보드 메모" };
+    format!(
+        "{}\n\n종류: {}\n작업물 ID: {}\n페이지 {}\n페이지 ID: {}\n위치 EMU: {}, {}\n크기 EMU: {} × {}\n색상: {}",
+        memo.text,
+        kind,
+        artifact_id,
+        page_index + 1,
+        page_id,
+        memo.bounds.x,
+        memo.bounds.y,
+        memo.bounds.width,
+        memo.bounds.height,
+        memo.color,
+    )
+}
+
+fn moved_bounds(bounds: EmuRect, delta: Vec2, page_rect: Rect, page_size: Size) -> EmuRect {
+    let dx = f64::from(delta.x) / f64::from(page_rect.width()) * page_size.width as f64;
+    let dy = f64::from(delta.y) / f64::from(page_rect.height()) * page_size.height as f64;
+    EmuRect { x: bounds.x.saturating_add(round_i64(dx)), y: bounds.y.saturating_add(round_i64(dy)), ..bounds }
+}
+
+fn round_i64(value: f64) -> i64 {
+    if value >= i64::MAX as f64 { i64::MAX }
+    else if value <= i64::MIN as f64 { i64::MIN }
+    else { value.round() as i64 }
+}
+
+fn truncate(text: &str, max_chars: usize) -> String {
+    let mut chars = text.chars();
+    let prefix: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() { format!("{prefix}…") } else { prefix }
+}
+
+#[cfg(test)]
+#[path = "board_memo_tests.rs"]
+mod tests;

@@ -1,0 +1,40 @@
+[package]
+name = "designllm-integration-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+designllm-application.workspace = true
+designllm-bridge.workspace = true
+designllm-contracts.workspace = true
+designllm-core.workspace = true
+designllm-render.workspace = true
+designllm-flow.workspace = true
+designllm-package.workspace = true
+designllm-docx.workspace = true
+designllm-hwpx.workspace = true
+designllm-hwp.workspace = true
+designllm-pptx.workspace = true
+designllm-slides.workspace = true
+designllm-figures.workspace = true
+designllm-canvas.workspace = true
+designllm-web-preview.workspace = true
+designllm-sources.workspace = true
+designllm-host.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+# Independent PDF parser for export annotation checks (MIT, MSRV 1.88; test-only, not shipped).
+lopdf = { version = "=0.47.0", default-features = false }
+# Read/rebase pending-save paths in the copied v1 workspace before migration recovery can touch them.
+rusqlite = { version = "=0.42.0", default-features = false, features = ["bundled"] }
+roxmltree = "=0.21.2"
+cfb = "=0.15.0"
+flate2 = "1.1"
+
+[lib]
+path = "src/lib.rs"

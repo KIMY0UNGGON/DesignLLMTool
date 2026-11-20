@@ -1,0 +1,213 @@
+//! The Windows file dialogs (GUI_DESIGN §12, step 12): the system's own open and save dialogs, so
+//! that the user never types a path. They are modal to the editor window and return `None` when
+//! the user cancels or the dialog cannot be shown.
+
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+/// Set when the app runs without a visible main window (`--smoke-test`, headless captures). Every native window the
+/// app could open (file dialogs, the WebView2 preview) is refused then: a capture must never put a window on the
+/// user's screen or wait for one.
+static HEADLESS: AtomicBool = AtomicBool::new(false);
+
+pub fn set_headless(on: bool) {
+    HEADLESS.store(on, Ordering::SeqCst);
+}
+
+/// Whether native windows are refused now: in a headless run, and always in tests.
+pub fn headless() -> bool {
+    cfg!(test) || HEADLESS.load(Ordering::SeqCst)
+}
+
+/// Whether the WebView2 preview window (`view.play`, web documents) must stay closed now.
+pub fn preview_refused() -> bool {
+    refused("web preview window")
+}
+
+/// The visible top-level windows that belong to this process (the tests' check that nothing opened a window).
+#[cfg(test)]
+pub fn visible_windows_of_this_process() -> usize {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::LPARAM;
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible};
+    unsafe extern "system" fn count(window: HWND, data: LPARAM) -> BOOL {
+        // SAFETY: `data` is the address of the counter below, alive for the whole enumeration.
+        unsafe {
+            let mut owner = 0u32;
+            GetWindowThreadProcessId(window, Some(&mut owner));
+            if owner == std::process::id() && IsWindowVisible(window).as_bool() {
+                *(data.0 as *mut usize) += 1;
+            }
+        }
+        BOOL(1)
+    }
+    let mut found = 0usize;
+    // SAFETY: the callback only reads window facts and writes the counter it is given.
+    unsafe {
+        let _ = EnumWindows(Some(count), LPARAM(&mut found as *mut usize as isize));
+    }
+    found
+}
+
+/// Refuses a native window in a headless run, with a line in the log saying which one.
+fn refused(what: &str) -> bool {
+    if headless() {
+        eprintln!("designllm-desktop: {what} not shown: no visible window (smoke or headless run)");
+        return true;
+    }
+    false
+}
+
+use windows::{
+    core::{HSTRING, PCWSTR},
+    Win32::{
+        Foundation::HWND,
+        System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED},
+        UI::Shell::{
+            Common::COMDLG_FILTERSPEC,
+            FileOpenDialog, FileSaveDialog, IFileOpenDialog, IFileSaveDialog, IShellItem,
+            FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH,
+        },
+    },
+};
+
+/// The pictures an image node can take.
+const IMAGE_FILTERS: &[(&str, &str)] = &[("이미지", "*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp")];
+/// The first D19 replacement slice preserves object identity for these raster formats only.
+const IMAGE_REPLACEMENT_FILTERS: &[(&str, &str)] = &[("교체할 이미지", "*.png;*.jpg;*.jpeg;*.bmp")];
+const VIDEO_FILTERS: &[(&str, &str)] = &[("동영상", "*.mp4;*.webm")];
+/// The evidence a Figure's AI request can carry (`figure_ai_attach`): PDF, CSV/TSV and plain text.
+const FIGURE_EVIDENCE_FILTERS: &[(&str, &str)] = &[("근거 자료", "*.pdf;*.csv;*.tsv;*.txt;*.md")];
+
+/// The formats the editor opens (SPEC §6): documents, slides, figures' data and images.
+const OPEN_FILTERS: &[(&str, &str)] = &[
+    ("지원하는 파일", "*.docx;*.hwpx;*.hwp;*.pptx;*.pdf;*.csv;*.tsv;*.png;*.jpg;*.jpeg"),
+    ("문서", "*.docx;*.hwpx;*.hwp"),
+    ("슬라이드", "*.pptx"),
+    ("데이터", "*.csv;*.tsv"),
+];
+
+pub fn open_image(owner: Option<isize>) -> Option<PathBuf> {
+    show_open(owner, IMAGE_FILTERS)
+}
+
+pub fn open_video(owner: Option<isize>) -> Option<PathBuf> {
+    show_open(owner, VIDEO_FILTERS)
+}
+
+pub fn open_figure_evidence(owner: Option<isize>) -> Option<PathBuf> {
+    show_open(owner, FIGURE_EVIDENCE_FILTERS)
+}
+
+pub fn open_image_replacement(owner: Option<isize>) -> Option<PathBuf> {
+    show_open(owner, IMAGE_REPLACEMENT_FILTERS)
+}
+
+/// Shows the open dialog for one of the supported files. `owner` is the editor window handle.
+pub fn open_document(owner: Option<isize>) -> Option<PathBuf> {
+    show_open(owner, OPEN_FILTERS)
+}
+
+fn show_open(owner: Option<isize>, filters: &[(&str, &str)]) -> Option<PathBuf> {
+    // A headless run (smoke, tests) never opens a window on the user's screen: the dialog counts as cancelled.
+    if refused("open dialog") {
+        return None;
+    }
+    // SAFETY: COM is used on the window's own thread; the dialog objects are dropped at return.
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let options = dialog.GetOptions().ok()?;
+        dialog.SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST).ok()?;
+        let names: Vec<(HSTRING, HSTRING)> = filters.iter().map(|(name, spec)| (HSTRING::from(*name), HSTRING::from(*spec))).collect();
+        let specs: Vec<COMDLG_FILTERSPEC> = names
+            .iter()
+            .map(|(name, spec)| COMDLG_FILTERSPEC { pszName: PCWSTR(name.as_ptr()), pszSpec: PCWSTR(spec.as_ptr()) })
+            .collect();
+        dialog.SetFileTypes(&specs).ok()?;
+        dialog.Show(owner.map(|raw| HWND(raw as *mut core::ffi::c_void))).ok()?;
+        let item = dialog.GetResult().ok()?;
+        path_of(&item)
+    }
+}
+
+/// Shows the save dialog for a document, suggesting `title` as the file name.
+pub fn save_document(owner: Option<isize>, title: String) -> Option<PathBuf> {
+    let name = if title.trim().is_empty() { "새 작업물".to_owned() } else { title };
+    show_save(owner, &name, "*.docx;*.hwpx;*.pptx", "문서")
+}
+
+/// Shows the save dialog for an export in `extension` (without the dot).
+pub fn save_export(owner: Option<isize>, extension: &str) -> Option<PathBuf> {
+    let spec = format!("*.{extension}");
+    show_save(owner, "내보내기", &spec, extension)
+}
+
+fn show_save(owner: Option<isize>, suggested: &str, spec: &str, label: &str) -> Option<PathBuf> {
+    if refused("save dialog") {
+        return None;
+    }
+    // SAFETY: as in `open_document`.
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let dialog: IFileSaveDialog = CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let options = dialog.GetOptions().ok()?;
+        dialog.SetOptions(options | FOS_FORCEFILESYSTEM).ok()?;
+        let name = HSTRING::from(label);
+        let pattern = HSTRING::from(spec);
+        let filter = COMDLG_FILTERSPEC { pszName: PCWSTR(name.as_ptr()), pszSpec: PCWSTR(pattern.as_ptr()) };
+        dialog.SetFileTypes(&[filter]).ok()?;
+        let file_name = HSTRING::from(suggested);
+        dialog.SetFileName(PCWSTR(file_name.as_ptr())).ok()?;
+        dialog.Show(owner.map(|raw| HWND(raw as *mut core::ffi::c_void))).ok()?;
+        let item = dialog.GetResult().ok()?;
+        path_of(&item)
+    }
+}
+
+/// The file-system path of a shell item, when it has one.
+///
+/// # Safety
+/// The caller must be on a thread where COM is initialised.
+unsafe fn path_of(item: &IShellItem) -> Option<PathBuf> {
+    let display = item.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
+    let text = display.to_string().ok();
+    CoTaskMemFree(Some(display.0 as *const core::ffi::c_void));
+    text.map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_open_filter_names_every_format_the_editor_reads() {
+        let all = OPEN_FILTERS[0].1;
+        for extension in ["docx", "hwpx", "hwp", "pptx", "pdf", "csv", "tsv", "png"] {
+            assert!(all.contains(extension), "{extension} is missing from the open filter");
+        }
+    }
+
+    #[test]
+    fn image_replacement_picker_only_lists_the_first_supported_raster_formats() {
+        assert_eq!(IMAGE_REPLACEMENT_FILTERS[0].1, "*.png;*.jpg;*.jpeg;*.bmp");
+        assert!(!IMAGE_REPLACEMENT_FILTERS[0].1.contains("gif"));
+        assert!(!IMAGE_REPLACEMENT_FILTERS[0].1.contains("webp"));
+        assert!(IMAGE_FILTERS[0].1.contains("gif") && IMAGE_FILTERS[0].1.contains("webp"), "adding a replacement picker does not narrow ordinary image insertion");
+    }
+
+    #[test]
+    fn the_video_picker_only_lists_the_supported_containers() {
+        assert_eq!(VIDEO_FILTERS[0].1, "*.mp4;*.webm");
+    }
+
+    #[test]
+    fn the_evidence_picker_lists_the_pdf_table_and_text_formats_the_request_accepts() {
+        for extension in ["pdf", "csv", "tsv", "txt", "md"] {
+            assert!(FIGURE_EVIDENCE_FILTERS[0].1.contains(extension), "{extension} is missing from the evidence picker");
+        }
+        assert!(!FIGURE_EVIDENCE_FILTERS[0].1.contains("docx"), "a Word file is not evidence for a Figure request");
+    }
+}

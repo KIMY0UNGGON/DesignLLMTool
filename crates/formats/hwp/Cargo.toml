@@ -1,0 +1,21 @@
+[package]
+name = "designllm-hwp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+designllm-contracts.workspace = true
+designllm-flow.workspace = true
+designllm-render.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true
+# HWP 5.x read/edit/write engine (MIT, rust-version 1.93.1). Default features (wasm-api,
+# pdf-import, console hooks) are disabled; native HWP save uses serialize_hwp_with_report.
+rhwp = { version = "=0.9.0", default-features = false }
+# Independent CFB container reader for the record guard (MIT, MSRV 1.74).
+cfb = "=0.15.0"
+# Raw deflate for HWP record streams (MIT OR Apache-2.0).
+flate2 = "1.1"

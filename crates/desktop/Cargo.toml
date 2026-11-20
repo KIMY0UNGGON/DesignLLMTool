@@ -1,0 +1,46 @@
+[package]
+name = "designllm-desktop"
+# The icon resource path is published as build metadata (DEP_DESIGNLLM_DESKTOP_ICON_RES) so that the
+# executable crate can link it; a library cannot link resources into the binaries that use it.
+links = "designllm_desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+designllm-contracts.workspace = true
+designllm-bridge.workspace = true
+designllm-flow.workspace = true
+designllm-render.workspace = true
+designllm-web-preview.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+base64 = "0.22.1"
+eframe = { version = "=0.33.3", default-features = false, features = ["default_fonts", "glow", "wgpu"] }
+# The fallback renderer when OpenGL cannot open (task 65). eframe turns every wgpu feature off, so this entry (the
+# same wgpu as eframe's) only adds the DirectX 12 backend (egui-wgpu adds "std" and "wgsl"). No Vulkan, GL or
+# Metal backend.
+wgpu = { version = "=27.0.1", default-features = false, features = ["dx12"] }
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+raw-window-handle = "=0.6.2"
+unicode-segmentation.workspace = true
+# Windows file dialogs (already in Cargo.lock through web-preview).
+# Win32_UI_WindowsAndMessaging: the tests count this process's visible windows (no dialog may open in a headless run).
+# Win32_System_Pipes lets the UI poll its preview child's READY without blocking the window.
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Pipes", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_System_Time", "Win32_UI_WindowsAndMessaging"] }
+
+[dev-dependencies]
+# The packaged GUI regression opens its window on a private Windows desktop.
+windows = { version = "0.62", features = ["Win32_Graphics_Gdi", "Win32_Security", "Win32_System_StationsAndDesktops", "Win32_System_Threading"] }
+# The real engine, store and renderer, so the figure-creation tests send the window's own change
+# sets to the same code the host runs. Tests only; the product reaches the host through the bridge.
+designllm-canvas.workspace = true
+designllm-core.workspace = true
+designllm-docx.workspace = true
+designllm-figures.workspace = true
+designllm-hwp.workspace = true
+designllm-hwpx.workspace = true
+designllm-slides.workspace = true
+designllm-sources.workspace = true

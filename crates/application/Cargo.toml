@@ -1,0 +1,51 @@
+[package]
+name = "designllm-application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+designllm-contracts.workspace = true
+designllm-core.workspace = true
+designllm-render.workspace = true
+designllm-docx.workspace = true
+designllm-hwpx.workspace = true
+designllm-hwp.workspace = true
+designllm-pptx.workspace = true
+designllm-slides.workspace = true
+designllm-figures.workspace = true
+designllm-canvas.workspace = true
+designllm-sources.workspace = true
+designllm-web-preview.workspace = true
+designllm-bridge.workspace = true
+designllm-host.workspace = true
+# The PDF reader worker runs in a job object (task 34c; `runtimes::win`, Windows only, as host already needs).
+designllm-runtimes.workspace = true
+# Only the DesignLLMTool binary opens windows. The library (create_workspace, ensure_host, ...) is
+# headless, so crates that use it (tests/integration) do not compile the GUI crate: the workspace
+# entry turns default features off, and `cargo build -p designllm-application` keeps them on.
+designllm-desktop = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+rusqlite = { version = "=0.42.0", default-features = false, features = ["bundled", "backup"] }
+
+[features]
+default = ["gui"]
+gui = ["dep:designllm-desktop"]
+
+[[bin]]
+name = "DesignLLMTool"
+path = "src/main.rs"
+required-features = ["gui"]
+
+# Test-only stand-in for the PDF reader worker (task 34c): it misbehaves in the named ways so that each branch of the host's
+# outcome table runs against a real process. Not a product binary; packaging copies only DesignLLMTool.exe. Do not package it.
+[[bin]]
+name = "designllm-pdf-worker-fixture"
+path = "tests/support/pdf_worker_fixture.rs"
+test = false
+doc = false
+

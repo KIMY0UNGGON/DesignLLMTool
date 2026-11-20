@@ -1,0 +1,24 @@
+[package]
+name = "designllm-canvas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+# CanvasEngine (structured design artifacts) and WebEngine (WebCode source artifacts).
+# unicode-segmentation 1.12.0 (MIT OR Apache-2.0, Unicode 16.0): pinned by the workspace for grapheme ranges.
+# flate2 1.1.11 (MIT OR Apache-2.0, MSRV 1.67) with the default pure-Rust backend: ZIP deflate read/write only.
+# No base64, zip, or html parser crate: the small formats used here are implemented in this crate.
+# designllm-render (workspace crate, no external crate added): `face_matches_family` decides FONT_SUBSTITUTED by every
+# localized family name of a face. The flow engine already depends on it for the same reason.
+[dependencies]
+designllm-contracts.workspace = true
+designllm-render.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true
+flate2 = "1"
+
+[target.'cfg(windows)'.dev-dependencies]
+# Invisible WebView2 smoke for the exported HTML interactions (tests/html_in_webview.rs). Test-only.
+designllm-web-preview.workspace = true

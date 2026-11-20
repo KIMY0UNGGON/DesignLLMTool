@@ -1,0 +1,24 @@
+[package]
+name = "designllm-docx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Native DOCX engine: package-preserving span edits, direct and named style, tables, page setup, and images"
+
+[dependencies]
+designllm-contracts.workspace = true
+designllm-package.workspace = true
+designllm-flow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# MIT OR Apache-2.0, MSRV 1.60. Read-only XML tree with byte ranges (feature `positions`, default).
+roxmltree = "=0.21.2"
+unicode-segmentation.workspace = true
+
+[dev-dependencies]
+designllm-render.workspace = true
+# The core workspace drives `flow.styles` end to end in tests/flow_styles_core.rs. Core does not depend on DOCX.
+designllm-core.workspace = true
+# MIT, MSRV 1.88. Independent ZIP reader for tests (deflate only, zlib-rs backend).
+zip = { version = "=9.5.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }

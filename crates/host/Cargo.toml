@@ -1,0 +1,27 @@
+[package]
+name = "designllm-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Workspace host: the single owner of a workspace's core, named-pipe server, lifetimes, and AI job supervision"
+
+[dependencies]
+designllm-contracts.workspace = true
+designllm-core.workspace = true
+designllm-runtimes.workspace = true
+designllm-bridge.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+# Test-only: decoding image content returned by the MCP bridge. Same pinned version as the bridge.
+base64 = "=0.22.1"
+
+# Test-only helper executable (mock agent, MCP bridge, host, and a CLI client for the integration tests).
+# It is not a product binary: root's application provides the product CLI. Do not package it.
+[[bin]]
+name = "designllm-host-harness"
+path = "tests/support/harness.rs"
+test = false
+doc = false

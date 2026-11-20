@@ -1,0 +1,20 @@
+[package]
+name = "designllm-figures"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+designllm-contracts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+
+[dev-dependencies]
+# Real renderer for end-to-end tests only (product code uses RenderProvider from the caller).
+designllm-render.workspace = true
+# Real PDF evidence extraction for the end-to-end evidence test only (no product dependency on sources).
+designllm-sources.workspace = true
+# Independent PDF reparser for tests (MIT, MSRV 1.88). Default features off.
+lopdf = { version = "0.47", default-features = false }

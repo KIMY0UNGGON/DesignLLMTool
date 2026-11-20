@@ -1,0 +1,38 @@
+[package]
+name = "designllm-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+designllm-contracts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true
+# GIF/WebP decoding (MIT OR Apache-2.0, MSRV 1.88; pure Rust, no codec DLLs; defaults disabled).
+image = { version = "=0.25.10", default-features = false, features = ["gif", "webp"] }
+# Font parsing / outlines / metrics (MIT OR Apache-2.0, MSRV 1.63).
+ttf-parser = "=0.25.1"
+# Shaping (MIT). Same version validated in G0.
+rustybuzz = "=0.20.1"
+# Installed font discovery (MIT, MSRV 1.60); default features: std, fs, memmap.
+fontdb = "=0.23.0"
+# Raster output (BSD-3-Clause).
+tiny-skia = "=0.12.0"
+# PNG writing with pHYs (MIT OR Apache-2.0); same major as tiny-skia's decoder.
+png = "0.18"
+# PDF writing (MIT OR Apache-2.0) and font subsetting (MIT OR Apache-2.0, MSRV 1.85).
+pdf-writer = "=0.12.1"
+subsetter = "=0.2.6"
+# Deflate for PDF streams (MIT OR Apache-2.0). zlib-rs backend pinned so render matches the product build (designllm-package uses zlib-rs too).
+flate2 = { version = "1.1", features = ["zlib-rs"] }
+# JPEG decoding for PNG/SVG-BMP paths (MIT OR Apache-2.0 OR Zlib).
+zune-jpeg = "=0.4.21"
+
+[dev-dependencies]
+# Independent PDF parser for output checks (MIT, MSRV 1.88).
+lopdf = { version = "=0.47.0", default-features = false }
+# Independent SVG renderer for output checks (Apache-2.0 OR MIT, MSRV 1.87); text feature only.
+usvg = { version = "=0.47.0", default-features = false, features = ["text"] }
+resvg = { version = "=0.47.0", default-features = false, features = ["text"] }

@@ -1,0 +1,6546 @@
+{
+  "commands": [
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "nav.home",
+      "intents": [],
+      "label": "홈",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "nav.new",
+      "intents": [],
+      "label": "새로 만들기",
+      "permission": "Read",
+      "shortcut": "Ctrl+N",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "view.transform.set"
+      ],
+      "id": "nav.open_project",
+      "intents": [],
+      "label": "작업물 열기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "열 파일의 절대 경로를 지정합니다.",
+        "properties": {
+          "kind": {
+            "description": "작업물 종류. 빼면 확장자나 이 도구의 파일에 적힌 종류로 정합니다.",
+            "enum": [
+              "canvas",
+              "web_code",
+              "slides",
+              "docx",
+              "hwpx",
+              "hwp",
+              "figure"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "artifact.open",
+        "view.transform.set"
+      ],
+      "id": "nav.open_file",
+      "intents": [
+        "content"
+      ],
+      "label": "파일 열기",
+      "permission": "Content",
+      "shortcut": "Ctrl+O",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "nav.toggle_left",
+      "intents": [],
+      "label": "왼쪽 사이드바",
+      "permission": "Read",
+      "shortcut": "Alt+1",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "nav.toggle_right",
+      "intents": [],
+      "label": "속성 패널",
+      "permission": "Read",
+      "shortcut": "Ctrl+\\",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "nav.toggle_panels",
+      "intents": [],
+      "label": "패널 모두",
+      "permission": "Read",
+      "shortcut": "Ctrl+Shift+\\",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "nav.ai",
+      "intents": [],
+      "label": "AI 탭 열기",
+      "permission": "Read",
+      "shortcut": "Ctrl+J",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "tab": {
+            "enum": [
+              "layers",
+              "ai",
+              "outline",
+              "files",
+              "projects",
+              "design_systems",
+              "templates"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "tab"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "nav.tab",
+      "intents": [],
+      "label": "탭 고르기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page_index"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "nav.page",
+      "intents": [],
+      "label": "페이지로 가기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "nav.focus_request",
+      "intents": [],
+      "label": "요청 상자에 포커스",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "view.zoom_in",
+      "intents": [],
+      "label": "확대",
+      "permission": "Read",
+      "shortcut": "Ctrl+=",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "view.zoom_out",
+      "intents": [],
+      "label": "축소",
+      "permission": "Read",
+      "shortcut": "Ctrl+-",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "view.zoom_100",
+      "intents": [],
+      "label": "100%",
+      "permission": "Read",
+      "shortcut": "Ctrl+0",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "view.zoom_fit",
+      "intents": [],
+      "label": "전체 맞춤",
+      "permission": "Read",
+      "shortcut": "Shift+1",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "view.zoom_selection",
+      "intents": [],
+      "label": "선택 맞춤",
+      "permission": "Read",
+      "shortcut": "Shift+2",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "percent": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "percent"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "view.zoom_set",
+      "intents": [],
+      "label": "배율 지정",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "artifact.export"
+      ],
+      "id": "view.play",
+      "intents": [],
+      "label": "재생",
+      "permission": "Read",
+      "shortcut": "F5",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page_index"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "view.zoom_page",
+      "intents": [],
+      "label": "이 페이지만 보기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "view.toggle_guides",
+      "intents": [],
+      "label": "안내선 보기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "view.toggle_snap",
+      "intents": [],
+      "label": "안내선에 맞춤",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set"
+      ],
+      "id": "select.node",
+      "intents": [],
+      "label": "선택",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "node_ids"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set"
+      ],
+      "id": "select.many",
+      "intents": [],
+      "label": "여러 개 선택",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set"
+      ],
+      "id": "select.clear",
+      "intents": [],
+      "label": "선택 해제",
+      "permission": "Read",
+      "shortcut": "Esc",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set"
+      ],
+      "id": "select.next",
+      "intents": [],
+      "label": "다음 레이어",
+      "permission": "Read",
+      "shortcut": "Tab",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set"
+      ],
+      "id": "select.previous",
+      "intents": [],
+      "label": "이전 레이어",
+      "permission": "Read",
+      "shortcut": "Shift+Tab",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "layer.find",
+      "intents": [],
+      "label": "레이어 찾기",
+      "permission": "Read",
+      "shortcut": "Ctrl+F",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set"
+      ],
+      "id": "layer.find.next",
+      "intents": [],
+      "label": "다음 찾기",
+      "permission": "Read",
+      "shortcut": "F3",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set"
+      ],
+      "id": "layer.find.previous",
+      "intents": [],
+      "label": "이전 찾기",
+      "permission": "Read",
+      "shortcut": "Shift+F3",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "history.undo",
+        "selection.set"
+      ],
+      "id": "edit.undo",
+      "intents": [
+        "content"
+      ],
+      "label": "실행 취소",
+      "permission": "Content",
+      "shortcut": "Ctrl+Z",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "history.redo",
+        "selection.set"
+      ],
+      "id": "edit.redo",
+      "intents": [
+        "content"
+      ],
+      "label": "다시 실행",
+      "permission": "Content",
+      "shortcut": "Ctrl+Y",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set",
+        "changes.apply:remove_node"
+      ],
+      "id": "edit.delete",
+      "intents": [
+        "content"
+      ],
+      "label": "삭제",
+      "permission": "Content",
+      "shortcut": "Delete",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "edit.copy",
+      "intents": [],
+      "label": "복사",
+      "permission": "Read",
+      "shortcut": "Ctrl+C",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "changes.apply:update_figure_link",
+        "selection.set"
+      ],
+      "id": "edit.paste",
+      "intents": [
+        "content"
+      ],
+      "label": "붙여넣기",
+      "permission": "Content",
+      "shortcut": "Ctrl+V",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "changes.apply:update_figure_link",
+        "selection.set"
+      ],
+      "id": "edit.duplicate",
+      "intents": [
+        "content"
+      ],
+      "label": "복제",
+      "permission": "Content",
+      "shortcut": "Ctrl+D",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "edit.copy_properties",
+      "intents": [],
+      "label": "속성 복사",
+      "permission": "Read",
+      "shortcut": "Ctrl+Alt+C",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "edit.paste_properties",
+      "intents": [
+        "design"
+      ],
+      "label": "속성 붙여넣기",
+      "permission": "Design",
+      "shortcut": "Ctrl+Alt+V",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "changes.apply:move_node",
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "edit.group",
+      "intents": [
+        "content"
+      ],
+      "label": "그룹",
+      "permission": "Content",
+      "shortcut": "Ctrl+G",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set",
+        "changes.apply:move_node",
+        "changes.apply:set_geometry",
+        "changes.apply:remove_node"
+      ],
+      "id": "edit.ungroup",
+      "intents": [
+        "content"
+      ],
+      "label": "그룹 해제",
+      "permission": "Content",
+      "shortcut": "Ctrl+Shift+G",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "changes.apply:move_node",
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "edit.stack",
+      "intents": [
+        "content"
+      ],
+      "label": "스택으로 묶기",
+      "permission": "Content",
+      "shortcut": "Shift+A",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_z_order",
+        "selection.set"
+      ],
+      "id": "edit.order_forward",
+      "intents": [
+        "content"
+      ],
+      "label": "앞으로",
+      "permission": "Content",
+      "shortcut": "Ctrl+]",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_z_order",
+        "selection.set"
+      ],
+      "id": "edit.order_backward",
+      "intents": [
+        "content"
+      ],
+      "label": "뒤로",
+      "permission": "Content",
+      "shortcut": "Ctrl+[",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_z_order",
+        "selection.set"
+      ],
+      "id": "edit.order_front",
+      "intents": [
+        "content"
+      ],
+      "label": "맨 앞",
+      "permission": "Content",
+      "shortcut": "Ctrl+Shift+]",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_z_order",
+        "selection.set"
+      ],
+      "id": "edit.order_back",
+      "intents": [
+        "content"
+      ],
+      "label": "맨 뒤",
+      "permission": "Content",
+      "shortcut": "Ctrl+Shift+[",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_node_appearance",
+        "selection.set"
+      ],
+      "id": "edit.lock",
+      "intents": [
+        "design"
+      ],
+      "label": "잠금",
+      "permission": "Design",
+      "shortcut": "Ctrl+Shift+L",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_node_appearance",
+        "selection.set"
+      ],
+      "id": "edit.unlock",
+      "intents": [
+        "design"
+      ],
+      "label": "잠금 해제",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_node_info",
+        "selection.set"
+      ],
+      "id": "edit.hide",
+      "intents": [
+        "content"
+      ],
+      "label": "숨기기",
+      "permission": "Content",
+      "shortcut": "Ctrl+Shift+H",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_node_info",
+        "selection.set"
+      ],
+      "id": "edit.show",
+      "intents": [
+        "content"
+      ],
+      "label": "표시",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "edit.nudge",
+      "intents": [
+        "content"
+      ],
+      "label": "옮기기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_node_info",
+        "selection.set"
+      ],
+      "id": "edit.rename",
+      "intents": [
+        "content"
+      ],
+      "label": "이름 바꾸기",
+      "permission": "Content",
+      "shortcut": "F2",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "selection.set"
+      ],
+      "id": "add.text",
+      "intents": [
+        "content"
+      ],
+      "label": "텍스트",
+      "permission": "Content",
+      "shortcut": "T",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "selection.set"
+      ],
+      "id": "add.rect",
+      "intents": [
+        "content"
+      ],
+      "label": "사각형",
+      "permission": "Content",
+      "shortcut": "R",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "selection.set"
+      ],
+      "id": "add.oval",
+      "intents": [
+        "content"
+      ],
+      "label": "타원",
+      "permission": "Content",
+      "shortcut": "O",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "selection.set"
+      ],
+      "id": "add.line",
+      "intents": [
+        "content"
+      ],
+      "label": "선",
+      "permission": "Content",
+      "shortcut": "L",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": null,
+      "id": "add.arrow",
+      "intents": [
+        "content"
+      ],
+      "label": "화살표",
+      "permission": "Content",
+      "shortcut": "Shift+L",
+      "ui_permission": "change",
+      "wired": false
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "selection.set"
+      ],
+      "id": "add.frame",
+      "intents": [
+        "content"
+      ],
+      "label": "프레임",
+      "permission": "Content",
+      "shortcut": "F",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": null,
+      "id": "add.pen",
+      "intents": [
+        "content"
+      ],
+      "label": "펜",
+      "permission": "Content",
+      "shortcut": "P",
+      "ui_permission": "change",
+      "wired": false
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": null,
+      "id": "add.pencil",
+      "intents": [
+        "content"
+      ],
+      "label": "연필",
+      "permission": "Content",
+      "shortcut": "Shift+P",
+      "ui_permission": "change",
+      "wired": false
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": null,
+      "id": "add.memo",
+      "intents": [
+        "content"
+      ],
+      "label": "메모",
+      "permission": "Content",
+      "shortcut": "N",
+      "ui_permission": "change",
+      "wired": false
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "asset.import",
+        "changes.apply:add_node"
+      ],
+      "id": "add.image",
+      "intents": [
+        "content"
+      ],
+      "label": "이미지",
+      "permission": "Content",
+      "shortcut": "Ctrl+Shift+K",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "columns": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "rows": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:insert_flow_block",
+        "selection.set"
+      ],
+      "id": "add.table",
+      "intents": [
+        "content"
+      ],
+      "label": "표",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "columns": {
+            "maximum": 24,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "rows": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "selection.set"
+      ],
+      "id": "canvas.table.add",
+      "intents": [
+        "content"
+      ],
+      "label": "표",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "changes.apply:set_canvas_table_structure",
+        "selection.set"
+      ],
+      "id": "canvas.table.add_row",
+      "intents": [
+        "content"
+      ],
+      "label": "행 추가",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:remove_node",
+        "changes.apply:set_canvas_table_structure",
+        "selection.set"
+      ],
+      "id": "canvas.table.remove_row",
+      "intents": [
+        "content"
+      ],
+      "label": "행 삭제",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "changes.apply:set_canvas_table_structure",
+        "selection.set"
+      ],
+      "id": "canvas.table.add_column",
+      "intents": [
+        "content"
+      ],
+      "label": "열 추가",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:remove_node",
+        "changes.apply:set_canvas_table_structure",
+        "selection.set"
+      ],
+      "id": "canvas.table.remove_column",
+      "intents": [
+        "content"
+      ],
+      "label": "열 삭제",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_id",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_canvas_table_structure",
+        "selection.set"
+      ],
+      "id": "canvas.table.set_header",
+      "intents": [
+        "content"
+      ],
+      "label": "머리글",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "column_widths": {
+            "items": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_id",
+          "column_widths"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_canvas_table_column_widths",
+        "selection.set"
+      ],
+      "id": "canvas.table.set_column_widths",
+      "intents": [
+        "design"
+      ],
+      "label": "열 너비 비율",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "column_id": {
+            "type": "string"
+          },
+          "dataset_id": {
+            "type": "string"
+          },
+          "row_id": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "row_id",
+          "column_id",
+          "value"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "figure.dataset.edit"
+      ],
+      "id": "data.edit_cell",
+      "intents": [
+        "data"
+      ],
+      "label": "칸 값 바꾸기",
+      "permission": "Data",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "그림 파일의 절대 경로를 지정합니다.",
+        "properties": {
+          "origin": {
+            "enum": [
+              "experimental_original",
+              "paper_extracted",
+              "generated_illustration"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "source_ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "asset.import",
+        "changes.apply:add_panel",
+        "changes.apply:arrange_panels"
+      ],
+      "id": "add.figure_image",
+      "intents": [
+        "design",
+        "content"
+      ],
+      "label": "이미지",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "data_type": {
+            "enum": [
+              "numeric",
+              "category",
+              "count",
+              "text"
+            ],
+            "type": "string"
+          },
+          "dataset_id": {
+            "type": "string"
+          },
+          "fill": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "figure.dataset.edit"
+      ],
+      "id": "data.add_column",
+      "intents": [
+        "data"
+      ],
+      "label": "열 추가",
+      "permission": "Data",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "after_row_id": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "dataset_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "figure.dataset.edit"
+      ],
+      "id": "data.add_row",
+      "intents": [
+        "data"
+      ],
+      "label": "행 추가",
+      "permission": "Data",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "dataset_id": {
+            "type": "string"
+          },
+          "row_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "row_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "figure.dataset.edit"
+      ],
+      "id": "data.remove_row",
+      "intents": [
+        "data"
+      ],
+      "label": "행 삭제",
+      "permission": "Data",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "column_id": {
+            "type": "string"
+          },
+          "dataset_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "column_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "figure.dataset.edit"
+      ],
+      "id": "data.remove_column",
+      "intents": [
+        "data"
+      ],
+      "label": "열 삭제",
+      "permission": "Data",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "color": {
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "size": {
+            "minimum": 8,
+            "type": "number"
+          }
+        },
+        "required": [
+          "icon"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "selection.set"
+      ],
+      "id": "add.icon",
+      "intents": [
+        "content"
+      ],
+      "label": "아이콘",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "d": {
+            "type": "string"
+          },
+          "view_box": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "d",
+          "view_box"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_node",
+        "selection.set"
+      ],
+      "id": "add.path",
+      "intents": [
+        "content"
+      ],
+      "label": "경로",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:insert_flow_block"
+      ],
+      "id": "add.paragraph",
+      "intents": [
+        "content"
+      ],
+      "label": "문단",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "preset": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:insert_page",
+        "selection.set"
+      ],
+      "id": "add.page",
+      "intents": [
+        "content"
+      ],
+      "label": "페이지 추가",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:insert_page",
+        "selection.set"
+      ],
+      "id": "add.slide",
+      "intents": [
+        "content"
+      ],
+      "label": "슬라이드 추가",
+      "permission": "Content",
+      "shortcut": "Ctrl+M",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_panel",
+        "changes.apply:arrange_panels"
+      ],
+      "id": "add.figure_panel",
+      "intents": [
+        "content"
+      ],
+      "label": "구조도",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "rect",
+              "oval"
+            ],
+            "type": "string"
+          },
+          "panel_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_diagram_node"
+      ],
+      "id": "add.diagram_node",
+      "intents": [
+        "content"
+      ],
+      "label": "상자",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "panel_id": {
+            "type": "string"
+          },
+          "source": {
+            "description": "수식 원문. 기본 문법: 글자·숫자, x^{2}, x_{i}, \\frac{a}{b}, \\sqrt{x}, \\alpha, \\pm 등",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:add_diagram_node"
+      ],
+      "id": "figure.add_equation",
+      "intents": [
+        "content"
+      ],
+      "label": "수식 넣기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:connect_diagram"
+      ],
+      "id": "add.connector",
+      "intents": [
+        "content"
+      ],
+      "label": "연결선",
+      "permission": "Content",
+      "shortcut": "C",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "add.evidence",
+      "intents": [
+        "content"
+      ],
+      "label": "근거",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "add.csv",
+      "intents": [
+        "content"
+      ],
+      "label": "CSV 가져오기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "path": {
+            "description": "차트 자료로 읽을 CSV·TSV 파일의 절대 경로. 주면 대화상자 없이 그림에 자료를 넣습니다.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "add.chart",
+      "intents": [],
+      "label": "차트",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "figure_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "figure.render_link",
+        "changes.apply:add_node",
+        "changes.apply:insert_flow_block",
+        "changes.apply:update_figure_link",
+        "selection.set"
+      ],
+      "id": "add.figure_link",
+      "intents": [
+        "content"
+      ],
+      "label": "논문 그림",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "props.position",
+      "intents": [
+        "design"
+      ],
+      "label": "위치",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "height": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "props.size",
+      "intents": [
+        "design"
+      ],
+      "label": "크기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "height_mode": {
+            "enum": [
+              "fixed",
+              "hug",
+              "fill"
+            ],
+            "type": "string"
+          },
+          "width_mode": {
+            "enum": [
+              "fixed",
+              "hug",
+              "fill"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.size_mode",
+      "intents": [
+        "design"
+      ],
+      "label": "크기 방식",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "percent": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "percent"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.opacity",
+      "intents": [
+        "design"
+      ],
+      "label": "불투명도",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.corner_radius",
+      "intents": [
+        "design"
+      ],
+      "label": "모서리",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "fit": {
+            "enum": [
+              "fill",
+              "contain",
+              "cover"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "fit"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_node_appearance",
+        "selection.set"
+      ],
+      "id": "props.image_fit",
+      "intents": [
+        "design"
+      ],
+      "label": "이미지 맞춤",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "alt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "alt"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_node_info",
+        "selection.set"
+      ],
+      "id": "props.image_alt",
+      "intents": [
+        "content"
+      ],
+      "label": "대체 텍스트",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "d": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "view_box": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "d",
+          "view_box"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_node_path",
+        "selection.set"
+      ],
+      "id": "props.path",
+      "intents": [
+        "content"
+      ],
+      "label": "경로 편집",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "color": {
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "color"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.fill",
+      "intents": [
+        "design"
+      ],
+      "label": "채우기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.fill_remove",
+      "intents": [
+        "design"
+      ],
+      "label": "채우기 없애기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "color": {
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "color"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.stroke",
+      "intents": [
+        "design"
+      ],
+      "label": "테두리 색",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.stroke_width",
+      "intents": [
+        "design"
+      ],
+      "label": "테두리 두께",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.stroke_remove",
+      "intents": [
+        "design"
+      ],
+      "label": "테두리 없애기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "blur": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "color": {
+            "type": "string"
+          },
+          "opacity": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "spread": {
+            "type": "number"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style"
+      ],
+      "id": "props.shadow",
+      "intents": [
+        "design"
+      ],
+      "label": "그림자",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.shadow_remove",
+      "intents": [
+        "design"
+      ],
+      "label": "그림자 없애기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "bold": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "string"
+          },
+          "font_size": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "italic": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.text_style",
+      "intents": [
+        "design"
+      ],
+      "label": "글자 모양",
+      "permission": "Design",
+      "shortcut": "Ctrl+B",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "선택한 캔버스 작업물의 로컬 디자인 토큰을 추가하거나 갱신합니다.",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "token_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "values": {
+            "description": "font_size, spacing, radius의 숫자 값은 정수 EMU입니다. 예: 16 CSS px = 152400 EMU. GUI의 px 입력은 한 번만 EMU로 변환됩니다.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "dark": {
+                    "pattern": "^#[0-9A-Fa-f]{6}$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "color"
+                    ],
+                    "type": "string"
+                  },
+                  "light": {
+                    "pattern": "^#[0-9A-Fa-f]{6}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "light",
+                  "dark"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "dark": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "font_family"
+                    ],
+                    "type": "string"
+                  },
+                  "light": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "light",
+                  "dark"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "dark": {
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "enum": [
+                      "font_size",
+                      "spacing",
+                      "radius"
+                    ],
+                    "type": "string"
+                  },
+                  "light": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "light",
+                  "dark"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "token_id",
+          "name",
+          "values"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:put_token"
+      ],
+      "id": "canvas.token.put",
+      "intents": [
+        "design"
+      ],
+      "label": "토큰 저장",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "사용 중이 아닌 로컬 디자인 토큰을 삭제합니다.",
+        "properties": {
+          "token_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:remove_token"
+      ],
+      "id": "canvas.token.remove",
+      "intents": [
+        "design"
+      ],
+      "label": "토큰 삭제",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "캔버스 로컬 토큰을 라이트 또는 다크 모드로 적용합니다.",
+        "properties": {
+          "mode": {
+            "enum": [
+              "light",
+              "dark"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_token_mode"
+      ],
+      "id": "canvas.token.mode",
+      "intents": [
+        "design"
+      ],
+      "label": "토큰 모드",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "현재 GUI 선택에 로컬 또는 연결된 공유 토큰을 연결합니다. source는 local(기본값) 또는 shared입니다. MCP에서는 먼저 select.node 또는 select.many를 실행하세요. layout_padding_side에는 side가 필요하고 breakpoint_gap/padding에는 min_width_css_px가 필요합니다.",
+        "properties": {
+          "min_width_css_px": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "side": {
+            "enum": [
+              "top",
+              "right",
+              "bottom",
+              "left"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "local",
+              "shared"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "enum": [
+              "style_color",
+              "style_fill",
+              "style_stroke",
+              "style_font_family",
+              "style_font_size",
+              "style_corner_radius",
+              "layout_gap",
+              "layout_row_gap",
+              "layout_padding",
+              "layout_padding_side",
+              "breakpoint_gap",
+              "breakpoint_padding"
+            ],
+            "type": "string"
+          },
+          "token_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token_id",
+          "target"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:bind_token",
+        "selection.set"
+      ],
+      "id": "canvas.token.bind",
+      "intents": [
+        "design"
+      ],
+      "label": "선택 항목에 토큰 연결",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "현재 GUI 선택에서 지정한 로컬 토큰 대상을 연결 해제합니다. MCP에서는 먼저 select.node 또는 select.many를 실행하세요. layout_padding_side에는 side가 필요하고 breakpoint_gap/padding에는 min_width_css_px가 필요합니다.",
+        "properties": {
+          "min_width_css_px": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "side": {
+            "enum": [
+              "top",
+              "right",
+              "bottom",
+              "left"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "enum": [
+              "style_color",
+              "style_fill",
+              "style_stroke",
+              "style_font_family",
+              "style_font_size",
+              "style_corner_radius",
+              "layout_gap",
+              "layout_row_gap",
+              "layout_padding",
+              "layout_padding_side",
+              "breakpoint_gap",
+              "breakpoint_padding"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:unbind_token",
+        "selection.set"
+      ],
+      "id": "canvas.token.unbind",
+      "intents": [
+        "design"
+      ],
+      "label": "선택 항목에서 토큰 연결 해제",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "design_system.list"
+      ],
+      "id": "canvas.design_system.list",
+      "intents": [],
+      "label": "공유 디자인 시스템 새로 읽기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "publish": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "publish"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "design_system.publish"
+      ],
+      "id": "canvas.design_system.publish",
+      "intents": [
+        "design"
+      ],
+      "label": "디자인 시스템 공개 설정",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "현재 Canvas, WebCode, Word, HWPX 작업물을 공유 디자인 시스템에 연결하거나 null로 연결 해제합니다. 연결 시 expected_system_revision을 전달하면 원본이 바뀐 경우 Core가 거부합니다. Word와 HWPX 연결에는 direct_formatting이 필요합니다: keep은 직접 서식을 그대로 두고, clear는 그 스타일을 쓰는 글자의 직접 서식을 지웁니다(HWPX는 keep만).",
+        "properties": {
+          "design_system": {
+            "oneOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "direct_formatting": {
+            "enum": [
+              "keep",
+              "clear"
+            ],
+            "type": "string"
+          },
+          "expected_system_revision": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "design_system"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "design_system.set"
+      ],
+      "id": "canvas.design_system.set",
+      "intents": [
+        "design"
+      ],
+      "label": "공유 디자인 시스템 연결",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "align": {
+            "enum": [
+              "left",
+              "center",
+              "right",
+              "justify"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "align"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.text_align",
+      "intents": [
+        "design"
+      ],
+      "label": "문단 정렬",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "free",
+              "stack",
+              "grid"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.layout_mode",
+      "intents": [
+        "design"
+      ],
+      "label": "배치",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "direction": {
+            "enum": [
+              "row",
+              "column"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.layout_direction",
+      "intents": [
+        "design"
+      ],
+      "label": "방향",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "justify": {
+            "enum": [
+              "start",
+              "center",
+              "end",
+              "between"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "justify"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.layout_justify",
+      "intents": [
+        "design"
+      ],
+      "label": "배분",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "align": {
+            "enum": [
+              "start",
+              "center",
+              "end",
+              "stretch"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "align"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.layout_align",
+      "intents": [
+        "design"
+      ],
+      "label": "정렬",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.layout_gap",
+      "intents": [
+        "design"
+      ],
+      "label": "간격",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.layout_padding",
+      "intents": [
+        "design"
+      ],
+      "label": "안쪽 여백",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "edge": {
+            "enum": [
+              "left",
+              "h-center",
+              "right",
+              "top",
+              "v-center",
+              "bottom"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "props.align",
+      "intents": [
+        "design"
+      ],
+      "label": "정렬 6",
+      "permission": "Design",
+      "shortcut": "Alt+A",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "axis": {
+            "enum": [
+              "h",
+              "v"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "axis"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "props.distribute",
+      "intents": [
+        "design"
+      ],
+      "label": "균등 분배",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "height": {
+            "type": "number"
+          },
+          "preset": {
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_page_size"
+      ],
+      "id": "props.page_size",
+      "intents": [
+        "design"
+      ],
+      "label": "페이지 크기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:rename_page",
+        "selection.set"
+      ],
+      "id": "props.rename_page",
+      "intents": [
+        "content"
+      ],
+      "label": "페이지 이름",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "value": {
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.line_height",
+      "intents": [
+        "design"
+      ],
+      "label": "줄 높이",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.letter_spacing",
+      "intents": [
+        "design"
+      ],
+      "label": "자간",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "align": {
+            "enum": [
+              "top",
+              "middle",
+              "bottom"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "align"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.vertical_align",
+      "intents": [
+        "design"
+      ],
+      "label": "세로 정렬",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "cap": {
+            "enum": [
+              "butt",
+              "round",
+              "square"
+            ],
+            "type": "string"
+          },
+          "dash": {
+            "enum": [
+              "solid",
+              "dashed",
+              "dotted"
+            ],
+            "type": "string"
+          },
+          "join": {
+            "enum": [
+              "miter",
+              "round",
+              "bevel"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.stroke_style",
+      "intents": [
+        "design"
+      ],
+      "label": "선 모양",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "angle": {
+            "type": "number"
+          },
+          "from": {
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "type": "string"
+          },
+          "to": {
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.gradient",
+      "intents": [
+        "design"
+      ],
+      "label": "그라디언트",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "props.gradient_remove",
+      "intents": [
+        "design"
+      ],
+      "label": "단색으로",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "columns": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "row_gap": {
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.grid",
+      "intents": [
+        "design"
+      ],
+      "label": "그리드",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "span": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "span"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.grid_span",
+      "intents": [
+        "design"
+      ],
+      "label": "칸",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "bottom": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "left": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "right": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "top": {
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.padding_sides",
+      "intents": [
+        "design"
+      ],
+      "label": "네 면 여백",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "align": {
+            "enum": [
+              "auto",
+              "start",
+              "center",
+              "end",
+              "stretch"
+            ],
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "align"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_layout",
+        "selection.set"
+      ],
+      "id": "props.align_self",
+      "intents": [
+        "design"
+      ],
+      "label": "자체 정렬",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "bold": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "string"
+          },
+          "fill": {
+            "type": "string"
+          },
+          "font_size": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "opacity": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "stroke": {
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variant"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_variant_style",
+        "selection.set"
+      ],
+      "id": "props.variant_style",
+      "intents": [
+        "design"
+      ],
+      "label": "상태 스타일",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "url": {
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_interactions",
+        "selection.set"
+      ],
+      "id": "canvas.open_url",
+      "intents": [
+        "content"
+      ],
+      "label": "URL 링크",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "action": {
+            "enum": [
+              "navigate_page",
+              "toggle_visibility",
+              "set_variant",
+              "open_url",
+              "back"
+            ],
+            "type": "string"
+          },
+          "index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "action"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_interactions",
+        "selection.set"
+      ],
+      "id": "canvas.interaction.set",
+      "intents": [
+        "content"
+      ],
+      "label": "클릭 동작 변경",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "index": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_interactions",
+        "selection.set"
+      ],
+      "id": "canvas.interaction.remove",
+      "intents": [
+        "content"
+      ],
+      "label": "클릭 동작 삭제",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "선택한 캔버스 이미지를 이미 가져온 자산(asset_sha256)으로 바꿉니다. node_id는 지금 선택한 이미지여야 합니다. 파일을 고르려면 이미지 교체 버튼을 쓰세요.",
+        "properties": {
+          "asset_sha256": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "asset_sha256"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:replace_image_asset"
+      ],
+      "id": "canvas.image.replace",
+      "intents": [
+        "content"
+      ],
+      "label": "이미지 교체",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "캔버스 이미지를 원본 픽셀 사각형(x, y, width, height)으로 자릅니다. 네 값을 모두 빼면 자르기를 지웁니다.",
+        "properties": {
+          "expected_asset_sha256": {
+            "type": "string"
+          },
+          "height": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "width": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "x": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "y": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node_id",
+          "expected_asset_sha256"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_canvas_image_crop"
+      ],
+      "id": "canvas.image.crop",
+      "intents": [
+        "design"
+      ],
+      "label": "이미지 자르기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "페이지의 보드 메모 목록을 바꿉니다. expected는 지금 목록이고 memos는 바꿀 목록입니다.",
+        "properties": {
+          "expected": {
+            "type": "array"
+          },
+          "memos": {
+            "type": "array"
+          },
+          "page_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "page_id",
+          "expected",
+          "memos"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_canvas_board_memos"
+      ],
+      "id": "canvas.board_memos.set",
+      "intents": [
+        "content"
+      ],
+      "label": "보드 메모 저장",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "캔버스 페이지 섹션 목록을 바꿉니다. expected는 지금 목록이고 sections는 바꿀 목록입니다.",
+        "properties": {
+          "expected": {
+            "type": "array"
+          },
+          "sections": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected",
+          "sections"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_canvas_page_sections"
+      ],
+      "id": "canvas.page_sections.set",
+      "intents": [
+        "content"
+      ],
+      "label": "페이지 섹션 저장",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "parent_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "index"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:move_node",
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "layer.move_to",
+      "intents": [
+        "content"
+      ],
+      "label": "레이어를 다른 곳으로",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "min_h": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "min_w": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "fix.grow_to_min",
+      "intents": [
+        "design"
+      ],
+      "label": "44 px로 키우기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "min_ratio": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "fix.darken_text",
+      "intents": [
+        "design"
+      ],
+      "label": "글자색 진하게",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "fix.grow_box",
+      "intents": [
+        "design"
+      ],
+      "label": "상자 키우기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style",
+        "selection.set"
+      ],
+      "id": "fix.shrink_text",
+      "intents": [
+        "design"
+      ],
+      "label": "글자 줄이기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "fix.grow_parent",
+      "intents": [
+        "design"
+      ],
+      "label": "상위 프레임 키우기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_geometry",
+        "selection.set"
+      ],
+      "id": "fix.move_into_page",
+      "intents": [
+        "design"
+      ],
+      "label": "페이지 안으로",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set",
+        "changes.apply:remove_page"
+      ],
+      "id": "page.remove",
+      "intents": [
+        "content"
+      ],
+      "label": "페이지 삭제",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "to_index": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "to_index"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:reorder_pages"
+      ],
+      "id": "page.reorder",
+      "intents": [
+        "content"
+      ],
+      "label": "페이지 순서",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_page_notes"
+      ],
+      "id": "page.notes",
+      "intents": [
+        "content"
+      ],
+      "label": "노트",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "슬라이드 덱의 테마 색과 글꼴을 바꿉니다. 준 값만 바꾸고 나머지는 그대로 둡니다. 글꼴 이름은 64자 이하이고 제어 문자, <, &를 쓸 수 없습니다.",
+        "properties": {
+          "colors": {
+            "properties": {
+              "accent1": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "accent2": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "accent3": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "accent4": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "accent5": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "accent6": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "dk1": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "dk2": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "folHlink": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "hlink": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "lt1": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              "lt2": {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "major_ea": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "major_latin": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minor_ea": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minor_latin": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_theme"
+      ],
+      "id": "slides.theme",
+      "intents": [
+        "design"
+      ],
+      "label": "테마",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "캔버스 페이지의 열 또는 행 안내선 한 축을 설정합니다. 간격과 여백은 EMU 정수이며 0 이상이고, 모든 트랙은 최소 1 EMU를 가져야 합니다. 다른 축은 그대로 둡니다.",
+        "properties": {
+          "axis": {
+            "enum": [
+              "columns",
+              "rows"
+            ],
+            "type": "string"
+          },
+          "count": {
+            "maximum": 24,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "leading_margin_emu": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spacing_emu": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trailing_margin_emu": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "axis",
+          "count",
+          "spacing_emu",
+          "leading_margin_emu",
+          "trailing_margin_emu"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_canvas_page_guides",
+        "selection.set"
+      ],
+      "id": "canvas.guides.set",
+      "intents": [
+        "design"
+      ],
+      "label": "안내선 설정",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "캔버스 페이지의 안내선을 지웁니다. axis를 주면 그 축만 지웁니다.",
+        "properties": {
+          "axis": {
+            "enum": [
+              "columns",
+              "rows"
+            ],
+            "type": "string"
+          },
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_canvas_page_guides",
+        "selection.set"
+      ],
+      "id": "canvas.guides.clear",
+      "intents": [
+        "design"
+      ],
+      "label": "안내선 지우기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_page_role"
+      ],
+      "id": "page.component",
+      "intents": [
+        "content"
+      ],
+      "label": "컴포넌트 소스 페이지",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "bounds": {
+            "description": "EMU in the target page or parent coordinate space",
+            "properties": {
+              "height": {
+                "description": "EMU",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "description": "EMU",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "description": "EMU",
+                "type": "integer"
+              },
+              "y": {
+                "description": "EMU",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "component_page_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "instance_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "page_index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "parent_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "component_page_id",
+          "instance_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:instantiate_component"
+      ],
+      "id": "component.instantiate",
+      "intents": [
+        "content"
+      ],
+      "label": "컴포넌트 삽입",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:detach_instance"
+      ],
+      "id": "component.detach",
+      "intents": [
+        "content"
+      ],
+      "label": "컴포넌트 연결 해제",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "최상위 항목을 컴포넌트 페이지로 옮기고, 같은 자리에 표의 데이터 행마다 그 컴포넌트를 펼칠 빈 그룹을 만듭니다.",
+        "properties": {
+          "component_page_id": {
+            "type": "string"
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "table_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:insert_page",
+        "changes.apply:set_page_role",
+        "changes.apply:move_node",
+        "changes.apply:add_node",
+        "changes.apply:set_group_repeat"
+      ],
+      "id": "repeat.create",
+      "intents": [
+        "content"
+      ],
+      "label": "반복 만들기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "bindings": {
+            "items": {
+              "properties": {
+                "column": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "source_node_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source_node_id",
+                "column"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "group_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_id",
+          "bindings"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_group_repeat"
+      ],
+      "id": "repeat.bind",
+      "intents": [
+        "content"
+      ],
+      "label": "반복 열 연결",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "group_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_group_repeat"
+      ],
+      "id": "repeat.clear",
+      "intents": [
+        "content"
+      ],
+      "label": "반복 해제",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "column": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "equals",
+              "not_equals",
+              "is_empty",
+              "is_not_empty"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "column",
+          "op"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_group_condition"
+      ],
+      "id": "repeat.condition_set",
+      "intents": [
+        "content"
+      ],
+      "label": "조건 설정",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_group_condition"
+      ],
+      "id": "repeat.condition_clear",
+      "intents": [
+        "content"
+      ],
+      "label": "조건 해제",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:arrange_panels"
+      ],
+      "id": "figure.arrange_panels",
+      "intents": [
+        "design"
+      ],
+      "label": "패널 다시 배치",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "panel_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set",
+        "changes.apply:remove_panel"
+      ],
+      "id": "figure.remove_panel",
+      "intents": [
+        "content"
+      ],
+      "label": "패널 삭제",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "panel_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:reorder_panels"
+      ],
+      "id": "figure.reorder_panels",
+      "intents": [
+        "content"
+      ],
+      "label": "패널 순서",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "caption": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "caption"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_caption"
+      ],
+      "id": "figure.caption",
+      "intents": [
+        "content"
+      ],
+      "label": "캡션",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "panel_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_panel_label"
+      ],
+      "id": "figure.panel_label",
+      "intents": [
+        "content"
+      ],
+      "label": "패널 라벨",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "confidence_level": {
+            "type": "string"
+          },
+          "error_column": {
+            "type": "string"
+          },
+          "error_count_column": {
+            "type": "string"
+          },
+          "error_kind": {
+            "enum": [
+              "none",
+              "sd",
+              "sem",
+              "ci",
+              "range"
+            ],
+            "type": "string"
+          },
+          "error_lower_column": {
+            "type": "string"
+          },
+          "error_upper_column": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "bar",
+              "line",
+              "scatter"
+            ],
+            "type": "string"
+          },
+          "panel_id": {
+            "type": "string"
+          },
+          "x_column": {
+            "type": "string"
+          },
+          "x_maximum": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "x_minimum": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "x_scale": {
+            "enum": [
+              "linear",
+              "log10"
+            ],
+            "type": "string"
+          },
+          "x_unit": {
+            "type": "string"
+          },
+          "y_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "y_maximum": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "y_minimum": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "y_scale": {
+            "enum": [
+              "linear",
+              "log10"
+            ],
+            "type": "string"
+          },
+          "y_unit": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_plot"
+      ],
+      "id": "figure.plot",
+      "intents": [
+        "data"
+      ],
+      "label": "차트 설정",
+      "permission": "Data",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "on": {
+            "type": "boolean"
+          },
+          "panel_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "panel_id",
+          "on"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_plot_display"
+      ],
+      "id": "figure.plot_display",
+      "intents": [
+        "design"
+      ],
+      "label": "오차 기준 표시",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "bold": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "string"
+          },
+          "dash": {
+            "enum": [
+              "solid",
+              "dashed",
+              "dotted"
+            ],
+            "type": "string"
+          },
+          "fill": {
+            "type": "string"
+          },
+          "font_size": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "stroke": {
+            "type": "string"
+          },
+          "stroke_width": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "target_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style"
+      ],
+      "id": "figure.style",
+      "intents": [
+        "design"
+      ],
+      "label": "요소 모양",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "figure.toggle_sheet",
+      "intents": [],
+      "label": "데이터 시트",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "axis": {
+            "enum": [
+              "x",
+              "y"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "panel_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "axis",
+          "label"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_axis_label"
+      ],
+      "id": "figure.axis_label",
+      "intents": [
+        "content"
+      ],
+      "label": "축 제목",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "axis": {
+            "enum": [
+              "x",
+              "y"
+            ],
+            "type": "string"
+          },
+          "panel_id": {
+            "type": "string"
+          },
+          "tick_step": {
+            "description": "눈금 간격. null이면 자동 눈금으로 되돌립니다.",
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "axis",
+          "tick_step"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_axis_ticks"
+      ],
+      "id": "figure.axis_ticks",
+      "intents": [
+        "design"
+      ],
+      "label": "눈금 간격",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "dataset": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "dataset"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:put_dataset"
+      ],
+      "id": "figure.put_dataset",
+      "intents": [
+        "data"
+      ],
+      "label": "자료 넣기",
+      "permission": "Data",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "evidence": {
+            "type": "object"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:put_evidence"
+      ],
+      "id": "figure.put_evidence",
+      "intents": [
+        "content"
+      ],
+      "label": "근거 넣기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "element_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidence_ids": {
+            "description": "그림에 있는 근거의 id 목록. 빈 배열이면 근거 연결을 지웁니다.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "origin": {
+            "description": "도형의 출처. null이면 출처를 지웁니다. 연결선은 출처를 비울 수 없습니다.",
+            "enum": [
+              "paper_evidence",
+              "user_authored",
+              "model_proposal"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "panel_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "element_id",
+          "origin",
+          "evidence_ids"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_diagram_provenance"
+      ],
+      "id": "figure.diagram_provenance",
+      "intents": [
+        "content"
+      ],
+      "label": "출처와 근거",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "legend": {
+            "description": "공통 범례 전체. null이면 범례를 지웁니다.",
+            "oneOf": [
+              {
+                "properties": {
+                  "items": {
+                    "items": {
+                      "properties": {
+                        "color": {
+                          "description": "#RRGGBB 또는 #RRGGBBAA",
+                          "type": "string"
+                        },
+                        "label": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "label",
+                        "color"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "placement": {
+                    "enum": [
+                      "bottom",
+                      "top",
+                      "right"
+                    ],
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "items"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "legend"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_common_legend"
+      ],
+      "id": "figure.common_legend",
+      "intents": [
+        "content"
+      ],
+      "label": "공통 범례",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "review": {
+            "description": "시각 검토 전체. null이면 검토를 지웁니다. 승인하면 엔진이 지금 내용을 기록합니다.",
+            "oneOf": [
+              {
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "enum": [
+                      "pending",
+                      "approved",
+                      "needs_revision"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "review"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_figure_visual_review"
+      ],
+      "id": "figure.visual_review",
+      "intents": [
+        "content"
+      ],
+      "label": "시각 검토",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "crop": {
+            "description": "자를 영역(그림 픽셀). null이면 자르기를 해제합니다.",
+            "oneOf": [
+              {
+                "properties": {
+                  "height": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "width": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "x": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "y": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "panel_id": {
+            "type": "string"
+          },
+          "rotation_millidegrees": {
+            "description": "회전 각도(1/1000도). 360도 이상은 쓸 수 없습니다.",
+            "maximum": 359999,
+            "minimum": -359999,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "crop",
+          "rotation_millidegrees"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_figure_image_transform"
+      ],
+      "id": "figure.image_transform",
+      "intents": [
+        "design"
+      ],
+      "label": "그림 자르기·회전",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "calibration": {
+            "description": "측정 보정. null이면 보정을 지웁니다.",
+            "oneOf": [
+              {
+                "properties": {
+                  "evidence_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "length": {
+                    "description": "실제 길이. 0보다 큰 십진수 문자열",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "pixel_span": {
+                    "description": "같은 길이의 픽셀 간격. 0보다 큰 십진수 문자열",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "unit": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "length",
+                  "unit",
+                  "pixel_span"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "panel_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "calibration"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_figure_image_calibration"
+      ],
+      "id": "figure.image_calibration",
+      "intents": [
+        "data"
+      ],
+      "label": "측정 보정",
+      "permission": "Data",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "align": {
+            "enum": [
+              "left",
+              "center",
+              "right",
+              "justify"
+            ],
+            "type": "string"
+          },
+          "indent": {
+            "type": "number"
+          },
+          "line_spacing": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "paragraph_id": {
+            "type": "string"
+          },
+          "space_after": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "space_before": {
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_paragraph_format",
+        "selection.set"
+      ],
+      "id": "doc.paragraph_format",
+      "intents": [
+        "design"
+      ],
+      "label": "문단 서식",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "height": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "margin_bottom": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "margin_left": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "margin_right": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "margin_top": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "orientation": {
+            "enum": [
+              "portrait",
+              "landscape"
+            ],
+            "type": "string"
+          },
+          "paper": {
+            "enum": [
+              "a4",
+              "letter"
+            ],
+            "type": "string"
+          },
+          "section_id": {
+            "type": "string"
+          },
+          "width": {
+            "minimum": 1,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_page_setup",
+        "selection.set"
+      ],
+      "id": "doc.page_setup",
+      "intents": [
+        "design"
+      ],
+      "label": "쪽 설정",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "bold": {
+            "type": "boolean"
+          },
+          "clear_overrides": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "string"
+          },
+          "font_family": {
+            "type": "string"
+          },
+          "font_size": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_named_style",
+        "selection.set"
+      ],
+      "id": "doc.named_style",
+      "intents": [
+        "design"
+      ],
+      "label": "스타일 바꾸기",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "column_widths": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "table_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "column_widths"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_table_dimensions",
+        "selection.set"
+      ],
+      "id": "doc.table_columns",
+      "intents": [
+        "design"
+      ],
+      "label": "열 너비",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "text"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_text"
+      ],
+      "id": "text.set",
+      "intents": [
+        "content"
+      ],
+      "label": "글 바꾸기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "end": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "paragraph_id": {
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:replace_text",
+        "selection.set"
+      ],
+      "id": "text.replace",
+      "intents": [
+        "content"
+      ],
+      "label": "문단 글 바꾸기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "bold": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "string"
+          },
+          "end": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "font_family": {
+            "type": "string"
+          },
+          "font_size": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "paragraph_id": {
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "strikethrough": {
+            "type": "boolean"
+          },
+          "underline": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_text_style_range",
+        "selection.set"
+      ],
+      "id": "text.style_range",
+      "intents": [
+        "design"
+      ],
+      "label": "고른 글자 모양",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "list": {
+            "enum": [
+              "bullet",
+              "numbered",
+              "none"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "list"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_node_list",
+        "selection.set"
+      ],
+      "id": "text.list",
+      "intents": [
+        "content"
+      ],
+      "label": "목록",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "expected_hash": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:replace_web_source"
+      ],
+      "id": "web.replace_source",
+      "intents": [
+        "content"
+      ],
+      "label": "소스 바꾸기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "expected_hash": {
+            "type": "string"
+          },
+          "mapping_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "property": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mapping_id",
+          "property",
+          "value"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:mapped_web_edit"
+      ],
+      "id": "web.mapped_edit",
+      "intents": [
+        "content"
+      ],
+      "label": "매핑 값 바꾸기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "selection.set"
+      ],
+      "id": "web.open_file",
+      "intents": [],
+      "label": "파일 열기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "asset.import",
+        "job.start"
+      ],
+      "id": "ai.request",
+      "intents": [],
+      "label": "요청 보내기",
+      "permission": "Content",
+      "shortcut": "Ctrl+Enter",
+      "ui_permission": "agent_start",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "attempt_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "job.cancel"
+      ],
+      "id": "ai.cancel",
+      "intents": [
+        "content"
+      ],
+      "label": "취소",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "asset.import",
+        "job.start"
+      ],
+      "id": "ai.retry",
+      "intents": [],
+      "label": "다시 요청",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "agent_start",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "change_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "change_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "history.undo_change"
+      ],
+      "id": "ai.undo_change",
+      "intents": [
+        "content"
+      ],
+      "label": "되돌리기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "index": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "index"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_z_order",
+        "selection.set"
+      ],
+      "id": "layer.move",
+      "intents": [
+        "content"
+      ],
+      "label": "레이어 옮기기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "anyOf": [
+          {
+            "required": [
+              "intent"
+            ],
+            "type": "object"
+          },
+          {
+            "required": [
+              "mode"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "intent": {
+            "enum": [
+              "content",
+              "design",
+              "data"
+            ],
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "both",
+              "design_only",
+              "content_only"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "ai.toggle_intent",
+      "intents": [
+        "design",
+        "content",
+        "data"
+      ],
+      "label": "의도 고르기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "deliver_as": {
+            "enum": [
+              "apply",
+              "proposal"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "deliver_as"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "ai.deliver_as",
+      "intents": [
+        "content"
+      ],
+      "label": "미리보기로 받기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "proposal_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "proposal.select",
+      "intents": [],
+      "label": "미리보기 고르기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "proposal_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "proposal.apply"
+      ],
+      "id": "proposal.apply",
+      "intents": [
+        "design",
+        "content",
+        "data"
+      ],
+      "label": "미리보기 적용",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "proposal_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "proposal.discard",
+      "intents": [
+        "content"
+      ],
+      "label": "미리보기 버리기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "expected_target_hash": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "target_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_path"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "artifact.save"
+      ],
+      "id": "file.save",
+      "intents": [],
+      "label": "저장",
+      "permission": "FileWrite",
+      "shortcut": "Ctrl+S",
+      "ui_permission": "file_write",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "artifact.save"
+      ],
+      "id": "file.save_as",
+      "intents": [],
+      "label": "다른 이름으로 저장",
+      "permission": "FileWrite",
+      "shortcut": "Ctrl+Shift+S",
+      "ui_permission": "file_write",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "allowed_losses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "background": {
+            "enum": [
+              "page",
+              "transparent"
+            ],
+            "type": "string"
+          },
+          "expected_target_hash": {
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "png",
+              "jpeg",
+              "svg",
+              "pdf",
+              "html",
+              "pptx",
+              "zip"
+            ],
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "pages": {
+            "description": "scope가 range일 때 내보낼 쪽 번호. 1부터 세고, 쉼표로 나열하며 a-b로 범위를 씁니다. 예: 1,3-5",
+            "type": "string"
+          },
+          "scale": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "page",
+              "selection",
+              "all",
+              "range"
+            ],
+            "type": "string"
+          },
+          "target_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "format",
+          "target_path"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "artifact.export"
+      ],
+      "id": "file.export",
+      "intents": [],
+      "label": "내보내기",
+      "permission": "FileWrite",
+      "shortcut": "Ctrl+E",
+      "ui_permission": "file_write",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "선택한 캔버스 항목만 내보냅니다.",
+        "properties": {
+          "allowed_losses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "background": {
+            "enum": [
+              "page",
+              "transparent"
+            ],
+            "type": "string"
+          },
+          "expected_target_hash": {
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "png",
+              "svg"
+            ],
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "scale": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "type": "integer"
+          },
+          "target_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "format",
+          "target_path"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "artifact.export"
+      ],
+      "id": "file.export_selection",
+      "intents": [],
+      "label": "선택 내보내기",
+      "permission": "FileWrite",
+      "shortcut": "",
+      "ui_permission": "file_write",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": null,
+      "id": "file.overwrite",
+      "intents": [],
+      "label": "원본에 덮어쓰기",
+      "permission": "FileWrite",
+      "shortcut": "",
+      "ui_permission": "file_write",
+      "wired": false
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": [
+        "artifact.export"
+      ],
+      "id": "file.dismiss_loss",
+      "intents": [],
+      "label": "손실 허용하고 내보내기",
+      "permission": "FileWrite",
+      "shortcut": "",
+      "ui_permission": "file_write",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "figure.render_link",
+        "changes.apply:update_figure_link",
+        "selection.set"
+      ],
+      "id": "figure.update_link",
+      "intents": [
+        "content"
+      ],
+      "label": "그림 갱신",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [
+        "view.transform.set"
+      ],
+      "id": "figure.open_source",
+      "intents": [],
+      "label": "원본 열기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {},
+        "type": "object"
+      },
+      "core_calls": null,
+      "id": "web.refresh",
+      "intents": [],
+      "label": "새로 고침",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": false
+    },
+    {
+      "args": {
+        "description": "현재 웹 작업물을 미리보기로 열고 페이지가 준비되면 작업물 ID와 판 번호를 반환합니다.",
+        "type": "object"
+      },
+      "core_calls": [
+        "web.materialize"
+      ],
+      "id": "web.preview",
+      "intents": [],
+      "label": "웹 미리보기 열기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "description": "tile로 작업물 종류를 고릅니다. 크기와 실행기 설정은 생략하면 현재 홈의 값을 사용합니다.",
+        "properties": {
+          "effort": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "max"
+            ],
+            "type": "string"
+          },
+          "mode": {
+            "description": "홈 탭 표시 모드. 생성할 작업물은 tile이 결정합니다.",
+            "enum": [
+              "design",
+              "code"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "preset": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "runtime": {
+            "enum": [
+              "claude",
+              "codex"
+            ],
+            "type": "string"
+          },
+          "tile": {
+            "enum": [
+              "blank",
+              "mobile",
+              "ui",
+              "wireframe",
+              "slides",
+              "document",
+              "resume",
+              "poster",
+              "social",
+              "figure",
+              "diagram",
+              "web",
+              "animation"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "tile"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "artifact.create",
+        "asset.import",
+        "job.start",
+        "view.transform.set"
+      ],
+      "id": "home.create",
+      "intents": [],
+      "label": "만들기",
+      "permission": "Content",
+      "shortcut": "Enter",
+      "ui_permission": "agent_start",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.attach",
+      "intents": [],
+      "label": "첨부",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "view": {
+            "enum": [
+              "list",
+              "grid"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "view"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.view",
+      "intents": [],
+      "label": "목록 또는 격자",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.starred_only",
+      "intents": [],
+      "label": "별표만",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.star",
+      "intents": [],
+      "label": "별표",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "design",
+              "code"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.mode",
+      "intents": [],
+      "label": "디자인 또는 코드",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "design_system": {
+            "enum": [
+              ""
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.design_system",
+      "intents": [],
+      "label": "디자인 시스템 고르기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "tile": {
+            "enum": [
+              "blank",
+              "mobile",
+              "ui",
+              "wireframe",
+              "slides",
+              "document",
+              "resume",
+              "poster",
+              "social",
+              "figure",
+              "diagram",
+              "web",
+              "animation"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "tile"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.tile",
+      "intents": [],
+      "label": "타일 고르기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "tab": {
+            "enum": [
+              "projects",
+              "design_systems",
+              "templates"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "tab"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.tab",
+      "intents": [],
+      "label": "홈 탭",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "height": {
+            "minimum": 1,
+            "type": "number"
+          },
+          "preset": {
+            "type": "string"
+          },
+          "width": {
+            "minimum": 1,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.preset",
+      "intents": [],
+      "label": "크기 고르기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "effort": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "max"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "runtime": {
+            "enum": [
+              "claude",
+              "codex"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.runner",
+      "intents": [],
+      "label": "실행기 고르기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "core_calls": [],
+      "id": "home.search",
+      "intents": [],
+      "label": "프로젝트 찾기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "canvas",
+              "web_code"
+            ],
+            "type": "string"
+          },
+          "template": {
+            "enum": [
+              "mobile_app",
+              "login",
+              "landing_page",
+              "dashboard",
+              "social_post",
+              "poster_a3",
+              "resume",
+              "invitation",
+              "banner",
+              "webgl_animation"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "template"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "artifact.create",
+        "view.transform.set"
+      ],
+      "id": "home.use_template",
+      "intents": [
+        "content"
+      ],
+      "label": "템플릿으로 만들기",
+      "permission": "Content",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "core_calls": null,
+      "id": "home.workspace",
+      "intents": [],
+      "label": "작업공간 열기",
+      "permission": "Read",
+      "shortcut": "",
+      "ui_permission": "read",
+      "wired": false
+    }
+  ]
+}

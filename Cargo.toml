@@ -1,0 +1,72 @@
+[workspace]
+members = [
+    "crates/contracts",
+    "crates/core",
+    "crates/render",
+    "crates/flow",
+    "crates/formats/package",
+    "crates/formats/docx",
+    "crates/formats/hwpx",
+    "crates/formats/hwp",
+    "crates/formats/pptx",
+    "crates/slides",
+    "crates/figures",
+    "crates/canvas",
+    "crates/sources",
+    "crates/web-preview",
+    "crates/bridge",
+    "crates/host",
+    "crates/runtimes",
+    "crates/desktop",
+    "crates/application",
+    "tests/integration",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.93.1"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = { version = "0.8.22", features = ["derive"] }
+thiserror = "2"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4", "serde"] }
+unicode-segmentation = "=1.12.0"
+designllm-contracts = { path = "crates/contracts" }
+designllm-core = { path = "crates/core" }
+designllm-render = { path = "crates/render" }
+designllm-flow = { path = "crates/flow" }
+designllm-package = { path = "crates/formats/package" }
+designllm-docx = { path = "crates/formats/docx" }
+designllm-hwpx = { path = "crates/formats/hwpx" }
+designllm-hwp = { path = "crates/formats/hwp" }
+designllm-pptx = { path = "crates/formats/pptx" }
+designllm-slides = { path = "crates/slides" }
+designllm-figures = { path = "crates/figures" }
+designllm-canvas = { path = "crates/canvas" }
+designllm-sources = { path = "crates/sources" }
+designllm-web-preview = { path = "crates/web-preview" }
+designllm-bridge = { path = "crates/bridge" }
+designllm-host = { path = "crates/host" }
+designllm-runtimes = { path = "crates/runtimes" }
+designllm-desktop = { path = "crates/desktop" }
+designllm-application = { path = "crates/application", default-features = false }
+
+[profile.dev]
+debug = 0
+incremental = true
+
+[profile.test]
+debug = 0
+incremental = true
+
+[profile.release]
+opt-level = 2
+debug = 0
+strip = "debuginfo"
+codegen-units = 8
+

@@ -1,0 +1,17 @@
+[package]
+name = "designllm-slides"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Slides engine: native PPTX-backed pages, text, shapes, pictures, notes, and rendering through the shared renderer"
+
+[dependencies]
+designllm-contracts.workspace = true
+designllm-package.workspace = true
+designllm-pptx.workspace = true
+# Shaping, and font-name matching (`face_matches_family`), as the flow and canvas engines use it.
+designllm-render.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true

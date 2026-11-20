@@ -1,0 +1,14 @@
+[package]
+name = "designllm-flow"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+designllm-contracts.workspace = true
+# Shared font naming (face_matches_family) for the substitution report; CONTRACTS.md §8 allows contracts+render <- flow.
+designllm-render.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true

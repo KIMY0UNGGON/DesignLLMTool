@@ -1,0 +1,13 @@
+[package]
+name = "designllm-package"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Safe OPC/ZIP package container and byte-span XML patch helpers shared by DesignLLMTool format engines"
+
+[dependencies]
+designllm-contracts.workspace = true
+roxmltree = "0.21.2"
+# MIT, MSRV 1.88. Deflate only (zlib-rs backend); no encryption, bzip2, zstd, or xz codecs.
+zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }

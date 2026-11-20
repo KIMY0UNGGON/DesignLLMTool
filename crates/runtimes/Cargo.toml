@@ -1,0 +1,22 @@
+[package]
+name = "designllm-runtimes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Claude Code, Codex CLI, and mock agent runtimes: detection, exact model/effort invocation, job-owned process trees"
+
+[dependencies]
+designllm-contracts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Pinned: job objects (kill owned process tree), suspended spawn, thread enumeration. MIT OR Apache-2.0, MSRV 1.71.
+windows-sys = { version = "=0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }

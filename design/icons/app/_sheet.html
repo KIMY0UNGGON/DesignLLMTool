@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>앱 아이콘 점검</title>
+<style>
+body{margin:0;background:#FFFFFF;color:#161B26;font:12px/16px 'Pretendard','Malgun Gothic',system-ui,sans-serif;width:656px}
+.light{--sub:#687080}
+.dark{--sub:#8A92A1}
+.bar{display:flex;align-items:center;gap:44px;height:80px;padding:0 24px}
+.scale{display:flex;align-items:center;gap:14px}
+.scale span{width:36px;color:var(--sub)}
+img,canvas{display:block}
+.px{padding:20px 24px 24px}
+.grid{display:grid;grid-template-columns:72px repeat(4,auto);column-gap:0;row-gap:0;justify-content:start}
+.head{padding:0 0 8px 16px;color:#687080}
+.lab{display:flex;align-items:center;padding-left:12px;font-size:11px;color:var(--sub)}
+.cell{display:flex;align-items:center;gap:12px;padding:12px 16px}
+</style>
+</head>
+<body>
+<section>
+  <div class="bar light" style="background:#FFFFFF">
+    <div class="scale"><span>100%</span><img src="app-16.svg" width="16" height="16" alt=""><img src="app-24.svg" width="24" height="24" alt=""></div>
+    <div class="scale"><span>150%</span><img src="app-24.svg" width="24" height="24" alt=""><canvas data-src="app-48.svg" data-n="48" data-out="36" data-smooth="1"></canvas></div>
+    <div class="scale"><span>200%</span><img src="app-32.svg" width="32" height="32" alt=""><img src="app-48.svg" width="48" height="48" alt=""></div>
+  </div>
+  <div class="bar light" style="background:#F3F3F3">
+    <div class="scale"><span>100%</span><img src="app-16.svg" width="16" height="16" alt=""><img src="app-24.svg" width="24" height="24" alt=""></div>
+    <div class="scale"><span>150%</span><img src="app-24.svg" width="24" height="24" alt=""><canvas data-src="app-48.svg" data-n="48" data-out="36" data-smooth="1"></canvas></div>
+    <div class="scale"><span>200%</span><img src="app-32.svg" width="32" height="32" alt=""><img src="app-48.svg" width="48" height="48" alt=""></div>
+  </div>
+  <div class="bar dark" style="background:#202020">
+    <div class="scale"><span>100%</span><img src="app-16.svg" width="16" height="16" alt=""><img src="app-24.svg" width="24" height="24" alt=""></div>
+    <div class="scale"><span>150%</span><img src="app-24.svg" width="24" height="24" alt=""><canvas data-src="app-48.svg" data-n="48" data-out="36" data-smooth="1"></canvas></div>
+    <div class="scale"><span>200%</span><img src="app-32.svg" width="32" height="32" alt=""><img src="app-48.svg" width="48" height="48" alt=""></div>
+  </div>
+  <div class="bar dark" style="background:#000000">
+    <div class="scale"><span>100%</span><img src="app-16.svg" width="16" height="16" alt=""><img src="app-24.svg" width="24" height="24" alt=""></div>
+    <div class="scale"><span>150%</span><img src="app-24.svg" width="24" height="24" alt=""><canvas data-src="app-48.svg" data-n="48" data-out="36" data-smooth="1"></canvas></div>
+    <div class="scale"><span>200%</span><img src="app-32.svg" width="32" height="32" alt=""><img src="app-48.svg" width="48" height="48" alt=""></div>
+  </div>
+</section>
+<section class="px">
+  <div class="grid" id="px"></div>
+</section>
+<script>
+const bgs = [['#FFFFFF', 'light'], ['#F3F3F3', 'light'], ['#202020', 'dark'], ['#000000', 'dark']];
+const sizes = [16, 24, 32, 48];
+const grid = document.getElementById('px');
+grid.insertAdjacentHTML('beforeend', '<div></div>' + sizes.map((n) => `<div class="head">${n} px</div>`).join(''));
+for (const [bg, cls] of bgs) {
+  grid.insertAdjacentHTML('beforeend', `<div class="lab ${cls}" style="background:${bg}">${bg}</div>` + sizes.map((n) =>
+    `<div class="cell" style="background:${bg}"><img src="app-${n}.svg" width="${n}" height="${n}" alt=""><canvas data-src="app-${n}.svg" data-n="${n}" data-out="${n * 2}" data-bg="${bg}"></canvas></div>`).join(''));
+}
+// 1x raster drawn into a canvas, then scaled with nearest neighbour (data-smooth: resampled like the OS does for 36 px)
+for (const c of document.querySelectorAll('canvas')) {
+  const n = +c.dataset.n, out = +c.dataset.out, smooth = c.dataset.smooth === '1';
+  c.width = out; c.height = out;
+  const img = new Image();
+  img.onload = () => {
+    const g = c.getContext('2d');
+    const t = document.createElement('canvas'); t.width = n; t.height = n;
+    const tg = t.getContext('2d');
+    if (!smooth) { tg.fillStyle = c.dataset.bg; tg.fillRect(0, 0, n, n); }
+    tg.drawImage(img, 0, 0, n, n);
+    g.imageSmoothingEnabled = smooth; g.imageSmoothingQuality = 'high';
+    g.drawImage(t, 0, 0, out, out);
+  };
+  img.src = c.dataset.src;
+}
+</script>
+</body>
+</html>

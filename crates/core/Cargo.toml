@@ -1,0 +1,22 @@
+[package]
+name = "designllm-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+designllm-contracts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+# Transactional store: SQLite 3.54.1 statically linked (no DLL). MIT, rust-version 1.89.
+# Only one `links = "sqlite3"` crate may exist in the workspace graph.
+rusqlite = { version = "=0.42.0", default-features = false, features = ["bundled", "backup"] }
+
+[dev-dependencies]
+unicode-segmentation.workspace = true
+schemars.workspace = true
+designllm-figures = { workspace = true }
+designllm-slides = { workspace = true }

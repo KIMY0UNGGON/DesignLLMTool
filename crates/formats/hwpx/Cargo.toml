@@ -1,0 +1,25 @@
+[package]
+name = "designllm-hwpx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Native HWPX engine: package-preserving byte-span edits, verified same-format save, flow layout and export"
+
+[dependencies]
+designllm-contracts.workspace = true
+designllm-package.workspace = true
+designllm-flow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true
+# MIT OR Apache-2.0, MSRV 1.60. Read-only XML tree with byte positions (`positions` feature, default on).
+# Used for model reading, span lookup for patches, and the reparse in verify_saved.
+roxmltree = "0.21.2"
+# MIT, MSRV 1.88. Only used to write the initial archive for a new document, because the shared
+# package writer always deflates entries and an HWPX `mimetype` must be stored. Same features as designllm-package.
+zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[dev-dependencies]
+# Real renderer for the layout and visual export tests (bundled OFL Pretendard fonts).
+designllm-render.workspace = true

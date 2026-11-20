@@ -1,0 +1,20 @@
+[package]
+name = "designllm-sources"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+# PDF evidence extraction (G0 candidate A: lopdf parser + own text state machine).
+# lopdf 0.42.0 (MIT, MSRV 1.85) with default features off: no chrono/jiff/rayon/time.
+# flate2 1.1.11 (MIT OR Apache-2.0, MSRV 1.67): strict FlateDecode, already in the lock through lopdf.
+[dependencies]
+designllm-contracts.workspace = true
+lopdf = { version = "0.42", default-features = false }
+flate2 = "1"
+
+[dev-dependencies]
+# Test-only: reads fixtures/fixture-manifest.json. Workspace serde_json (MIT OR Apache-2.0), already in the lock.
+serde_json.workspace = true
+# Test-only: reads Windows Arial advance widths to check the built-in Helvetica table (MIT OR Apache-2.0).
+ttf-parser = "0.25"
