@@ -37,12 +37,13 @@ use designllm_contracts::{
     new_id, CoreEvent, DltError, ErrorCode, IpcMessage, JobRef, JobStatus, RpcRequest, RpcResponse, UiStateView,
     MAX_FRAME_BYTES, PROTOCOL_VERSION, SCHEMA_VERSION,
 };
-use designllm_core::{ClientConnection, Dispatch, PdfCancel, PdfRead, RenderJob, Workspace};
+use designllm_core::{ClientConnection, Dispatch, PdfCancel, PdfRead, RenderJob, RenderedPage, Workspace};
 use serde_json::{json, Value};
 
 use crate::gui_identity;
 use crate::identity::Identity;
 use crate::jobs;
+use crate::rasters::{permits_for, RasterPermits};
 use crate::shared::{lock, Listed, Shared, Subscriber};
 use crate::HostMode;
 
@@ -288,12 +289,10 @@ impl LaneContext {
                 // A render draws without the core lock and without the turn, as a PDF read runs (68i): other connections are
                 // served, and events committed meanwhile reach this connection.
                 drop(turn);
-                // At most `RASTER_PERMITS` renders draw at once host-wide; a wait ends when this connection closes or the host stops.
+                // Drawing renders take raster permits host-wide (`rasters.rs`). A wait ends when this connection closes or the host stops;
+                // a job's cancel does not end it.
                 let stop = || cancel.is_canceled() || self.shared.is_stopping();
-                let drawn = match self.shared.rasters.acquire(stop) {
-                    Some(_permit) => job.run(),
-                    None => Err(DltError::new(ErrorCode::Canceled, "the render was canceled before it ran: the connection or the host is closing")),
-                };
+                let drawn = draw(&job, &self.shared.rasters, stop);
                 turn = lock(&self.link.turn);
                 self.shared.core_call(|ws| ws.finish_render(job, drawn))
             }
@@ -353,6 +352,20 @@ fn count_down(waiting: &AtomicUsize) {
 fn report(shared: &Shared, reported: &Mutex<Option<ClientConnection>>, record: ClientConnection) {
     shared.core_call(|ws| ws.client_connected(record.clone()));
     *lock(reported) = Some(record);
+}
+
+/// Draws a render job outside the core. A job that draws nothing (its pixels are held, `RenderJob::draw_pixels` is None) takes no
+/// raster permit, so it is answered while every permit is taken (68i). A job that draws takes permits by its size; the wait ends
+/// when `stop` is true.
+fn draw(job: &RenderJob, rasters: &RasterPermits, stop: impl Fn() -> bool) -> Result<RenderedPage, DltError> {
+    // A request that does not fit its page is refused before any permit is waited for.
+    let Some(pixels) = job.draw_pixels()? else {
+        return job.run();
+    };
+    match rasters.acquire(permits_for(pixels), stop) {
+        Some(_permit) => job.run(),
+        None => Err(DltError::new(ErrorCode::Canceled, "the render was canceled before it ran: the connection or the host is closing")),
+    }
 }
 
 struct Connection {
@@ -872,3 +885,7 @@ fn mode_name(mode: HostMode) -> &'static str {
 #[cfg(test)]
 #[path = "conn_exposure_tests.rs"]
 mod exposure_tests;
+
+#[cfg(test)]
+#[path = "conn_draw_tests.rs"]
+mod draw_tests;

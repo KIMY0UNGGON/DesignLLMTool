@@ -3189,7 +3189,7 @@ impl DesktopApp {
                 // Only the box takes clicks, as the egui check box did: the rest of the row is not a target.
                 ui.add_enabled_ui(editable, |ui| {
                     ui.set_max_width(theme::ICON_SMALL);
-                    widgets::checkbox(ui, palette, &mut on, "")
+                    widgets::checkbox_recorded(ui, palette, &mut on, "", &format!("{label} 가이드"))
                 })
                 .inner
                 .changed()

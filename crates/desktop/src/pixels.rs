@@ -223,3 +223,7 @@ fn read_asset(backend: &dyn Backend, asset: &AssetRef) -> DltResult<Vec<u8>> {
 #[cfg(test)]
 #[path = "pixels_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pixels_host_tests.rs"]
+mod host_tests;

@@ -264,12 +264,10 @@ impl DesktopApp {
         let mut remove = None;
         // A binding row is named by its source's text (its id when it has none), cut to the label column.
         let source_name = |id: &str| candidates.iter().find(|(candidate, _)| candidate == id).map_or(id, |(_, text)| if text.is_empty() { id } else { text.as_str() }).to_owned();
-        // A row's stepper is keyed by its source and, among the rows with that source, its place, so that no two rows share a
-        // key, two rows with the same source included. The key does not keep the focus when an earlier row is removed: the
-        // stepper's field takes its id from `ui.unique_id()`, which also counts what was drawn before the row, so every later
-        // row's field gets a new id and a focus in one of them is dropped, as it was without the key (measured 2026-11-21, task
-        // 68h-c). Among rows with the same source the key itself moves too: removing one gives each later one the key of the row
-        // before it. Bindings carry no id of their own.
+        // A row's stepper is named by the group, its source and, among the rows with that source, its place, so that no two
+        // steppers share an id, two rows with the same source included. A row above it that is removed does not move it unless
+        // both have the same source: then each later row of that source takes the place of the one before it. Bindings carry no
+        // id of their own.
         let keys: Vec<(String, usize)> = draft
             .value
             .iter()
@@ -279,7 +277,7 @@ impl DesktopApp {
         for (index, ((source, column), key)) in draft.value.iter_mut().zip(keys).enumerate() {
             let shown = widgets::truncate_to_width(ui, &source_name(source), theme::LABEL_COLUMN - 8.0, palette.ink_2);
             row(ui, palette, Some(shown.as_str()), |ui| {
-                ui.push_id(key, |ui| widgets::number_stepper(ui, palette, column, 0..=LAST_COLUMN, "열 "));
+                widgets::number_stepper(ui, palette, (node_id, key), column, 0..=LAST_COLUMN, "열 ");
                 if widgets::labeled_button(ui, palette, None, "삭제", false).clicked() {
                     remove = Some(index);
                 }
@@ -307,7 +305,7 @@ impl DesktopApp {
                 }
             });
             row(ui, palette, Some("열"), |ui| {
-                widgets::number_stepper(ui, palette, &mut add.1, 0..=LAST_COLUMN, "");
+                widgets::number_stepper(ui, palette, (node_id, "repeat-add-column"), &mut add.1, 0..=LAST_COLUMN, "");
             });
             if row(ui, palette, Some(""), |ui| widgets::labeled_button(ui, palette, None, "연결 추가", false).clicked()) {
                 draft.value.push(add.clone());
@@ -357,7 +355,7 @@ impl DesktopApp {
             clearing: false,
         });
         row(ui, palette, Some("열"), |ui| {
-            widgets::number_stepper(ui, palette, &mut draft.form.column, 0..=LAST_COLUMN, "");
+            widgets::number_stepper(ui, palette, (node_id, "repeat-condition-column"), &mut draft.form.column, 0..=LAST_COLUMN, "");
         });
         let op_label = OPS.iter().find(|(name, _)| *name == draft.form.op).map_or("", |(_, label)| label);
         let op_labels: Vec<&str> = OPS.iter().map(|(_, label)| *label).collect();

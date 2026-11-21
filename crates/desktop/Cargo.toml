@@ -44,5 +44,7 @@ designllm-docx.workspace = true
 designllm-figures.workspace = true
 designllm-hwp.workspace = true
 designllm-hwpx.workspace = true
+# The real host in this process, so the pixel path is tested end to end (68m item 4). Tests only.
+designllm-host.workspace = true
 designllm-slides.workspace = true
 designllm-sources.workspace = true

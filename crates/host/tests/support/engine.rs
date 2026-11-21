@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use designllm_contracts::{
     new_id, Artifact, ArtifactBody, ArtifactKind, CanvasDocument, CapabilityReport, ContentDigest, CreateRequest,
     DltError, DltResult, Diagnostic, Editability, EncodedOutput, EngineAdapter, EngineContext, ErrorCode, ExportRequest, Id,
-    Node, NodeKind, Operation, OpenInput, Page, PreparedChange, PreservationVerification, Rect, RenderScene, Size,
+    Node, NodeKind, Operation, OpenInput, Page, PreparedChange, PreservationVerification, Rect, RenderPage, RenderScene, Size,
     Style,
 };
 use serde_json::{json, Value};
@@ -180,8 +180,18 @@ impl EngineAdapter for TestCanvasEngine {
         Ok(ContentDigest { content, data: String::new() })
     }
 
-    fn layout(&self, _artifact: &Artifact, _context: &EngineContext<'_>) -> DltResult<RenderScene> {
-        Err(DltError::unsupported("the test engine has no layout"))
+    /// One page per canvas page, without primitives: a render has a page to draw (the host's draw test).
+    fn layout(&self, artifact: &Artifact, _context: &EngineContext<'_>) -> DltResult<RenderScene> {
+        let ArtifactBody::Canvas(doc) = &artifact.body else {
+            return Err(DltError::invalid("not a canvas"));
+        };
+        let pages = doc
+            .pages
+            .iter()
+            .enumerate()
+            .map(|(index, page)| RenderPage { id: page.id.clone(), page_index: index as u32, size: page.size, primitives: vec![], source_map: vec![] })
+            .collect();
+        Ok(RenderScene { pages, font_fingerprint: "host-test-fonts".into(), diagnostics: vec![], metadata: BTreeMap::new(), links: vec![] })
     }
 
     fn encode_native(&self, artifact: &Artifact, _context: &EngineContext<'_>) -> DltResult<EncodedOutput> {

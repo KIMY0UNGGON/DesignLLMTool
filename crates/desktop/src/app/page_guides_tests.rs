@@ -543,3 +543,24 @@ fn a_drop_after_a_zoom_change_snaps_with_the_window_of_the_starting_zoom() {
     assert_ne!(wanted, guide);
     assert_eq!(x, guide, "6 physical px at the starting zoom is inside its 8 px window");
 }
+
+/// The two guide check boxes are recorded under their names (`열 가이드`, `행 가이드`) and draw no text of their own: the row
+/// labels `열` and `행` are the only words beside them.
+#[test]
+fn the_guide_check_boxes_are_recorded_by_name_and_draw_no_text_of_their_own() {
+    let mut host = Host::start();
+    let canvas = canvas_with_three_boxes(&mut host, [0, 1_000_000, 3_000_000]);
+    let mut window = Window::open(&mut host, &canvas);
+    crate::ui_record::begin();
+    let app = &mut window.app;
+    let output = window.ctx.run(screen(1.0, 1280.0, 2000.0), |ctx| {
+        app.draw_frame(ctx);
+    });
+    let controls = crate::ui_record::finish();
+    let texts = super::test_support::drawn_text(&output);
+    for name in ["열 가이드", "행 가이드"] {
+        assert!(controls.iter().any(|control| control.label == name), "{name} is recorded: {:?}", controls.iter().map(|c| &c.label).collect::<Vec<_>>());
+        assert!(!texts.iter().any(|text| text == name), "{name} is not drawn as text");
+    }
+    assert!(texts.iter().any(|text| text == "열") && texts.iter().any(|text| text == "행"), "the row labels are drawn: {texts:?}");
+}

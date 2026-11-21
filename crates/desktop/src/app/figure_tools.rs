@@ -257,12 +257,16 @@ impl CsvImportDraft {
             .any(|column| column.id == self.x_column && column.data_type == "numeric")
     }
 
-    /// Why no chart can be made from these columns, when the table itself is the reason.
+    /// Why no chart can be made from these columns or units, when the table itself or a missing unit is the reason.
     fn blocker(&self) -> Option<&'static str> {
         if self.x_column.is_empty() {
             Some("이 종류의 X축으로 쓸 수 있는 열이 없습니다")
         } else if self.y_column.is_empty() {
             Some("Y축으로 쓸 수 있는 숫자 열이 없습니다")
+        } else if self.y_unit.trim().is_empty() {
+            Some("Y축 단위를 입력해야 차트를 만들 수 있습니다")
+        } else if self.x_is_numeric() && self.x_unit.trim().is_empty() {
+            Some("X축 단위를 입력해야 차트를 만들 수 있습니다")
         } else {
             None
         }
@@ -2015,6 +2019,7 @@ mod tests {
         draft.plot_kind = "bar".into();
         draft.repair_columns();
         assert!(draft.plot_spec(reference()).is_none(), "the y unit is required");
+        assert_eq!(draft.blocker(), Some("Y축 단위를 입력해야 차트를 만들 수 있습니다"), "the dialog says which unit is missing");
         draft.y_unit = "  mg/L ".into();
         let plot = draft.plot_spec(reference()).expect("category x needs no x unit");
         assert_eq!(plot.kind, "bar");
@@ -2027,6 +2032,7 @@ mod tests {
         numeric_x.repair_columns();
         numeric_x.y_unit = "%".into();
         assert!(numeric_x.plot_spec(reference()).is_none(), "a numeric x axis needs its own unit");
+        assert_eq!(numeric_x.blocker(), Some("X축 단위를 입력해야 차트를 만들 수 있습니다"), "the x unit is named too");
         numeric_x.x_unit = "mg".into();
         let plot = numeric_x.plot_spec(reference()).expect("both units present");
         assert_eq!(plot.x_axis.unit.as_deref(), Some("mg"));

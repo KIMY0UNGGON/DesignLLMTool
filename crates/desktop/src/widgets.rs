@@ -603,7 +603,10 @@ const NUMBER_FIELD_WIDTH: f32 = 36.0;
 /// button, a field the number is typed into, and a plus button. The buttons take Tab focus and say what they do
 /// (`1 줄이기`, `1 늘리기`); a typed number counts once it parses, and leaving the field shows the value again. The value is
 /// kept inside `range`. Returns true when this frame changed it.
-pub fn number_stepper(ui: &mut Ui, palette: &Palette, value: &mut u32, range: RangeInclusive<u32>, prefix: &str) -> bool {
+///
+/// `id` names the field and what it keeps (its focus, a typed text not yet parsed). It must be unique on the screen and must not
+/// depend on what else is drawn: `ui.unique_id()` counts the widgets before it, so removing an earlier row would move it.
+pub fn number_stepper(ui: &mut Ui, palette: &Palette, id: impl std::hash::Hash, value: &mut u32, range: RangeInclusive<u32>, prefix: &str) -> bool {
     let (low, high) = (*range.start(), *range.end());
     let before = *value;
     *value = (*value).clamp(low, high);
@@ -613,20 +616,22 @@ pub fn number_stepper(ui: &mut Ui, palette: &Palette, value: &mut u32, range: Ra
             ui.label(egui::RichText::new(prefix.trim()).font(theme::font(theme::Type::Caption)).color(palette.ink_2));
             ui.add_space(4.0);
         }
-        // `unique_id`: the rows of a panel share their stable id, so two steppers would share a field.
-        let id = ui.unique_id().with("number-stepper");
+        let id = egui::Id::new(("number-stepper", id));
         let draft_id = id.with("draft");
         if step_button(ui, palette, false, "1 줄이기").clicked() {
             *value = value.saturating_sub(1).max(low);
             ui.data_mut(|data| data.remove::<String>(draft_id));
         }
         let mut text = ui.data(|data| data.get_temp::<String>(draft_id)).unwrap_or_else(|| value.to_string());
+        // The field is recorded with its value (`열 1`), so `ui.layout` tells one stepper's number from another's.
+        let record = if prefix.trim().is_empty() { value.to_string() } else { format!("{} {}", prefix.trim(), value) };
         let response = edit_line(ui, palette, &mut text, Field {
             width: NUMBER_FIELD_WIDTH,
             height: Some(theme::MINI_BUTTON),
             margin: Some(egui::Margin::symmetric(4, 2)),
             align: egui::Align::Center,
             id: Some(id),
+            record: Some(&record),
             ..Default::default()
         });
         if response.changed() {
@@ -1290,6 +1295,12 @@ pub fn select_menu(ui: &mut Ui, palette: &Palette, shown: &str, options: &[&str]
 /// and the label after it 8 apart, body `ink`, wrapped to the width. Rows are at least 28 high (a field's height). Pressing
 /// the row toggles `checked`; the focus ring is the 2 px `accent` ring 2 px outside the box (§5.4).
 pub fn checkbox(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str) -> Response {
+    checkbox_recorded(ui, palette, checked, label, label)
+}
+
+/// `checkbox` whose name is `record` where the drawn `label` is empty or not the name (a box beside a row label). The name is
+/// the accessible name and the `ui.layout` record; the drawn text stays `label`.
+pub fn checkbox_recorded(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str, record: &str) -> Response {
     let width = ui.available_width().min(DIALOG_FORM_WIDTH);
     let enabled = ui.is_enabled();
     // A disabled check box paints `ink-3` and its own `line` and `surface-3`: the half opacity of a disabled ui is taken back.
@@ -1319,8 +1330,8 @@ pub fn checkbox(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str)
     }
     ui.set_opacity(opacity);
     let state = *checked;
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, state, label));
-    crate::ui_record::note(ui, label, &response);
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, state, record));
+    crate::ui_record::note(ui, record, &response);
     response
 }
 
@@ -1728,7 +1739,7 @@ mod tests {
             stepper_frame(&ctx, &mut value, events);
         }
         let (_, shapes) = recorded(&ctx, Vec::new(), |ui, palette| {
-            number_stepper(ui, palette, &mut value, 0..=5, "열");
+            number_stepper(ui, palette, "stepper", &mut value, 0..=5, "열");
         });
         let texts = drawn_texts(&shapes);
         assert!(texts.iter().any(|text| text == "3") && !texts.iter().any(|text| text == "x"), "the value is shown again: {texts:?}");
@@ -1743,9 +1754,40 @@ mod tests {
             stepper_frame(&ctx, &mut value, events);
         }
         let (_, shapes) = recorded(&ctx, Vec::new(), |ui, palette| {
-            number_stepper(ui, palette, &mut value, 0..=5, "열");
+            number_stepper(ui, palette, "stepper", &mut value, 0..=5, "열");
         });
         assert!(drawn_texts(&shapes).iter().any(|text| text == "3"), "the value is shown again after an empty field");
+    }
+
+    #[test]
+    fn a_stepper_keeps_its_focus_when_a_stepper_drawn_before_it_is_removed() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let select_all = egui::Event::Key { key: egui::Key::A, physical_key: Some(egui::Key::A), pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        let (mut first, mut second) = (1_u32, 2_u32);
+        let frame = |ctx: &egui::Context, first: &mut u32, second: &mut u32, with_first: bool, events: Vec<egui::Event>| {
+            recorded(ctx, events, |ui, palette| {
+                if with_first {
+                    number_stepper(ui, palette, "a", first, 0..=5, "열");
+                }
+                number_stepper(ui, palette, "b", second, 0..=5, "열");
+            })
+            .0
+        };
+        let controls = frame(&ctx, &mut first, &mut second, true, Vec::new());
+        let minus = controls.iter().filter(|control| control.label == "1 줄이기").nth(1).expect("the second stepper is drawn").rect;
+        let plus = controls.iter().filter(|control| control.label == "1 늘리기").nth(1).expect("the second stepper is drawn").rect;
+        let field = Pos2::new((minus.right() + plus.left()) / 2.0, minus.center().y);
+        for events in pointer_click(field) {
+            frame(&ctx, &mut first, &mut second, true, events);
+        }
+        frame(&ctx, &mut first, &mut second, true, vec![select_all.clone(), egui::Event::Text("4".into())]);
+        assert_eq!(second, 4, "the second field has the focus and takes the typed number");
+        // The first stepper goes: the second keeps its id, so its field keeps the focus and takes the next typed number.
+        frame(&ctx, &mut first, &mut second, false, Vec::new());
+        assert!(ctx.memory(|memory| memory.has_focus(egui::Id::new(("number-stepper", "b")))), "the focus stays in the second field");
+        frame(&ctx, &mut first, &mut second, false, vec![select_all, egui::Event::Text("3".into())]);
+        assert_eq!(second, 3, "the typed number reaches the second stepper after the first one is removed");
     }
 
     #[test]
@@ -1783,7 +1825,7 @@ mod tests {
     fn stepper_frame(ctx: &egui::Context, value: &mut u32, events: Vec<egui::Event>) -> (Vec<crate::ui_record::Control>, bool) {
         let mut changed = false;
         let (controls, _) = recorded(ctx, events, |ui, palette| {
-            changed = number_stepper(ui, palette, value, 0..=5, "열");
+            changed = number_stepper(ui, palette, "stepper", value, 0..=5, "열");
         });
         (controls, changed)
     }

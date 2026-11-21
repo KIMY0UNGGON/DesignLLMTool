@@ -869,6 +869,7 @@ dependencies = [
  "designllm-docx",
  "designllm-figures",
  "designllm-flow",
+ "designllm-host",
  "designllm-hwp",
  "designllm-hwpx",
  "designllm-render",

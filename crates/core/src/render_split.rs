@@ -78,6 +78,28 @@ impl RenderJob {
         Ok(RenderedPage { value, fresh: Some((snapshot, preview)), pixels: pixels.map(Arc::new) })
     }
 
+    /// The pixels this job draws, or None when it draws nothing: a `render.pixels` whose pixels are held is answered from them.
+    /// A host takes its raster permits by this count (68i). A page or region that does not fit is refused here, so a host
+    /// does not wait for permits to refuse it.
+    pub fn draw_pixels(&self) -> DltResult<Option<u64>> {
+        if self.cached.is_some() && self.held.is_some() {
+            return Ok(None);
+        }
+        let page = self
+            .entry
+            .scene
+            .pages
+            .iter()
+            .find(|p| p.page_index == self.page_index)
+            .ok_or_else(|| invalid(format!("page_index {} does not exist", self.page_index)))?;
+        if let Some(region) = self.region {
+            check_region(region, page.size, self.page_index)?;
+        }
+        let (width, height) = self.region.map_or((page.size.width, page.size.height), |r| (r.width, r.height));
+        let dpi = self.profile.dpi;
+        Ok(Some(u64::from(pixels(width, dpi)?) * u64::from(pixels(height, dpi)?)))
+    }
+
     fn draw(&self) -> DltResult<(RenderSnapshot, Option<(AssetRef, Arc<Vec<u8>>)>, Option<RasterPixels>)> {
         page_snapshot(&*self.renderer, &self.entry.scene, &*self.entry.assets, &self.artifact_id, self.revision, self.page_index, &self.profile, self.region, self.pixels)
     }
@@ -203,6 +225,8 @@ impl Workspace {
     /// The response to a render run by [`RenderJob::run`], and the pixels of `render.pixels` to send after it. The snapshot is
     /// cached under the request's key, so later hit tests and `asset.read` of its preview find it. A job-bound request is checked
     /// again first: its job's scope may have changed while it was drawn (as `finish_pdf_read`); a refused one caches nothing.
+    /// The check looks only at the job and its attempt rows and at the artifact (`bound_scope`): an attempt that was canceled
+    /// while the page was drawn is not refused here (34d and 68i have the same rule).
     pub fn finish_render(&mut self, job: Box<RenderJob>, rendered: DltResult<RenderedPage>) -> (RpcResponse, Option<Arc<RasterPixels>>) {
         let RenderJob { id, key, pixels: raw, bound, .. } = *job;
         let method = if raw { PIXELS } else { GET };
