@@ -16,7 +16,8 @@
 //! the queued requests' events, or stop the host, which is meant to overtake. Pushed events wait while a core
 //! request runs, so an event of a change follows that change's response. A PDF read (`source.extract_pdf`) runs
 //! between two core calls, holds neither the core lock nor the event turn while the reader runs, and stops when
-//! its connection ends, its job is canceled, or the host stops.
+//! its connection ends, its job is canceled, or the host stops. A render that is not cached (`render.get`, and the gui's
+//! `render.pixels`, whose raw pixels go as binary frames right before its response) draws the same way (68i).
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -24,7 +25,7 @@ use std::sync::{Arc, Mutex, TryLockError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use designllm_bridge::frame::encode_frame;
+use designllm_bridge::frame::{binary_header, encode_frame};
 use designllm_bridge::pipe::{Pipe, ReadOutcome};
 use designllm_bridge::review_gate;
 use designllm_bridge::operation_exposure;
@@ -33,10 +34,10 @@ use designllm_bridge::protocol::{
     METHOD_STOP,
 };
 use designllm_contracts::{
-    new_id, CoreEvent, DltError, ErrorCode, IpcMessage, JobRef, JobStatus, RpcRequest, RpcResponse, UiStateView, PROTOCOL_VERSION,
-    SCHEMA_VERSION,
+    new_id, CoreEvent, DltError, ErrorCode, IpcMessage, JobRef, JobStatus, RpcRequest, RpcResponse, UiStateView,
+    MAX_FRAME_BYTES, PROTOCOL_VERSION, SCHEMA_VERSION,
 };
-use designllm_core::{ClientConnection, Dispatch, PdfCancel, PdfRead, Workspace};
+use designllm_core::{ClientConnection, Dispatch, PdfCancel, PdfRead, RenderJob, Workspace};
 use serde_json::{json, Value};
 
 use crate::gui_identity;
@@ -130,6 +131,20 @@ impl Link {
         self.pipe
             .write_all(&frame, WRITE_DEADLINE)
             .map_err(|e| protocol::error(ErrorCode::Io, format!("write to client failed: {e}"), true))
+    }
+
+    /// `message` after `binary` as binary frames of at most `MAX_FRAME_BYTES` each, written under one hold of the write lock:
+    /// no other frame comes between them, so the client hands the binary frames to that response (68i, `render.pixels`).
+    fn send_after_binary(&self, message: &IpcMessage, binary: &[u8]) -> Result<(), DltError> {
+        let payload = protocol::encode(message)?;
+        let frame = encode_frame(&payload)?;
+        let failed = |e: std::io::Error| protocol::error(ErrorCode::Io, format!("write to client failed: {e}"), true);
+        let _whole_message = lock(&self.write);
+        for chunk in binary.chunks(MAX_FRAME_BYTES) {
+            self.pipe.write_all(&binary_header(chunk.len())?, WRITE_DEADLINE).map_err(failed)?;
+            self.pipe.write_all(chunk, WRITE_DEADLINE).map_err(failed)?;
+        }
+        self.pipe.write_all(&frame, WRITE_DEADLINE).map_err(failed)
     }
 }
 
@@ -264,10 +279,24 @@ impl LaneContext {
                     }
                     Started::ReadPdf(read, listed)
                 }
+                Dispatch::Render(job) => Started::Render(job),
             }
         });
-        let response = match start {
-            Started::Answered(response) => response,
+        let (response, binary) = match start {
+            Started::Answered(response) => (response, None),
+            Started::Render(job) => {
+                // A render draws without the core lock and without the turn, as a PDF read runs (68i): other connections are
+                // served, and events committed meanwhile reach this connection.
+                drop(turn);
+                // At most `RASTER_PERMITS` renders draw at once host-wide; a wait ends when this connection closes or the host stops.
+                let stop = || cancel.is_canceled() || self.shared.is_stopping();
+                let drawn = match self.shared.rasters.acquire(stop) {
+                    Some(_permit) => job.run(),
+                    None => Err(DltError::new(ErrorCode::Canceled, "the render was canceled before it ran: the connection or the host is closing")),
+                };
+                turn = lock(&self.link.turn);
+                self.shared.core_call(|ws| ws.finish_render(job, drawn))
+            }
             Started::ReadPdf(read, listed) => {
                 // The reader runs without the core lock and without the turn: other connections are served, and events
                 // committed meanwhile reach this connection.
@@ -276,7 +305,7 @@ impl LaneContext {
                     .run(|| read.run(cancel))
                     .unwrap_or_else(|| Err(DltError::new(ErrorCode::Canceled, "the PDF read was canceled before it ran")));
                 turn = lock(&self.link.turn);
-                self.shared.core_call(|ws| ws.finish_pdf_read(read, reading))
+                (self.shared.core_call(|ws| ws.finish_pdf_read(read, reading)), None)
             }
         };
         // A committed cancel ends the attempt's process tree and its PDF reads now. The sweeper would end the tree within one tick.
@@ -294,7 +323,12 @@ impl LaneContext {
                 report(&self.shared, &self.reported, record);
             }
         }
-        let sent = self.link.send(&IpcMessage::Response(response)).is_ok();
+        let message = IpcMessage::Response(response);
+        let sent = match binary {
+            Some(pixels) => self.link.send_after_binary(&message, &pixels.rgba_premultiplied),
+            None => self.link.send(&message),
+        }
+        .is_ok();
         drop(turn);
         sent
     }
@@ -305,6 +339,8 @@ enum Started<'a> {
     Answered(RpcResponse),
     /// A PDF read to run without the core, already listed for cancels.
     ReadPdf(PdfRead, Listed<'a>),
+    /// A render to draw without the core.
+    Render(Box<RenderJob>),
 }
 
 /// Counts one lane request down. It saturates: the lane's end sets the count to 0 while `CoreLane::submit` may still be taking
@@ -742,7 +778,7 @@ impl Connection {
 
 /// Methods that only the desktop app's connection may call (docs/UI_CHANNEL.md). The core answers them to any
 /// unbound connection, so the host decides by role.
-const GUI_ONLY_METHODS: &[&str] = &["ui.state.publish", "ui.command.complete"];
+const GUI_ONLY_METHODS: &[&str] = &["ui.state.publish", "ui.command.complete", "render.pixels"];
 
 /// The refusal for a request only the gui role may make, or None when the request may proceed. `events.poll` is
 /// open to every connection, except a poll of a view (`view_id` or `view_token` given).

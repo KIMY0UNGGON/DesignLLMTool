@@ -15,11 +15,36 @@ use designllm_contracts::figure_rules::{
     DECIMAL_MAX_DIGITS, DIAGRAM_ORIGINS, IMAGE_ROTATION_LIMIT_MILLIDEG, MODEL_PROPOSAL_ORIGIN, PAPER_EVIDENCE_ORIGIN,
     USER_AUTHORED_ORIGIN,
 };
-use eframe::egui::{self, ComboBox, RichText, TextEdit, Ui};
+use eframe::egui::{self, RichText, Ui};
 use serde_json::{json, Value};
 
 use super::{figure_tools::owning_panel, messages::diagnostic_message, truncate, DesktopApp};
-use crate::{commands::CommandSpec, theme};
+use crate::{
+    commands::CommandSpec,
+    theme,
+    widgets::{self, DialogButton},
+};
+
+/// The width of a choice box in the R07 sections, or the row's width when that is less.
+const SELECT_WIDTH: f32 = 160.0;
+/// The width of a number field (crop, rotation, length): seven digits and a point fit inside the field's 8 × 4 margin.
+const NUMBER_WIDTH: f32 = 72.0;
+/// The width of a legend item's colour field (`#RRGGBB`).
+const COLOR_WIDTH: f32 = 96.0;
+/// Room kept for a legend item's `삭제` button.
+const DELETE_ROOM: f32 = 48.0;
+
+/// `width`, or the width of the row (a wrapping row: the whole line) when that is less.
+fn fitted(ui: &Ui, width: f32) -> f32 {
+    width.min(ui.available_width())
+}
+
+/// `edit_line` placed by the row itself: `edit_line` draws in a scope of its own, which a wrapping row does not move to the next
+/// line, so the field's room is taken here first.
+fn wrapped_field(ui: &mut Ui, palette: &theme::Palette, text: &mut String, field: widgets::Field<'_>) -> egui::Response {
+    let size = egui::vec2(field.width, theme::FIELD_HEIGHT);
+    ui.allocate_ui(size, |ui| widgets::edit_line(ui, palette, text, field)).inner
+}
 
 /// The origins a diagram element may take, in the order the window offers them. The codes are the contract's
 /// (`figure_rules`); this table adds only the labels.
@@ -685,17 +710,22 @@ impl DesktopApp {
         self.r07_draw_review(ui, figure);
     }
 
-    /// One apply button of an R07 section. It is enabled while the change is valid and the window may send it. Input the engine
-    /// would refuse shows its words beside the button once the user has changed something; nothing is sent for it.
-    fn r07_control(&mut self, ui: &mut Ui, label: &str, command: &str, change: Change, args: Value, dirty: bool) {
+    /// One button of an R07 section: it reads `label` and is recorded as `record`. The four sections' apply buttons all read
+    /// 적용, so each is recorded under its section (`출처 적용` and so on) and none shares the record of a human-only 적용
+    /// elsewhere; the other buttons are recorded under their words. It is enabled while the change is valid and the window may
+    /// send it. Input the engine would refuse shows its words beside the button once the user has changed something; nothing
+    /// is sent for it.
+    #[allow(clippy::too_many_arguments)]
+    fn r07_control(&mut self, ui: &mut Ui, label: &str, record: &str, command: &str, change: Change, args: Value, dirty: bool) {
         let ready = self.shown_figure_revision().is_some() && self.dataset_edit.is_none();
         let sendable = matches!(change, Ok(Some(_)));
         let refusal = match &change {
             Err(message) if dirty => Some(message.clone()),
             _ => None,
         };
-        ui.horizontal(|ui| {
-            if ui.add_enabled(ready && sendable, egui::Button::new(label)).clicked() {
+        let palette = theme::palette(ui.ctx());
+        ui.horizontal_wrapped(|ui| {
+            if widgets::dialog_button_recorded(ui, &palette, label, record, DialogButton::Plain, ready && sendable).clicked() {
                 self.invoke_ui(command, args);
             }
             if let Some(message) = refusal {
@@ -708,6 +738,7 @@ impl DesktopApp {
         let Some((connector, origin, evidence)) = element_provenance(diagram, element_id) else {
             return;
         };
+        let palette = theme::palette(ui.ctx());
         let key = draft_id("r07-provenance", self.r07_figure_id(), element_id);
         let fresh = ProvenanceDraft::of(origin, evidence);
         let mut draft = ui
@@ -715,21 +746,26 @@ impl DesktopApp {
             .filter(|stored| stored.base == fresh.base)
             .unwrap_or_else(|| fresh.clone());
         ui.label(RichText::new("출처와 근거").strong());
+        let mut options = Vec::new();
+        let mut choices: Vec<Option<String>> = Vec::new();
+        if !connector {
+            options.push("출처 없음");
+            choices.push(None);
+        }
+        for (value, label) in ORIGINS {
+            options.push(label);
+            choices.push(Some(value.to_owned()));
+        }
         ui.horizontal(|ui| {
-            ComboBox::from_id_salt(("r07-origin", element_id))
-                .selected_text(origin_label(draft.origin.as_deref()))
-                .show_ui(ui, |ui| {
-                    if !connector {
-                        ui.selectable_value(&mut draft.origin, None, "출처 없음");
-                    }
-                    for (value, label) in ORIGINS {
-                        ui.selectable_value(&mut draft.origin, Some(value.to_owned()), label);
-                    }
-                });
+            let current = choices.iter().position(|choice| *choice == draft.origin);
+            let width = fitted(ui, SELECT_WIDTH);
+            if let Some(index) = widgets::select_menu(ui, &palette, origin_label(draft.origin.as_deref()), &options, current, width) {
+                draft.origin = choices[index].clone();
+            }
         });
         for item in &figure.evidence {
             let mut checked = draft.evidence.contains(&item.id);
-            if ui.checkbox(&mut checked, evidence_label(item)).changed() {
+            if widgets::checkbox(ui, &palette, &mut checked, &evidence_label(item)).changed() {
                 draft.evidence.retain(|id| id != &item.id);
                 if checked {
                     draft.evidence.push(item.id.clone());
@@ -741,11 +777,12 @@ impl DesktopApp {
         let dirty = draft != fresh;
         let args = json!({ "panel_id": panel_id, "element_id": element_id, "origin": draft.origin, "evidence_ids": ordered });
         let change = if dirty { provenance_change(figure, panel_id, element_id, draft.origin.as_deref(), &ordered) } else { Ok(None) };
-        self.r07_control(ui, "적용", "figure.diagram_provenance", change, args, dirty);
+        self.r07_control(ui, "적용", "출처 적용", "figure.diagram_provenance", change, args, dirty);
         ui.data_mut(|data| data.insert_temp(key, draft));
     }
 
     fn r07_draw_transform(&mut self, ui: &mut Ui, figure: &FigureDocument, panel_id: &str, image: &FigureImage) {
+        let palette = theme::palette(ui.ctx());
         let key = draft_id("r07-transform", self.r07_figure_id(), panel_id);
         let fresh = TransformDraft::of(image);
         let mut draft = ui
@@ -753,17 +790,22 @@ impl DesktopApp {
             .filter(|stored| stored.base == fresh.base)
             .unwrap_or_else(|| fresh.clone());
         ui.label(RichText::new("그림 자르기·회전").strong());
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut draft.crop_on, "자르기");
-            let on = draft.crop_on;
-            for (label, field) in [("x", &mut draft.x), ("y", &mut draft.y), ("너비", &mut draft.width), ("높이", &mut draft.height)] {
+        widgets::checkbox(ui, &palette, &mut draft.crop_on, "자르기");
+        let on = draft.crop_on;
+        // Two fields a line (x y, then the size), so that the four fit the narrowest panel.
+        egui::Grid::new(("r07-transform-crop", panel_id)).num_columns(4).show(ui, |ui| {
+            let fields = [("x", &mut draft.x), ("y", &mut draft.y), ("너비", &mut draft.width), ("높이", &mut draft.height)];
+            for (index, (label, field)) in fields.into_iter().enumerate() {
                 ui.label(label);
-                ui.add_enabled(on, TextEdit::singleline(field).desired_width(56.0));
+                widgets::edit_line(ui, &palette, field, widgets::Field { width: NUMBER_WIDTH, enabled: on, ..Default::default() });
+                if index % 2 == 1 {
+                    ui.end_row();
+                }
             }
         });
         ui.horizontal(|ui| {
             ui.label("회전 (도)");
-            ui.add(TextEdit::singleline(&mut draft.rotation).desired_width(72.0));
+            widgets::edit_line(ui, &palette, &mut draft.rotation, widgets::Field { width: NUMBER_WIDTH, ..Default::default() });
         });
         let dirty = draft != fresh;
         let request = transform_request(&draft);
@@ -778,11 +820,12 @@ impl DesktopApp {
             }
             Err(_) => Value::Null,
         };
-        self.r07_control(ui, "적용", "figure.image_transform", change, args, dirty);
+        self.r07_control(ui, "적용", "변환 적용", "figure.image_transform", change, args, dirty);
         ui.data_mut(|data| data.insert_temp(key, draft));
     }
 
     fn r07_draw_calibration(&mut self, ui: &mut Ui, figure: &FigureDocument, panel_id: &str, image: &FigureImage) {
+        let palette = theme::palette(ui.ctx());
         let key = draft_id("r07-calibration", self.r07_figure_id(), panel_id);
         let fresh = CalibrationDraft::of(image.calibration.as_ref());
         let mut draft = ui
@@ -790,34 +833,39 @@ impl DesktopApp {
             .filter(|stored| stored.base == fresh.base)
             .unwrap_or_else(|| fresh.clone());
         ui.label(RichText::new("측정 보정").strong());
-        ui.horizontal(|ui| {
-            ui.add(TextEdit::singleline(&mut draft.length).hint_text("길이").desired_width(72.0));
-            ui.add(TextEdit::singleline(&mut draft.pixel_span).hint_text("픽셀 간격").desired_width(84.0));
-            ui.add(TextEdit::singleline(&mut draft.unit).hint_text("단위").desired_width(56.0));
+        ui.horizontal_wrapped(|ui| {
+            wrapped_field(ui, &palette, &mut draft.length, widgets::Field { hint: "길이", record: Some("길이"), width: NUMBER_WIDTH, ..Default::default() });
+            wrapped_field(ui, &palette, &mut draft.pixel_span, widgets::Field { hint: "픽셀 간격", record: Some("픽셀 간격"), width: 84.0, ..Default::default() });
+            wrapped_field(ui, &palette, &mut draft.unit, widgets::Field { hint: "단위", record: Some("단위"), width: 64.0, ..Default::default() });
         });
+        let labels: Vec<String> = figure.evidence.iter().map(evidence_label).collect();
+        let mut options = vec!["근거 없음"];
+        options.extend(labels.iter().map(String::as_str));
+        let current = match draft.evidence.as_deref() {
+            None => Some(0),
+            Some(id) => figure.evidence.iter().position(|item| item.id == id).map(|index| index + 1),
+        };
         ui.horizontal(|ui| {
-            ComboBox::from_id_salt(("r07-calibration-evidence", panel_id))
-                .selected_text(evidence_text(figure, draft.evidence.as_deref()))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut draft.evidence, None, "근거 없음");
-                    for item in &figure.evidence {
-                        ui.selectable_value(&mut draft.evidence, Some(item.id.clone()), evidence_label(item));
-                    }
-                });
+            let shown = evidence_text(figure, draft.evidence.as_deref());
+            let width = fitted(ui, SELECT_WIDTH);
+            if let Some(index) = widgets::select_menu(ui, &palette, &shown, &options, current, width) {
+                draft.evidence = index.checked_sub(1).and_then(|index| figure.evidence.get(index)).map(|item| item.id.clone());
+            }
         });
         let dirty = draft != fresh;
         let calibration = draft.calibration();
         let args = json!({ "panel_id": panel_id, "calibration": calibration_value(&calibration) });
         let change = if dirty { calibration_change(figure, panel_id, Some(calibration)) } else { Ok(None) };
-        self.r07_control(ui, "적용", "figure.image_calibration", change, args, dirty);
+        self.r07_control(ui, "적용", "보정 적용", "figure.image_calibration", change, args, dirty);
         if image.calibration.is_some() {
             let change = calibration_change(figure, panel_id, None);
-            self.r07_control(ui, "보정 지우기", "figure.image_calibration", change, json!({ "panel_id": panel_id, "calibration": null }), true);
+            self.r07_control(ui, "보정 지우기", "보정 지우기", "figure.image_calibration", change, json!({ "panel_id": panel_id, "calibration": null }), true);
         }
         ui.data_mut(|data| data.insert_temp(key, draft));
     }
 
     fn r07_draw_legend(&mut self, ui: &mut Ui, figure: &FigureDocument) {
+        let palette = theme::palette(ui.ctx());
         let key = draft_id("r07-legend", self.r07_figure_id(), ());
         let fresh = LegendDraft::of(figure.common_legend.as_ref());
         let mut draft = ui
@@ -825,22 +873,23 @@ impl DesktopApp {
             .filter(|stored| stored.base == fresh.base)
             .unwrap_or_else(|| fresh.clone());
         ui.label(RichText::new("공통 범례").strong());
-        ui.horizontal(|ui| {
-            ComboBox::from_id_salt("r07-legend-placement")
-                .selected_text(label_of(&PLACEMENTS, draft.placement))
-                .show_ui(ui, |ui| {
-                    for (value, label) in PLACEMENTS {
-                        ui.selectable_value(&mut draft.placement, value, label);
-                    }
-                });
-            ui.add(TextEdit::singleline(&mut draft.title).hint_text("제목").desired_width(160.0));
+        let placement_options: Vec<&str> = PLACEMENTS.iter().map(|(_, label)| *label).collect();
+        let placement_current = PLACEMENTS.iter().position(|(value, _)| *value == draft.placement);
+        ui.horizontal_wrapped(|ui| {
+            let width = fitted(ui, SELECT_WIDTH);
+            if let Some(index) = widgets::select_menu(ui, &palette, label_of(&PLACEMENTS, draft.placement), &placement_options, placement_current, width) {
+                draft.placement = PLACEMENTS[index].0;
+            }
+            wrapped_field(ui, &palette, &mut draft.title, widgets::Field { hint: "제목", record: Some("제목"), width: fitted(ui, 160.0), ..Default::default() });
         });
         let mut remove_row = None;
         for (index, (label, color)) in draft.items.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                ui.add(TextEdit::singleline(label).desired_width(140.0));
-                ui.add(TextEdit::singleline(color).desired_width(96.0));
-                if ui.small_button("삭제").clicked() {
+            ui.horizontal_wrapped(|ui| {
+                let spacing = ui.spacing().item_spacing.x;
+                let label_width = (ui.available_width() - COLOR_WIDTH - DELETE_ROOM - 2.0 * spacing).clamp(64.0, 140.0);
+                wrapped_field(ui, &palette, label, widgets::Field { width: label_width, ..Default::default() });
+                wrapped_field(ui, &palette, color, widgets::Field { width: fitted(ui, COLOR_WIDTH), ..Default::default() });
+                if widgets::compact_button(ui, &palette, "삭제").clicked() {
                     remove_row = Some(index);
                 }
             });
@@ -848,22 +897,23 @@ impl DesktopApp {
         if let Some(index) = remove_row {
             draft.items.remove(index);
         }
-        if ui.button("항목 추가").clicked() {
+        if widgets::dialog_button(ui, &palette, "항목 추가", DialogButton::Plain, true).clicked() {
             draft.items.push((String::new(), "#1F4E79".to_owned()));
         }
         let dirty = draft != fresh;
         let legend = draft.legend();
         let args = json!({ "legend": legend_value(&legend) });
         let change = if dirty { legend_change(figure, Some(legend)) } else { Ok(None) };
-        self.r07_control(ui, "적용", "figure.common_legend", change, args, dirty);
+        self.r07_control(ui, "적용", "범례 적용", "figure.common_legend", change, args, dirty);
         if figure.common_legend.is_some() {
             let change = legend_change(figure, None);
-            self.r07_control(ui, "범례 지우기", "figure.common_legend", change, json!({ "legend": null }), true);
+            self.r07_control(ui, "범례 지우기", "범례 지우기", "figure.common_legend", change, json!({ "legend": null }), true);
         }
         ui.data_mut(|data| data.insert_temp(key, draft));
     }
 
     fn r07_draw_review(&mut self, ui: &mut Ui, figure: &FigureDocument) {
+        let palette = theme::palette(ui.ctx());
         let key = draft_id("r07-review", self.r07_figure_id(), ());
         let fresh = ReviewDraft::of(figure.visual_review.as_ref());
         let mut draft = ui
@@ -875,25 +925,24 @@ impl DesktopApp {
         if let Some(message) = stale {
             ui.label(RichText::new(message).color(theme::RED));
         }
-        ui.horizontal(|ui| {
-            ComboBox::from_id_salt("r07-review-state")
-                .selected_text(label_of(&REVIEW_STATES, draft.state))
-                .show_ui(ui, |ui| {
-                    for (value, label) in REVIEW_STATES {
-                        ui.selectable_value(&mut draft.state, value, label);
-                    }
-                });
-            ui.add(TextEdit::singleline(&mut draft.note).hint_text("메모").desired_width(200.0));
+        let state_options: Vec<&str> = REVIEW_STATES.iter().map(|(_, label)| *label).collect();
+        let state_current = REVIEW_STATES.iter().position(|(value, _)| *value == draft.state);
+        ui.horizontal_wrapped(|ui| {
+            let width = fitted(ui, SELECT_WIDTH);
+            if let Some(index) = widgets::select_menu(ui, &palette, label_of(&REVIEW_STATES, draft.state), &state_options, state_current, width) {
+                draft.state = REVIEW_STATES[index].0;
+            }
+            wrapped_field(ui, &palette, &mut draft.note, widgets::Field { hint: "메모", record: Some("메모"), width: fitted(ui, 200.0), ..Default::default() });
         });
         // A stale approval may be given again: the new approval records the figure as it is now.
         let dirty = draft != fresh || stale.is_some();
         let review = draft.review();
         let args = json!({ "review": review_value(&review) });
         let change = if dirty { review_change(figure, Some(review)) } else { Ok(None) };
-        self.r07_control(ui, "저장", "figure.visual_review", change, args, dirty);
+        self.r07_control(ui, "저장", "저장", "figure.visual_review", change, args, dirty);
         if figure.visual_review.is_some() {
             let change = review_change(figure, None);
-            self.r07_control(ui, "검토 지우기", "figure.visual_review", change, json!({ "review": null }), true);
+            self.r07_control(ui, "검토 지우기", "검토 지우기", "figure.visual_review", change, json!({ "review": null }), true);
         }
         ui.data_mut(|data| data.insert_temp(key, draft));
     }

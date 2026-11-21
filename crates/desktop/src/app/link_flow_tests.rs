@@ -58,7 +58,7 @@ impl Window {
     fn settle(&mut self, host: &mut Host) {
         self.settled_at = Instant::now();
         settle_work(&self.work, &mut self.app, &self.ctx, |item| {
-            if let Work::Call { ticket, method, params } = item {
+            if let Work::Call { ticket, method, params, .. } = item {
                 self.log.push(method.clone());
                 let result = host.call(&method, params).map(RpcPayload::Json);
                 self.replies.send(RpcReply { ticket, result }).expect("the window listens");

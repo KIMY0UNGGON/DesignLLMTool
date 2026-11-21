@@ -5,7 +5,7 @@ use crate::errors::{err, integrity, invalid, not_found, sql, unsupported, ErrExt
 use crate::files::{check_source_path, mime_for, read_source};
 use crate::store;
 use crate::views::{check_transform, emu_to_screen, screen_to_emu, SceneEntry, SnapshotKey, ViewState, DEFAULT_RESERVATION_MS, MAX_RESERVATION_MS};
-use crate::{asset_refs, b64, to_value, EventBatch, Workspace, MAX_CHUNK_BYTES, RESPONSE_BUDGET};
+use crate::{asset_refs, b64, to_value, EventBatch, Workspace, MAX_CHUNK_BYTES};
 use designllm_contracts::*;
 use rusqlite::{params, TransactionBehavior};
 use serde::{Deserialize, Serialize};
@@ -47,10 +47,10 @@ pub(crate) struct DeclaredColumn { pub name: String, pub data_type: String, #[se
 #[derive(Debug, Deserialize, Serialize)] pub(crate) struct FigureRenderParams { pub figure_id: String, pub figure_revision: Revision, pub representation: String, #[serde(default)] pub profile: RenderProfile }
 #[derive(Debug, Deserialize, Serialize)] pub(crate) struct MaterializeParams { pub artifact_id: String, pub expected_revision: Revision }
 
-fn check_profile(p: &RenderProfile) -> DltResult<()> { if p.dpi == 0 || p.dpi > 9_600 { Err(invalid("profile.dpi must be 1..=9600")) } else { Ok(()) } }
+pub(crate) fn check_profile(p: &RenderProfile) -> DltResult<()> { if p.dpi == 0 || p.dpi > 9_600 { Err(invalid("profile.dpi must be 1..=9600")) } else { Ok(()) } }
 
 /// A render region is a non-empty page-EMU rectangle inside the page (nothing is clipped silently).
-fn check_region(r: Rect, page: Size, page_index: u32) -> DltResult<()> {
+pub(crate) fn check_region(r: Rect, page: Size, page_index: u32) -> DltResult<()> {
     if r.width <= 0 || r.height <= 0 { return Err(invalid(format!("region must have positive width and height, got {} x {}", r.width, r.height))); }
     let inside = r.x >= 0 && r.y >= 0
         && r.x.checked_add(r.width).is_some_and(|right| right <= page.width)
@@ -61,7 +61,7 @@ fn check_region(r: Rect, page: Size, page_index: u32) -> DltResult<()> {
     Ok(())
 }
 
-fn links_for_page(scene: &RenderScene, page: &RenderPage) -> Vec<SceneLink> {
+pub(crate) fn links_for_page(scene: &RenderScene, page: &RenderPage) -> Vec<SceneLink> {
     scene.links.iter().filter(|link| link.page_id == page.id).cloned().collect()
 }
 
@@ -481,45 +481,19 @@ impl Workspace {
     /// whole page and the preview transform's crop is the region, so queries stay in page EMU.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn encode_page(&mut self, scene: &RenderScene, assets: &dyn AssetStore, artifact_id: &str, revision: Revision, page_index: u32, profile: &RenderProfile, region: Option<Rect>, key: Option<SnapshotKey>) -> DltResult<RenderSnapshot> {
-        check_profile(profile)?;
-        let total = scene.pages.len();
-        let indices: Vec<u32> = scene.pages.iter().map(|p| p.page_index).collect();
-        let page = scene.pages.iter().find(|p| p.page_index == page_index).cloned()
-            .ok_or_else(|| invalid(format!("page_index {page_index} does not exist; the document has {total} page(s) {indices:?}")))?;
-        if let Some(r) = region { check_region(r, page.size, page_index)?; }
-        let links = links_for_page(scene, &page);
-        let mut metadata = scene.metadata.clone();
-        metadata.insert("total_pages".into(), json!(total));
-        metadata.insert("page_index".into(), json!(page_index));
-        if let Some(r) = region { metadata.insert("region".into(), json!(r)); }
-        let one = RenderScene { pages: vec![page], font_fingerprint: scene.font_fingerprint.clone(), diagnostics: scene.diagnostics.clone(), metadata, links };
-        let out = self.renderer.encode_region(&one, "png", profile, region, assets)?;
-        if out.mime != "image/png" || !out.bytes.starts_with(&media_header::PNG_SIGNATURE) { return Err(err(ErrorCode::Internal, format!("renderer returned {} instead of PNG for a preview", out.mime))); }
-        let preview = AssetRef { sha256: sha256(&out.bytes), mime: out.mime.clone(), bytes: out.bytes.len() as u64 };
-        let snapshot = RenderSnapshot {
-            id: new_id(), artifact_id: artifact_id.to_string(), revision, profile: profile.clone(), scene: one, preview: Some(preview.clone()),
-            preview_transform: Some(ViewTransform { id: new_id(), dpi: profile.dpi, zoom_milli: 1000, offset_x_micropx: 0, offset_y_micropx: 0, crop: region }),
-        };
-        let size = serde_json::to_vec(&snapshot).map(|v| v.len()).unwrap_or(usize::MAX);
-        if size > RESPONSE_BUDGET {
-            return Err(invalid(format!("page {page_index} render snapshot is {size} bytes, over the frame budget; the page is too dense to transfer as one snapshot")));
-        }
-        self.renders.insert(snapshot.clone(), key, Some((preview, Arc::new(out.bytes))));
+        let (snapshot, preview, _) = crate::render_split::page_snapshot(&*self.renderer, scene, assets, artifact_id, revision, page_index, profile, region, false)?;
+        self.renders.insert(snapshot.clone(), key, preview);
         Ok(snapshot)
     }
 
     /// `node_frames` (RenderRequest.include_node_frames): the scene comes from the engine's
     /// `layout_with_node_frames`; the snapshot is cached under its own key.
     pub(crate) fn render_snapshot(&mut self, artifact_id: &str, revision: Revision, page_index: u32, profile: &RenderProfile, region: Option<Rect>, node_frames: bool) -> DltResult<RenderSnapshot> {
-        check_profile(profile)?;
-        let row = store::artifact_row(&self.conn, artifact_id)?;
-        if revision > row.current_revision {
-            return Err(err(ErrorCode::RevisionConflict, format!("revision {revision} does not exist yet; current is {}", row.current_revision)).at(row.current_revision));
+        let req = RenderRequest { artifact_id: artifact_id.to_string(), expected_revision: revision, page_index, profile: profile.clone(), region, include_node_frames: node_frames };
+        match self.prepare_render(false, String::new(), req)? {
+            crate::render_split::Prepared::Cached(snapshot) => Ok(snapshot),
+            crate::render_split::Prepared::Job(job) => self.render_now(&job),
         }
-        let key = SnapshotKey { artifact_id: artifact_id.to_string(), revision, page_index, dpi: profile.dpi, transparent: profile.transparent, region: SnapshotKey::region_key(region), node_frames };
-        if let Some(s) = self.renders.by_key(&key) { return Ok(s); }
-        let entry = self.scene_with(artifact_id, revision, node_frames)?;
-        self.encode_page(&entry.scene, &*entry.assets, artifact_id, revision, page_index, profile, region, Some(key))
     }
     pub(crate) fn render_get(&mut self, req: RenderRequest) -> DltResult<Value> {
         to_value(&self.render_snapshot(&req.artifact_id, req.expected_revision, req.page_index, &req.profile, req.region, req.include_node_frames)?)

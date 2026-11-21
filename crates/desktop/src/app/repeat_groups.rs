@@ -11,7 +11,7 @@ use eframe::egui::{self, Id, Ui};
 use serde_json::{json, Value};
 
 use super::{doc_tree::find_node_in_node, properties::{row, section_head}, DesktopApp};
-use crate::theme;
+use crate::{theme, widgets};
 use crate::commands::CommandSpec;
 
 /// The change set of "반복 만들기": the node moves to a new component page, and an empty row group that will hold the
@@ -240,16 +240,17 @@ impl DesktopApp {
         let key = self.draft_key("repeat-create-table", node_id);
         let mut table = ui.data(|data| data.get_temp::<String>(key)).filter(|id| tables.iter().any(|(table, _)| table == id)).unwrap_or(first_table);
         let label = tables.iter().find(|(id, _)| *id == table).map(|(_, name)| name.clone()).unwrap_or_default();
+        let names: Vec<&str> = tables.iter().map(|(_, name)| name.as_str()).collect();
+        let current = tables.iter().position(|(id, _)| *id == table);
         row(ui, palette, Some("데이터 표"), |ui| {
-            egui::ComboBox::from_id_salt(key).selected_text(label).show_ui(ui, |ui| {
-                for (id, name) in &tables {
-                    ui.selectable_value(&mut table, id.clone(), name);
-                }
-            });
+            let width = ui.available_width();
+            if let Some(index) = widgets::select_menu(ui, palette, &label, &names, current, width) {
+                table = tables[index].0.clone();
+            }
         });
         ui.data_mut(|data| data.insert_temp(key, table.clone()));
         let enabled = self.command_enabled_for_current_kind("repeat.create");
-        let clicked = row(ui, palette, Some(""), |ui| ui.add_enabled(enabled, egui::Button::new("반복 만들기")).clicked());
+        let clicked = row(ui, palette, Some(""), |ui| ui.add_enabled_ui(enabled, |ui| widgets::labeled_button(ui, palette, None, "반복 만들기", true)).inner.clicked());
         clicked.then(|| ("repeat.create", create_args(node_id, &table, &new_id(), &new_id())))
     }
 
@@ -261,10 +262,25 @@ impl DesktopApp {
         let stored: Vec<(String, u32)> = spec.bindings.iter().map(|binding| (binding.source_node_id.clone(), binding.column)).collect();
         let mut draft = ui.data(|data| data.get_temp::<Draft<Vec<(String, u32)>>>(key)).unwrap_or_else(|| Draft { base: stored.clone(), value: stored.clone() });
         let mut remove = None;
-        for (index, (source, column)) in draft.value.iter_mut().enumerate() {
-            row(ui, palette, Some(source.as_str()), |ui| {
-                ui.add(egui::DragValue::new(column).range(0..=LAST_COLUMN).prefix("열 "));
-                if ui.button("삭제").clicked() {
+        // A binding row is named by its source's text (its id when it has none), cut to the label column.
+        let source_name = |id: &str| candidates.iter().find(|(candidate, _)| candidate == id).map_or(id, |(_, text)| if text.is_empty() { id } else { text.as_str() }).to_owned();
+        // A row's stepper is keyed by its source and, among the rows with that source, its place, so that no two rows share a
+        // key, two rows with the same source included. The key does not keep the focus when an earlier row is removed: the
+        // stepper's field takes its id from `ui.unique_id()`, which also counts what was drawn before the row, so every later
+        // row's field gets a new id and a focus in one of them is dropped, as it was without the key (measured 2026-11-21, task
+        // 68h-c). Among rows with the same source the key itself moves too: removing one gives each later one the key of the row
+        // before it. Bindings carry no id of their own.
+        let keys: Vec<(String, usize)> = draft
+            .value
+            .iter()
+            .enumerate()
+            .map(|(index, (source, _))| (source.clone(), draft.value[..index].iter().filter(|(other, _)| other == source).count()))
+            .collect();
+        for (index, ((source, column), key)) in draft.value.iter_mut().zip(keys).enumerate() {
+            let shown = widgets::truncate_to_width(ui, &source_name(source), theme::LABEL_COLUMN - 8.0, palette.ink_2);
+            row(ui, palette, Some(shown.as_str()), |ui| {
+                ui.push_id(key, |ui| widgets::number_stepper(ui, palette, column, 0..=LAST_COLUMN, "열 "));
+                if widgets::labeled_button(ui, palette, None, "삭제", false).clicked() {
                     remove = Some(index);
                 }
             });
@@ -280,28 +296,34 @@ impl DesktopApp {
         let source_label = candidates.iter().find(|(id, _)| *id == add.0).map(|(id, text)| text_or_id(id, text)).unwrap_or_default();
         let mut action = None;
         if !candidates.is_empty() {
+            let names: Vec<String> = candidates.iter().map(|(id, text)| text_or_id(id, text)).collect();
+            let options: Vec<&str> = names.iter().map(String::as_str).collect();
+            let current = candidates.iter().position(|(id, _)| *id == add.0);
+            // The source takes the whole row and its column the next one: side by side they do not fit a narrow panel.
             row(ui, palette, Some("연결"), |ui| {
-                egui::ComboBox::from_id_salt(add_key).selected_text(source_label).show_ui(ui, |ui| {
-                    for (id, text) in &candidates {
-                        ui.selectable_value(&mut add.0, id.clone(), text_or_id(id, text));
-                    }
-                });
-                ui.add(egui::DragValue::new(&mut add.1).range(0..=LAST_COLUMN).prefix("열 "));
+                let width = ui.available_width();
+                if let Some(index) = widgets::select_menu(ui, palette, &source_label, &options, current, width) {
+                    add.0 = candidates[index].0.clone();
+                }
             });
-            if row(ui, palette, Some(""), |ui| ui.button("연결 추가").clicked()) {
+            row(ui, palette, Some("열"), |ui| {
+                widgets::number_stepper(ui, palette, &mut add.1, 0..=LAST_COLUMN, "");
+            });
+            if row(ui, palette, Some(""), |ui| widgets::labeled_button(ui, palette, None, "연결 추가", false).clicked()) {
                 draft.value.push(add.clone());
             }
             ui.data_mut(|data| data.insert_temp(add_key, add.clone()));
         }
         let bind = self.command_enabled_for_current_kind("repeat.bind");
         let clear = self.command_enabled_for_current_kind("repeat.clear");
-        let (apply, revert, unbind) = row(ui, palette, Some(""), |ui| {
+        // Three buttons do not fit one row of a narrow panel: the draft's two, then the group's own.
+        let (apply, revert) = row(ui, palette, Some(""), |ui| {
             (
-                ui.add_enabled(bind, egui::Button::new("연결 적용")).clicked(),
-                ui.button("되돌리기").clicked(),
-                ui.add_enabled(clear, egui::Button::new("반복 해제")).clicked(),
+                ui.add_enabled_ui(bind, |ui| widgets::labeled_button(ui, palette, None, "연결 적용", true)).inner.clicked(),
+                widgets::labeled_button(ui, palette, None, "되돌리기", false).clicked(),
             )
         });
+        let unbind = row(ui, palette, Some(""), |ui| ui.add_enabled_ui(clear, |ui| widgets::labeled_button(ui, palette, None, "반복 해제", false)).inner.clicked());
         // The draft stays after "연결 적용": a refusal leaves it to correct. Once the stored bindings are the draft's, the change
         // was applied and the draft ends. An edit not stored yet is kept even when another change moved the document.
         if revert {
@@ -335,27 +357,29 @@ impl DesktopApp {
             clearing: false,
         });
         row(ui, palette, Some("열"), |ui| {
-            ui.add(egui::DragValue::new(&mut draft.form.column).range(0..=LAST_COLUMN).prefix("열 "));
+            widgets::number_stepper(ui, palette, &mut draft.form.column, 0..=LAST_COLUMN, "");
         });
         let op_label = OPS.iter().find(|(name, _)| *name == draft.form.op).map_or("", |(_, label)| label);
+        let op_labels: Vec<&str> = OPS.iter().map(|(_, label)| *label).collect();
+        let op_current = OPS.iter().position(|(name, _)| *name == draft.form.op);
         row(ui, palette, Some("비교"), |ui| {
-            egui::ComboBox::from_id_salt(key).selected_text(op_label).show_ui(ui, |ui| {
-                for (name, label) in OPS {
-                    ui.selectable_value(&mut draft.form.op, name.to_owned(), label);
-                }
-            });
+            let width = ui.available_width();
+            if let Some(index) = widgets::select_menu(ui, palette, op_label, &op_labels, op_current, width) {
+                draft.form.op = OPS[index].0.to_owned();
+            }
         });
         if op_needs_value(&draft.form.op) {
             row(ui, palette, Some("값"), |ui| {
-                ui.add(egui::TextEdit::singleline(&mut draft.form.value));
+                let width = ui.available_width();
+                widgets::edit_line(ui, palette, &mut draft.form.value, widgets::Field { width, ..Default::default() });
             });
         }
         let set = self.command_enabled_for_current_kind("repeat.condition_set");
         let clear = self.command_enabled_for_current_kind("repeat.condition_clear");
         let (apply, unset) = row(ui, palette, Some(""), |ui| {
             (
-                ui.add_enabled(set, egui::Button::new("조건 설정")).clicked(),
-                stored.is_some() && ui.add_enabled(clear, egui::Button::new("조건 해제")).clicked(),
+                ui.add_enabled_ui(set, |ui| widgets::labeled_button(ui, palette, None, "조건 설정", true)).inner.clicked(),
+                stored.is_some() && ui.add_enabled_ui(clear, |ui| widgets::labeled_button(ui, palette, None, "조건 해제", false)).inner.clicked(),
             )
         });
         let mut action = None;

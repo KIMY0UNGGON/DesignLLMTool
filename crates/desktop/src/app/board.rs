@@ -905,18 +905,16 @@ impl DesktopApp {
         ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.artboard);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt(("inline-text", &edit.node_id)));
         child.set_min_size(rect.size());
-        let output = egui::TextEdit::multiline(&mut self.text_draft)
-            .id(self.text_editor_id)
-            .font(theme::display_font(bold, font_size))
-            .text_color(color)
-            .horizontal_align(align)
-            .frame(false)
-            .margin(egui::Margin::ZERO)
-            .desired_width(rect.width())
-            .desired_rows(1)
-            .min_size(rect.size())
-            .interactive(edit.conflict.is_none() || edit.composing)
-            .show(&mut child);
+        let output = crate::widgets::inline_edit(
+            &mut child,
+            &mut self.text_draft,
+            self.text_editor_id,
+            theme::display_font(bold, font_size),
+            color,
+            align,
+            rect.size(),
+            edit.conflict.is_none() || edit.composing,
+        );
         self.text_adapter.record_layout(&output);
         if self.cell_wait_shown(ctx.input(|input| input.time)) { self.paint_cell_wait_hint(ui, rect); }
         if edit.conflict.is_none() || edit.composing {

@@ -22,7 +22,7 @@ use std::time::Duration;
 use designllm_contracts::{CoreEvent, DltError, DltResult, ErrorCode, IpcMessage, JobRef, RpcResponse};
 use serde_json::{json, Value};
 
-use crate::frame::{encode_frame, FrameDecoder};
+use crate::frame::{encode_frame, Frame, FrameDecoder};
 use crate::pipe::{self, normalize_root, ConnectError, Pipe, ReadOutcome};
 use crate::protocol::{self, METHOD_EVENTS_SUBSCRIBE, METHOD_HEARTBEAT, METHOD_HELLO};
 
@@ -36,6 +36,12 @@ const WRITE_DEADLINE: Duration = Duration::from_secs(10);
 const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(10);
 const HEARTBEAT_DEADLINE: Duration = Duration::from_secs(10);
 const CONNECT_WAIT: Duration = Duration::from_millis(2000);
+/// The binary frames of one response (`render.pixels`) may hold at most this many bytes, as the core answers; more closes the
+/// connection.
+const MAX_ATTACHMENT_BYTES: usize = designllm_contracts::MAX_RASTER_PIXEL_BYTES;
+
+/// A response and the binary frames that came right before it (68i).
+type Reply = (RpcResponse, Vec<Vec<u8>>);
 
 /// Who is connecting. The host applies different lifetime and method rules per role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,12 +232,18 @@ impl Client {
             // The handshake already happened on this connection; answer with its result (no second hello).
             return self.hello();
         }
+        self.call_binary(method, params).map(|(value, _)| value)
+    }
+
+    /// [`Client::call`] that also returns the payloads of the binary frames the host sent right before the response, in
+    /// order (68i: the raw pixels of `render.pixels`; empty for every other method).
+    pub fn call_binary(&self, method: &str, params: Value) -> DltResult<(Value, Vec<Vec<u8>>)> {
         let timeout = self.inner.options.call_timeout;
         let mut retried = false;
         loop {
             let conn = self.inner.connection()?;
             match conn.request(method, params.clone(), timeout) {
-                Ok(value) => return Ok(value),
+                Ok(reply) => return Ok(reply),
                 Err(Failure::NotSent(_)) if !retried => {
                     retried = true;
                 }
@@ -289,7 +301,7 @@ impl ClientInner {
 struct Connection {
     pipe: Pipe,
     writer: Mutex<()>,
-    pending: Mutex<HashMap<String, Sender<RpcResponse>>>,
+    pending: Mutex<HashMap<String, Sender<Reply>>>,
     alive: AtomicBool,
     stop: (Mutex<bool>, Condvar),
     hello: OnceLock<Value>,
@@ -334,7 +346,7 @@ impl Connection {
             params["job_ref"] = protocol::job_ref_value(&job.job_id, &job.attempt_id);
         }
         match conn.request(METHOD_HELLO, params, HANDSHAKE_DEADLINE) {
-            Ok(hello) => {
+            Ok((hello, _)) => {
                 let _ = conn.hello.set(hello);
             }
             Err(f) => {
@@ -386,7 +398,7 @@ impl Connection {
     }
 
     /// One request/response exchange. Writes are serialized; the response is matched by id.
-    fn request(&self, method: &str, params: Value, deadline: Duration) -> Result<Value, Failure> {
+    fn request(&self, method: &str, params: Value, deadline: Duration) -> Result<(Value, Vec<Vec<u8>>), Failure> {
         if !self.is_alive() {
             return Err(Failure::NotSent(connection_lost("connection already closed")));
         }
@@ -414,9 +426,9 @@ impl Connection {
             return Err(Failure::MaybeSent(connection_lost(&format!("write failed: {e}"))));
         }
         match rx.recv_timeout(deadline) {
-            Ok(resp) => match resp.error {
+            Ok((resp, binary)) => match resp.error {
                 Some(error) => Err(Failure::Remote(error)),
-                None => Ok(resp.result.unwrap_or(Value::Null)),
+                None => Ok((resp.result.unwrap_or(Value::Null), binary)),
             },
             Err(RecvTimeoutError::Timeout) => {
                 lock(&self.pending).remove(&id);
@@ -462,27 +474,43 @@ fn fail_mismatched_response(conn: &Connection, payload: &[u8], error: DltError) 
         return;
     };
     if let Some(tx) = lock(&conn.pending).remove(id) {
-        let _ = tx.send(protocol::response_err(id, error));
+        let _ = tx.send((protocol::response_err(id, error), Vec::new()));
     }
 }
 
 fn reader_loop(conn: Arc<Connection>, events: Arc<EventHub>) {
-    let mut decoder = FrameDecoder::new();
+    let mut decoder = FrameDecoder::with_binary();
     let mut buffer = vec![0u8; 64 * 1024];
-    while conn.is_alive() {
+    // Binary frames go with the next response: the host writes them and that response under one hold of its write lock (68i).
+    let mut binary: Vec<Vec<u8>> = Vec::new();
+    let mut binary_bytes = 0usize;
+    'read: while conn.is_alive() {
         match conn.pipe.read_some(&mut buffer, READ_SLICE) {
             Ok(ReadOutcome::Data(0)) | Ok(ReadOutcome::TimedOut) => continue,
             Ok(ReadOutcome::Data(n)) => {
-                let frames = match decoder.push(&buffer[..n]) {
+                let frames = match decoder.push_frames(&buffer[..n]) {
                     Ok(frames) => frames,
                     Err(_) => break,
                 };
-                for payload in frames {
+                for frame in frames {
+                    let payload = match frame {
+                        Frame::Binary(payload) => {
+                            binary_bytes += payload.len();
+                            if binary_bytes > MAX_ATTACHMENT_BYTES {
+                                break 'read;
+                            }
+                            binary.push(payload);
+                            continue;
+                        }
+                        Frame::Json(payload) => payload,
+                    };
                     match protocol::decode(&payload) {
                         Ok(IpcMessage::Response(resp)) => {
+                            binary_bytes = 0;
+                            let attached = std::mem::take(&mut binary);
                             let waiter = lock(&conn.pending).remove(&resp.id);
                             if let Some(tx) = waiter {
-                                let _ = tx.send(resp);
+                                let _ = tx.send((resp, attached));
                             }
                         }
                         Ok(IpcMessage::Event(event)) => deliver_event(&events, event),

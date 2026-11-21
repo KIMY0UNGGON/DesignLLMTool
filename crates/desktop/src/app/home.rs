@@ -12,7 +12,7 @@ use super::{
     thumbs::{connected_agents, ConnectedAgent, Fit, ThumbSource},
     DesktopApp, PendingAction, Screen,
 };
-use crate::{icons, theme, widgets::AgentState};
+use crate::{icons, theme, widgets::{self, AgentState}};
 
 /// Width of the home column at the design width (§3).
 const COLUMN: f32 = 840.0;
@@ -535,18 +535,18 @@ impl DesktopApp {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 let mut prompt = self.home.prompt.clone();
                 let font = theme::display_font(false, 15.0);
-                let edit = egui::TextEdit::multiline(&mut prompt)
-                    .hint_text(egui::RichText::new("무엇을 만들까요?").font(font.clone()).color(palette.ink_3))
-                    .font(font)
-                    .text_color(palette.ink)
-                    .frame(false)
-                    // 2 px padding plus the half-leading of the 22 px line (egui rows are 18 high).
-                    .margin(egui::Margin { left: 0, right: 0, top: 4, bottom: 0 })
-                    .desired_rows(1)
-                    .min_size(Vec2::new(inner_width, 56.0))
-                    .desired_width(inner_width);
-                let response = ui.add(edit);
-                crate::ui_record::note(ui, "무엇을 만들까요?", &response);
+                // 2 px padding plus the half-leading of the 22 px line (egui rows are 18 high).
+                let response = widgets::edit_area(ui, &palette, &mut prompt, widgets::Field {
+                    hint: "무엇을 만들까요?",
+                    record: Some("무엇을 만들까요?"),
+                    width: inner_width,
+                    font: Some(font),
+                    color: Some(palette.ink),
+                    margin: Some(egui::Margin { left: 0, right: 0, top: 4, bottom: 0 }),
+                    borderless: true,
+                    min_height: 56.0,
+                    ..Default::default()
+                });
                 if std::mem::take(&mut self.home.focus_request) {
                     response.request_focus();
                 }
@@ -768,14 +768,13 @@ impl DesktopApp {
             ui.painter().text(Pos2::new(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, unit, small, palette.ink_3);
             let inner = Rect::from_min_max(Pos2::new(rect.left() + 24.0, rect.center().y - 9.0), Pos2::new(rect.right() - 30.0, rect.center().y + 9.0));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-            let response = child.add(
-                egui::TextEdit::singleline(text)
-                    .frame(false)
-                    .margin(egui::Margin::ZERO)
-                    .font(theme::font(theme::Type::Body))
-                    .text_color(palette.ink)
-                    .desired_width(inner.width()),
-            );
+            let response = widgets::edit_line(&mut child, &palette, text, widgets::Field {
+                width: inner.width(),
+                font: Some(theme::font(theme::Type::Body)),
+                color: Some(palette.ink),
+                borderless: true,
+                ..Default::default()
+            });
             if index == 0 && focus {
                 response.request_focus();
             }
@@ -1040,16 +1039,14 @@ impl DesktopApp {
         // A child ui, so that the field does not move the column's cursor (`put` would).
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field));
         let mut search_text = self.home.search.clone();
-        let edited = child
-            .add(
-                egui::TextEdit::singleline(&mut search_text)
-                    .frame(false)
-                    .margin(egui::Margin::ZERO)
-                    .font(theme::font(theme::Type::Body))
-                    .text_color(palette.ink)
-                    .desired_width(field.width()),
-            )
-            .changed();
+        let edited = widgets::edit_line(&mut child, &palette, &mut search_text, widgets::Field {
+            width: field.width(),
+            font: Some(theme::font(theme::Type::Body)),
+            color: Some(palette.ink),
+            borderless: true,
+            ..Default::default()
+        })
+        .changed();
         if edited {
             self.invoke_ui("home.search", json!({ "text": search_text }));
         }

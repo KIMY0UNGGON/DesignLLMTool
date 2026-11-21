@@ -18,6 +18,7 @@ mod migration_checkpoints;
 mod pdf_read;
 mod pipeline;
 mod receipts;
+mod render_split;
 mod revert;
 mod routes;
 mod scope;
@@ -32,6 +33,7 @@ pub use blobs::{FaultHook, FaultPoint};
 pub use dataset::DatasetEditor;
 pub use pdf_read::{current_pdf_read_cancel, Dispatch, PdfCancel, PdfRead};
 pub use receipts::{normalize_request_id, REQUEST_HASH_ALG};
+pub use render_split::{RenderJob, RenderedPage};
 pub use home::ClientConnection;
 pub use views::{emu_to_screen, screen_to_emu, ScreenRect};
 pub use migration_checkpoints::{list_migration_checkpoints, MigrationCheckpointSummary};
@@ -67,7 +69,7 @@ pub const METHODS: &[&str] = &[
 /// Methods for the GUI view itself (docs/UI_CHANNEL.md) and for the bridge of a job (`job.set_client`,
 /// after MCP `initialize`). Routed like [`METHODS`], but they are not agent tools: an MCP bridge
 /// does not expose them.
-pub const CLIENT_METHODS: &[&str] = &["ui.state.publish", "ui.command.complete", "job.set_client"];
+pub const CLIENT_METHODS: &[&str] = &["ui.state.publish", "ui.command.complete", "job.set_client", "render.pixels"];
 /// Methods a job-bound connection may call. Artifact access stays in the job artifact; Figure rendering has an exact `figure_refs` scope.
 pub const BOUND_JOB_METHODS: &[&str] = &[
     "system.hello", "workspace.list", "artifact.inspect", "artifact.validate", "artifact.save_state",
@@ -719,6 +721,7 @@ impl Workspace {
             "history.redo" => self.history(params, true, job),
             "history.undo_change" => self.undo_change(params, job),
             "render.get" => self.render_get(parse(params)?),
+            "render.pixels" => Err(render_split::pixels_in_process()),
             "render.hit_test" | "render.caret_rect" | "render.selection_rects" => self.render_query(method, parse(params)?),
             "asset.import" => self.asset_import(parse(params)?),
             "asset.read" => self.asset_read(parse(params)?, job),

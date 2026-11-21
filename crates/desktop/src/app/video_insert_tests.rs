@@ -71,7 +71,7 @@ impl Harness {
     fn sent(&mut self) -> Vec<Request> {
         let mut batch = Vec::new();
         while let Ok(work) = self.work.try_recv() {
-            if let Work::Call { ticket, method, params } = work {
+            if let Work::Call { ticket, method, params, .. } = work {
                 batch.push((ticket, method, params));
             }
         }

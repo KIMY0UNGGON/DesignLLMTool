@@ -10,6 +10,7 @@ mod grapheme;
 mod icons;
 mod icons_table;
 mod notice;
+mod pixels;
 pub mod renderer;
 mod smoke_window;
 mod rpc;

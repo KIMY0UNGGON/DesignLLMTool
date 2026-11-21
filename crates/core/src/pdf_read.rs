@@ -12,7 +12,7 @@
 
 use crate::blobs::StagingAssets;
 use crate::routes::PdfParams;
-use crate::{object_params, parse, respond, to_value, PdfReadHandler, PdfReading, Workspace};
+use crate::{object_params, parse, respond, to_value, PdfReadHandler, PdfReading, RenderJob, Workspace};
 use designllm_contracts::{AssetRef, DltResult, JobRef, RpcRequest, RpcResponse, PROTOCOL_VERSION};
 use serde_json::{json, Value};
 use std::cell::RefCell;
@@ -28,6 +28,9 @@ pub enum Dispatch {
     Answered(RpcResponse),
     /// A checked PDF read. Run it without the workspace, then call [`Workspace::finish_pdf_read`].
     ReadPdf(PdfRead),
+    /// A checked `render.get` or `render.pixels` (`render_split.rs`). Run it without the workspace, then call
+    /// [`Workspace::finish_render`].
+    Render(Box<RenderJob>),
 }
 
 /// One checked `source.extract_pdf` request. It holds the asset reference and its own staging store, not the workspace.
@@ -100,9 +103,12 @@ impl Drop for CurrentCancel {
 }
 
 impl Workspace {
-    /// Like [`Workspace::dispatch_bound`], except that a `source.extract_pdf` read through the registered reader is returned
-    /// checked but not yet run.
+    /// Like [`Workspace::dispatch_bound`], except that a `source.extract_pdf` read through the registered reader, and a render
+    /// that is not cached, are returned checked but not yet run.
     pub fn dispatch_start(&mut self, request: RpcRequest, bound_job: Option<JobRef>) -> Dispatch {
+        if request.protocol_version == PROTOCOL_VERSION && matches!(request.method.as_str(), "render.get" | crate::render_split::PIXELS) {
+            return self.dispatch_render(request, bound_job);
+        }
         let split = request.method == METHOD && request.protocol_version == PROTOCOL_VERSION;
         let Some(reader) = self.pdf_read.filter(|_| split) else {
             return Dispatch::Answered(self.dispatch_bound(request, bound_job));

@@ -3,11 +3,15 @@
 //! is shown inline and nothing is sent. The grammar is contracts' `figure_math::parse`; this module does not parse on its own.
 
 use designllm_contracts::{figure_math, Diagram, FigureDocument, MathSyntax, Node, NodeKind, Operation, PanelBody};
-use eframe::egui::{self, RichText, TextEdit, Ui};
+use eframe::egui::{RichText, Ui};
 use serde_json::{json, Value};
 
 use super::{figure_r07::draft_id, figure_tools, DesktopApp};
-use crate::{commands::CommandSpec, theme};
+use crate::{
+    commands::CommandSpec,
+    theme,
+    widgets::{self, DialogButton},
+};
 
 /// A count with a comma between each group of three digits, as the window writes limits ("1,024").
 fn grouped(count: usize) -> String {
@@ -142,17 +146,19 @@ impl DesktopApp {
     }
 
     fn draw_equation_edit(&mut self, ui: &mut Ui, figure_id: &str, node_id: &str, base: &str, ready: bool) {
+        let palette = theme::palette(ui.ctx());
         let key = draft_id("figure-math-edit", figure_id, node_id);
         let mut draft = ui
             .data(|data| data.get_temp::<EquationDraft>(key))
             .filter(|stored| stored.base == base)
             .unwrap_or_else(|| EquationDraft { base: base.to_owned(), text: base.to_owned() });
         ui.label(RichText::new("수식").strong());
-        ui.add(TextEdit::singleline(&mut draft.text).desired_width(f32::INFINITY));
+        let width = ui.available_width();
+        widgets::edit_line(ui, &palette, &mut draft.text, widgets::Field { width, ..Default::default() });
         let changed = draft.text != draft.base;
         let refusal = if changed { source_refusal(&draft.text) } else { None };
-        ui.horizontal(|ui| {
-            if ui.add_enabled(ready && changed && refusal.is_none(), egui::Button::new("수식 적용")).clicked() {
+        ui.horizontal_wrapped(|ui| {
+            if widgets::dialog_button(ui, &palette, "수식 적용", DialogButton::Plain, ready && changed && refusal.is_none()).clicked() {
                 self.invoke_ui("text.set", json!({ "node_id": node_id, "text": draft.text.clone() }));
             }
             if let Some(message) = &refusal {
@@ -163,15 +169,17 @@ impl DesktopApp {
     }
 
     fn draw_equation_add(&mut self, ui: &mut Ui, figure_id: &str, ready: bool) {
+        let palette = theme::palette(ui.ctx());
         let key = draft_id("figure-math-add", figure_id, ());
         let mut draft = ui
             .data(|data| data.get_temp::<EquationDraft>(key))
             .unwrap_or_else(|| EquationDraft { base: String::new(), text: String::new() });
         ui.label(RichText::new("수식 추가").strong());
-        ui.add(TextEdit::singleline(&mut draft.text).desired_width(f32::INFINITY));
+        let width = ui.available_width();
+        widgets::edit_line(ui, &palette, &mut draft.text, widgets::Field { width, ..Default::default() });
         let refusal = if draft.text.is_empty() { None } else { source_refusal(&draft.text) };
-        ui.horizontal(|ui| {
-            if ui.add_enabled(ready && !draft.text.trim().is_empty() && refusal.is_none(), egui::Button::new("수식 넣기")).clicked() {
+        ui.horizontal_wrapped(|ui| {
+            if widgets::dialog_button(ui, &palette, "수식 넣기", DialogButton::Plain, ready && !draft.text.trim().is_empty() && refusal.is_none()).clicked() {
                 let source = draft.text.clone();
                 match self.invoke("figure.add_equation", json!({ "source": source })) {
                     Ok(()) => draft.text.clear(),

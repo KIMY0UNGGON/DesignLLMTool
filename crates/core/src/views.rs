@@ -12,6 +12,9 @@ pub const DEFAULT_RESERVATION_MS: u64 = 30_000;
 pub const MAX_RESERVATION_MS: u64 = 300_000;
 const SCENE_CACHE: usize = 4;
 const SNAPSHOT_CACHE: usize = 96;
+/// Raw pixels of `render.pixels` held for the most recently answered snapshots (68i): at most this many bytes in all. A page whose
+/// pixels alone are larger is not held.
+const PIXEL_CACHE_BYTES: usize = 160 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct ViewState {
@@ -154,7 +157,7 @@ pub struct SceneEntry { pub scene: Arc<RenderScene>, pub assets: Arc<StagingAsse
 #[derive(Clone)]
 pub struct SnapshotEntry { pub snapshot: RenderSnapshot, pub key: SnapshotKey }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct SnapshotKey { pub artifact_id: String, pub revision: Revision, pub page_index: u32, pub dpi: u32, pub transparent: bool, pub region: Option<[i64; 4]>, pub node_frames: bool }
+pub struct SnapshotKey { pub artifact_id: String, pub revision: Revision, pub page_index: u32, pub dpi: u32, pub transparent: bool, pub region: Option<[i64; 4]>, pub node_frames: bool, pub pixels: bool }
 impl SnapshotKey {
     pub fn region_key(region: Option<Rect>) -> Option<[i64; 4]> { region.map(|r| [r.x, r.y, r.width, r.height]) }
 }
@@ -167,6 +170,8 @@ pub struct RenderCache {
     order: VecDeque<String>,
     by_key: HashMap<SnapshotKey, String>,
     previews: HashMap<String, (String, Arc<Vec<u8>>)>,
+    /// (snapshot id, its raw pixels), oldest first.
+    pixels: VecDeque<(String, Arc<RasterPixels>)>,
 }
 impl RenderCache {
     pub fn scene(&mut self, artifact_id: &str, revision: Revision, node_frames: bool) -> Option<Arc<SceneEntry>> {
@@ -188,10 +193,11 @@ impl RenderCache {
         if let Some((r, bytes)) = preview { self.previews.insert(r.sha256.clone(), (r.mime, bytes)); }
         let id = snapshot.id.clone();
         if let Some(k) = &key { self.by_key.insert(k.clone(), id.clone()); }
-        self.snapshots.insert(id.clone(), SnapshotEntry { snapshot, key: key.unwrap_or(SnapshotKey { artifact_id: String::new(), revision: 0, page_index: 0, dpi: 0, transparent: false, region: None, node_frames: false }) });
+        self.snapshots.insert(id.clone(), SnapshotEntry { snapshot, key: key.unwrap_or(SnapshotKey { artifact_id: String::new(), revision: 0, page_index: 0, dpi: 0, transparent: false, region: None, node_frames: false, pixels: false }) });
         self.order.push_back(id);
         while self.order.len() > SNAPSHOT_CACHE {
             if let Some(old) = self.order.pop_front() {
+                self.pixels.retain(|(id, _)| *id != old);
                 if let Some(e) = self.snapshots.remove(&old) {
                     if self.by_key.get(&e.key) == Some(&old) { self.by_key.remove(&e.key); }
                     if let Some(p) = e.snapshot.preview { if !self.snapshots.values().any(|s| s.snapshot.preview.as_ref().map(|x| &x.sha256) == Some(&p.sha256)) { self.previews.remove(&p.sha256); } }
@@ -200,6 +206,20 @@ impl RenderCache {
         }
     }
     pub fn preview(&self, hash: &str) -> Option<(String, Arc<Vec<u8>>)> { self.previews.get(hash).cloned() }
+    /// The raw pixels held for snapshot `id`.
+    pub fn pixels_of(&self, id: &str) -> Option<Arc<RasterPixels>> { self.pixels.iter().find(|(held, _)| held == id).map(|(_, pixels)| Arc::clone(pixels)) }
+    /// Holds the raw pixels of snapshot `id` as the most recently used (again, when they were held already), dropping the least
+    /// recently used beyond [`PIXEL_CACHE_BYTES`]. The pixels of a snapshot that leaves the cache go with it (`insert`).
+    pub fn put_pixels(&mut self, id: &str, pixels: Arc<RasterPixels>) {
+        self.pixels.retain(|(held, _)| held != id);
+        if pixels.rgba_premultiplied.len() > PIXEL_CACHE_BYTES || !self.snapshots.contains_key(id) {
+            return;
+        }
+        self.pixels.push_back((id.to_string(), pixels));
+        while self.pixels.iter().map(|(_, p)| p.rgba_premultiplied.len()).sum::<usize>() > PIXEL_CACHE_BYTES {
+            self.pixels.pop_front();
+        }
+    }
     /// Preview assets rendered from `artifact_id` (job-bound read scope).
     pub fn previews_of(&self, artifact_id: &str) -> Vec<String> {
         self.snapshots.values().filter(|s| s.snapshot.artifact_id == artifact_id).filter_map(|s| s.snapshot.preview.as_ref().map(|p| p.sha256.clone())).collect()

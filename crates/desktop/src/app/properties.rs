@@ -537,7 +537,7 @@ fn interaction_target_menu(
 ) -> Option<String> {
     let label = options.iter().find(|(id, _)| id == current).map_or("선택", |(_, label)| label.as_str());
     let width = ui.available_width();
-    let button = widgets::dropdown(ui, palette, label, Some("chev-down"), width);
+    let button = widgets::dropdown(ui, palette, label, None, width);
     let mut selected = None;
     egui::Popup::from_toggle_button_response(&button)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -704,9 +704,9 @@ impl DesktopApp {
                     section_head(ui, palette, &mut first, "이미지 자르기 초안", None);
                     ui.label("다른 이미지 작업이 선택되어 있습니다. 초안은 보존되어 있습니다.");
                     if let Some(copy) = image_crop_copy_payload(editor) {
-                        if ui.button("자르기 초안 복사").clicked() { ui.ctx().copy_text(copy); }
+                        if widgets::labeled_button(ui, palette, None, "자르기 초안 복사", false).clicked() { ui.ctx().copy_text(copy); }
                     }
-                    if ui.add_enabled(editor.stage != super::ImageCropStage::Applying, egui::Button::new("초안 버리기")).clicked() {
+                    if ui.add_enabled_ui(editor.stage != super::ImageCropStage::Applying, |ui| widgets::labeled_button(ui, palette, None, "초안 버리기", false)).inner.clicked() {
                         discard_crop_draft = true;
                     }
                     ui.add_space(8.0);
@@ -830,7 +830,7 @@ impl DesktopApp {
             match editor.stage {
                 super::ImageCropStage::Loading => {
                     ui.small("원본 픽셀 크기를 확인하고 있습니다");
-                    if ui.button("자르기 확인 취소").clicked() { discard = true; }
+                    if widgets::labeled_button(ui, palette, None, "자르기 확인 취소", false).clicked() { discard = true; }
                 }
                 super::ImageCropStage::Applying => {
                     ui.small("이미지 자르기를 적용하고 있습니다. 결과가 확인될 때까지 다른 변경을 보류합니다");
@@ -839,27 +839,40 @@ impl DesktopApp {
                     if let (Some((image_width, image_height)), Some(mut fields)) = (editor.dimensions, editor.draft.clone()) {
                         ui.small(format!("원본 크기: {image_width} × {image_height} px"));
                         let mut changed = false;
+                        // Two fields and their labels share a row: each field takes half of what the labels leave, 40 to 64
+                        // wide, with a 4 px margin so that five digits fit.
+                        let crop_field_width = |ui: &Ui, labels: [&str; 2]| {
+                            let font = egui::TextStyle::Small.resolve(ui.style());
+                            let taken: f32 = labels.iter().map(|label| ui.painter().layout_no_wrap((*label).to_owned(), font.clone(), palette.ink).size().x).sum();
+                            ((ui.available_width() - taken - 3.0 * ui.spacing().item_spacing.x) / 2.0).clamp(40.0, 64.0)
+                        };
                         row(ui, palette, Some("원점 (px)"), |ui| {
                             ui.horizontal(|ui| {
+                                let width = crop_field_width(ui, ["X", "Y"]);
                                 for (label, index) in [("X", 0usize), ("Y", 1usize)] {
                                     ui.small(label);
-                                    changed |= ui.add_enabled(editable,
-                                        egui::TextEdit::singleline(&mut fields[index])
-                                            .id(Id::new(("image-crop", node.id.as_str(), label)))
-                                            .desired_width(54.0),
-                                    ).changed();
+                                    changed |= widgets::edit_line(ui, palette, &mut fields[index], widgets::Field {
+                                        width,
+                                        margin: Some(egui::Margin::symmetric(4, 4)),
+                                        id: Some(Id::new(("image-crop", node.id.as_str(), label))),
+                                        enabled: editable,
+                                        ..Default::default()
+                                    }).changed();
                                 }
                             });
                         });
                         row(ui, palette, Some("크기 (px)"), |ui| {
                             ui.horizontal(|ui| {
+                                let width = crop_field_width(ui, ["폭", "높이"]);
                                 for (label, index) in [("폭", 2usize), ("높이", 3usize)] {
                                     ui.small(label);
-                                    changed |= ui.add_enabled(editable,
-                                        egui::TextEdit::singleline(&mut fields[index])
-                                            .id(Id::new(("image-crop", node.id.as_str(), label)))
-                                            .desired_width(54.0),
-                                    ).changed();
+                                    changed |= widgets::edit_line(ui, palette, &mut fields[index], widgets::Field {
+                                        width,
+                                        margin: Some(egui::Margin::symmetric(4, 4)),
+                                        id: Some(Id::new(("image-crop", node.id.as_str(), label))),
+                                        enabled: editable,
+                                        ..Default::default()
+                                    }).changed();
                                 }
                             });
                         });
@@ -870,41 +883,41 @@ impl DesktopApp {
                         }
                         let payload = image_crop_copy_payload_fields(&fields, image_width, image_height);
                         ui.horizontal(|ui| {
-                            if ui.button("초안 복사").clicked() { ui.ctx().copy_text(payload); }
-                            if ui.add_enabled(editable && node.image_crop_pixel_rect.is_some(), egui::Button::new("전체 이미지로 초기화")).clicked() {
+                            if widgets::labeled_button(ui, palette, None, "초안 복사", false).clicked() { ui.ctx().copy_text(payload); }
+                            if ui.add_enabled_ui(editable && node.image_crop_pixel_rect.is_some(), |ui| widgets::labeled_button(ui, palette, None, "전체 이미지로 초기화", false)).inner.clicked() {
                                 reset = true;
                             }
-                            if ui.add_enabled(editable && valid, egui::Button::new("적용")).clicked() {
+                            if ui.add_enabled_ui(editable && valid, |ui| widgets::labeled_button(ui, palette, None, "적용", true)).inner.clicked() {
                                 apply_crop = parsed;
                             }
                         });
                         if editor.requested_crop.is_some() && !editor.outcome_uncertain && current {
-                            if ui.button("보존한 요청 다시 적용").clicked() { retry = editor.requested_crop; }
+                            if widgets::labeled_button(ui, palette, None, "보존한 요청 다시 적용", false).clicked() { retry = editor.requested_crop; }
                         }
                         if changed { changed_fields = Some(fields); }
                     } else {
                         ui.small("원본 픽셀 크기를 확인하지 못했습니다");
                         ui.horizontal(|ui| {
-                            if ui.add_enabled(current, egui::Button::new("크기 다시 확인")).clicked() { start = true; }
-                            if ui.button("초안 버리기").clicked() { discard = true; }
+                            if ui.add_enabled_ui(current, |ui| widgets::labeled_button(ui, palette, None, "크기 다시 확인", false)).inner.clicked() { start = true; }
+                            if widgets::labeled_button(ui, palette, None, "초안 버리기", false).clicked() { discard = true; }
                         });
                     }
                     if !current || editor.outcome_uncertain {
                         ui.horizontal(|ui| {
-                            if ui.button("최신 이미지 상태 확인").clicked() { rebase = true; }
-                            if ui.button("초안 버리기").clicked() { discard = true; }
+                            if widgets::labeled_button(ui, palette, None, "최신 이미지 상태 확인", false).clicked() { rebase = true; }
+                            if widgets::labeled_button(ui, palette, None, "초안 버리기", false).clicked() { discard = true; }
                         });
                     } else if editor.draft.is_some() {
-                        if ui.button("초안 버리기").clicked() { discard = true; }
+                        if widgets::labeled_button(ui, palette, None, "초안 버리기", false).clicked() { discard = true; }
                     }
                 }
             }
         } else if self.image_crop_editor.is_none() {
             let available = self.canvas_image_crop_available(&node.id);
             let response = row(ui, palette, Some("자르기"), |ui| {
-                let button = ui.add_enabled(available, egui::Button::new("원본 픽셀 범위 편집"));
+                let button = ui.add_enabled_ui(available, |ui| widgets::labeled_button(ui, palette, None, "원본 픽셀 범위 편집", false)).inner;
                 let response = if available { button } else {
-                    button.on_hover_text("잠금, 다른 작업의 예약, 선택 또는 이미지 원본을 확인한 뒤 시작할 수 있습니다")
+                    button.on_disabled_hover_text("잠금, 다른 작업의 예약, 선택 또는 이미지 원본을 확인한 뒤 시작할 수 있습니다")
                 };
                 response.clicked()
             });
@@ -1225,16 +1238,8 @@ fn valid_hex_colour(value: &str) -> bool {
 }
 
 fn token_text_field(ui: &mut Ui, palette: &theme::Palette, id: Id, width: f32, value: &mut String, hint: &str, enabled: bool) {
-    let show_hint = value.is_empty() && !hint.is_empty();
-    let mut edit = egui::TextEdit::singleline(value)
-        .id(id)
-        .font(theme::display_font(false, 13.0))
-        .text_color(palette.ink)
-        .margin(egui::Margin::symmetric(8, 4));
-    if show_hint {
-        edit = edit.hint_text(egui::RichText::new(hint).color(palette.ink_3));
-    }
-    let _ = ui.add_enabled_ui(enabled, |ui| ui.add_sized(vec2(width.max(40.0), theme::FIELD_HEIGHT), edit));
+    let hint = if value.is_empty() { hint } else { "" };
+    let _ = widgets::edit_line(ui, palette, value, widgets::Field { hint, width: width.max(40.0), id: Some(id), enabled, ..Default::default() });
 }
 
 fn panel_bind_target(state: &TokenPanelState) -> Option<BindTarget> {
@@ -1304,7 +1309,7 @@ fn draw_local_token_section(
     let mut published = publishes_design_system;
     let publish_enabled = snapshot_current && design_system.is_none() && !local_draft_pending;
     let published_changed = row(ui, palette, Some("공유 게시"), |ui| {
-        ui.add_enabled_ui(publish_enabled, |ui| ui.checkbox(&mut published, "이 캔버스를 디자인 시스템으로 공개")).inner.changed()
+        ui.add_enabled_ui(publish_enabled, |ui| widgets::checkbox(ui, palette, &mut published, "이 캔버스를 디자인 시스템으로 공개")).inner.changed()
     });
     if published_changed {
         action = Some(("canvas.design_system.publish", json!({ "publish": published })));
@@ -1331,7 +1336,7 @@ fn draw_local_token_section(
     let next_source = row(ui, palette, Some("공유 원본"), |ui| {
         ui.add_enabled_ui(source_picker_enabled, |ui| {
             let width = ui.available_width();
-            let button = widgets::dropdown(ui, palette, &current_source_name, Some("chev-down"), width);
+            let button = widgets::dropdown(ui, palette, &current_source_name, None, width);
             let mut picked: Option<Option<(String, u64)>> = None;
             egui::Popup::from_toggle_button_response(&button)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -1427,7 +1432,7 @@ fn draw_local_token_section(
         );
     let picked = row(ui, palette, Some("토큰"), |ui| {
         let width = ui.available_width();
-        let button = widgets::dropdown(ui, palette, current_name, Some("chev-down"), width);
+        let button = widgets::dropdown(ui, palette, current_name, None, width);
         let mut picked: Option<Option<String>> = None;
         egui::Popup::from_toggle_button_response(&button)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -1559,7 +1564,7 @@ fn draw_local_token_section(
         let current_name = current.map_or("공유 토큰 선택", |token| token.name.as_str());
         let picked = row(ui, palette, Some("공유 토큰"), |ui| {
             let width = ui.available_width();
-            let button = widgets::dropdown(ui, palette, current_name, Some("chev-down"), width);
+            let button = widgets::dropdown(ui, palette, current_name, None, width);
             let mut picked = None;
             egui::Popup::from_toggle_button_response(&button)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -2013,15 +2018,15 @@ impl DesktopApp {
                             super::ImageReplacementStage::Importing => "이미지를 가져오는 중",
                             super::ImageReplacementStage::Applying => "교체를 적용하는 중",
                         });
-                        ui.add_enabled(stage == super::ImageReplacementStage::Importing, egui::Button::new("취소")).clicked()
+                        ui.add_enabled_ui(stage == super::ImageReplacementStage::Importing, |ui| widgets::labeled_button(ui, palette, None, "취소", false)).inner.clicked()
                     }).inner
                 });
                 if cancel { self.cancel_canvas_image_replacement(); }
             } else if row(ui, palette, Some("원본"), |ui| {
                 let enabled = editable && self.canvas_image_replacement_available(&node.id);
-                let response = ui.add_enabled(enabled, egui::Button::new("이미지 교체"));
+                let response = ui.add_enabled_ui(enabled, |ui| widgets::labeled_button(ui, palette, None, "이미지 교체", true)).inner;
                 let response = if enabled { response } else {
-                    response.on_hover_text("잠긴 이미지, 컴포넌트 원본·인스턴스와 그림 연결 이미지는 이 경로로 교체할 수 없습니다")
+                    response.on_disabled_hover_text("잠긴 이미지, 컴포넌트 원본·인스턴스와 그림 연결 이미지는 이 경로로 교체할 수 없습니다")
                 };
                 response.clicked()
             }) {
@@ -2197,7 +2202,7 @@ impl DesktopApp {
         }
         if let Some(instance_id) = component_instance_id.filter(|_| self.command_enabled_for_current_kind("component.detach")) {
             section_head(ui, palette, first, "컴포넌트", None);
-            if row(ui, palette, Some("연결"), |ui| ui.button("원본에서 분리").clicked()) {
+            if row(ui, palette, Some("연결"), |ui| widgets::labeled_button(ui, palette, None, "원본에서 분리", false).clicked()) {
                 self.invoke_ui("component.detach", json!({ "node_id": instance_id }));
             }
             ui.add_space(8.0);
@@ -2223,17 +2228,15 @@ impl DesktopApp {
         let dirty = draft.d != draft.base_d || draft.view_box != draft.base_view_box;
         let mut edited = false;
         ui.small("경로 데이터 (d)");
-        edited |= ui
-            .add_enabled(
-                editable,
-                egui::TextEdit::multiline(&mut draft.d)
-                    .id(Id::new(("node-path-d", node.id.as_str())))
-                    .font(theme::display_font(false, 13.0))
-                    .text_color(palette.ink)
-                    .desired_rows(3)
-                    .desired_width(ui.available_width()),
-            )
-            .changed();
+        let d_width = ui.available_width();
+        edited |= widgets::edit_area(ui, palette, &mut draft.d, widgets::Field {
+            width: d_width,
+            rows: 3,
+            id: Some(Id::new(("node-path-d", node.id.as_str()))),
+            enabled: editable,
+            ..Default::default()
+        })
+        .changed();
         row(ui, palette, Some("viewBox"), |ui| {
             let width = ui.available_width();
             edited |= path_text_field(ui, palette, Id::new(("node-path-view-box", node.id.as_str())), width, &mut draft.view_box, editable);
@@ -2836,7 +2839,7 @@ impl DesktopApp {
             if let Some((page_id, is_component, sources)) = component_state {
                 if self.command_enabled_for_current_kind("page.component") {
                     let mut enabled = is_component;
-                    if row(ui, palette, Some("컴포넌트"), |ui| ui.checkbox(&mut enabled, "페이지를 소스로 사용").changed()) {
+                    if row(ui, palette, Some("컴포넌트"), |ui| widgets::checkbox(ui, palette, &mut enabled, "페이지를 소스로 사용").changed()) {
                         self.invoke_ui("page.component", json!({ "page_index": page_index, "enabled": enabled }));
                     }
                 }
@@ -2845,13 +2848,16 @@ impl DesktopApp {
                     let first_source = sources[0].0.clone();
                     let mut selected = ui.data(|data| data.get_temp::<String>(source_key)).filter(|id| sources.iter().any(|(source, _)| source == id)).unwrap_or(first_source);
                     let label = sources.iter().find(|(source, _)| source == &selected).map(|(_, name)| name.as_str()).unwrap_or("컴포넌트 선택");
+                    let names: Vec<&str> = sources.iter().map(|(_, name)| name.as_str()).collect();
+                    let current = sources.iter().position(|(source, _)| *source == selected);
                     row(ui, palette, Some("원본"), |ui| {
-                        egui::ComboBox::from_id_salt(source_key).selected_text(label).show_ui(ui, |ui| {
-                            for (source_id, name) in &sources { ui.selectable_value(&mut selected, source_id.clone(), name); }
-                        });
+                        let width = ui.available_width();
+                        if let Some(index) = widgets::select_menu(ui, palette, label, &names, current, width) {
+                            selected = sources[index].0.clone();
+                        }
                     });
                     ui.data_mut(|data| data.insert_temp(source_key, selected.clone()));
-                    if row(ui, palette, Some(""), |ui| ui.button("컴포넌트 삽입").clicked()) {
+                    if row(ui, palette, Some(""), |ui| widgets::labeled_button(ui, palette, None, "컴포넌트 삽입", false).clicked()) {
                         self.invoke_ui("component.instantiate", json!({ "component_page_id": selected, "instance_id": new_id(), "page_index": page_index }));
                     }
                 }
@@ -3179,7 +3185,15 @@ impl DesktopApp {
             ("rows", "행", stored.as_ref().and_then(|guides| guides.rows)),
         ] {
             let mut on = current.is_some();
-            let switched = row(ui, palette, Some(label), |ui| ui.add_enabled(editable, egui::Checkbox::new(&mut on, "")).changed());
+            let switched = row(ui, palette, Some(label), |ui| {
+                // Only the box takes clicks, as the egui check box did: the rest of the row is not a target.
+                ui.add_enabled_ui(editable, |ui| {
+                    ui.set_max_width(theme::ICON_SMALL);
+                    widgets::checkbox(ui, palette, &mut on, "")
+                })
+                .inner
+                .changed()
+            });
             if switched {
                 actions.push(if on {
                     ("canvas.guides.set", json!({ "page_index": page_index, "axis": axis, "count": 3, "spacing_emu": 0, "leading_margin_emu": 0, "trailing_margin_emu": 0 }))
@@ -3246,15 +3260,15 @@ impl DesktopApp {
         let draft_id = id.with("draft");
         let mut draft = ui.data(|data| data.get_temp::<String>(draft_id)).unwrap_or_else(|| notes.clone());
         let width = ui.available_width();
-        let edit = egui::TextEdit::multiline(&mut draft)
-            .id(id)
-            .font(theme::display_font(false, 13.0))
-            .text_color(palette.ink)
-            .margin(egui::Margin::symmetric(8, 6))
-            .desired_width(width)
-            .desired_rows(4)
-            .min_size(vec2(width, 96.0));
-        let response = ui.add_enabled(editable, edit);
+        let response = widgets::edit_area(ui, palette, &mut draft, widgets::Field {
+            width,
+            rows: 4,
+            min_height: 96.0,
+            id: Some(id),
+            enabled: editable,
+            margin: Some(egui::Margin::symmetric(8, 6)),
+            ..Default::default()
+        });
         if response.has_focus() {
             ui.data_mut(|data| data.insert_temp(draft_id, draft.clone()));
         } else {
@@ -3854,12 +3868,7 @@ fn draft_matches_base(draft: &NodePathDraft) -> bool {
 
 /// A single-line field of the path section, drawn as the other property fields are.
 fn path_text_field(ui: &mut Ui, palette: &theme::Palette, id: Id, width: f32, text: &mut String, enabled: bool) -> bool {
-    let edit = egui::TextEdit::singleline(text)
-        .id(id)
-        .font(theme::display_font(false, 13.0))
-        .text_color(palette.ink)
-        .margin(egui::Margin::symmetric(8, 4));
-    ui.add_enabled(enabled, |ui: &mut Ui| ui.add_sized(vec2(width.max(40.0), theme::FIELD_HEIGHT), edit)).changed()
+    widgets::edit_line(ui, palette, text, widgets::Field { width: width.max(40.0), id: Some(id), enabled, ..Default::default() }).changed()
 }
 
 /// The path the two fields describe. The view box is read first, as the insert form reads it, then the data against it.
@@ -4062,15 +4071,9 @@ fn field_with_hint(ui: &mut Ui, palette: &theme::Palette, id: Id, width: f32, pr
     let unit_width = text_width(ui, unit, small.clone());
     let left = 8.0 + if prefix.is_empty() { 0.0 } else { prefix_width + 6.0 };
     let right = 8.0 + if unit.is_empty() { 0.0 } else { unit_width + 6.0 };
-    let mut edit = egui::TextEdit::singleline(&mut draft)
-        .id(id)
-        .font(theme::display_font(false, 13.0))
-        .text_color(palette.ink)
-        .margin(egui::Margin { left: left.round() as i8, right: right.round() as i8, top: 4, bottom: 4 });
-    if value.is_none() {
-        edit = edit.hint_text(egui::RichText::new(hint).color(palette.ink_3));
-    }
-    let response = ui.add_enabled(enabled, |ui: &mut Ui| ui.add_sized(vec2(width.max(40.0), theme::FIELD_HEIGHT), edit));
+    let hint = if value.is_none() { hint } else { "" };
+    let margin = egui::Margin { left: left.round() as i8, right: right.round() as i8, top: 4, bottom: 4 };
+    let response = widgets::edit_line(ui, palette, &mut draft, widgets::Field { hint, width: width.max(40.0), id: Some(id), enabled, margin: Some(margin), ..Default::default() });
     if matches!(prefix, "폭" | "열") {
         crate::ui_record::note(ui, prefix, &response);
     }
@@ -4112,15 +4115,8 @@ fn text_line_with_hint(
 ) -> Option<String> {
     let draft_id = id.with("draft");
     let mut draft = ui.data(|data| data.get_temp::<String>(draft_id)).unwrap_or_else(|| value.to_owned());
-    let mut edit = egui::TextEdit::singleline(&mut draft)
-        .id(id)
-        .font(theme::display_font(false, 13.0))
-        .text_color(palette.ink)
-        .margin(egui::Margin::symmetric(8, 4));
-    if !hint.is_empty() && value.is_empty() {
-        edit = edit.hint_text(egui::RichText::new(hint).color(palette.ink_3));
-    }
-    let response = ui.add_enabled(enabled, |ui: &mut Ui| ui.add_sized(vec2(width.max(40.0), theme::FIELD_HEIGHT), edit));
+    let hint = if !hint.is_empty() && value.is_empty() { hint } else { "" };
+    let response = widgets::edit_line(ui, palette, &mut draft, widgets::Field { hint, width: width.max(40.0), id: Some(id), enabled, ..Default::default() });
     if response.has_focus() {
         ui.data_mut(|data| data.insert_temp(draft_id, draft.clone()));
     } else {
@@ -4145,15 +4141,8 @@ fn text_line_draft(
         .filter(|(saved_key, saved_revision, _)| saved_key == state_key && *saved_revision == revision)
         .map(|(_, _, draft)| draft)
         .unwrap_or_else(|| value.to_owned());
-    let mut edit = egui::TextEdit::singleline(&mut draft)
-        .id(id)
-        .font(theme::display_font(false, 13.0))
-        .text_color(palette.ink)
-        .margin(egui::Margin::symmetric(8, 4));
-    if !hint.is_empty() && value.is_empty() {
-        edit = edit.hint_text(egui::RichText::new(hint).color(palette.ink_3));
-    }
-    let response = ui.add_sized(vec2(width.max(40.0), theme::FIELD_HEIGHT), edit);
+    let hint = if !hint.is_empty() && value.is_empty() { hint } else { "" };
+    let response = widgets::edit_line(ui, palette, &mut draft, widgets::Field { hint, width: width.max(40.0), id: Some(id), ..Default::default() });
     ui.data_mut(|data| data.insert_temp(state_id, (state_key.to_owned(), revision, draft.clone())));
     let enter = ui.input(|input| input.key_pressed(egui::Key::Enter)) && (response.has_focus() || response.lost_focus());
     (draft, enter)
@@ -4171,15 +4160,14 @@ fn colour_field_at(ui: &mut Ui, palette: &theme::Palette, id: Id, width: f32, va
     let mut draft = ui.data(|data| data.get_temp::<String>(draft_id)).unwrap_or_else(|| value.map(widgets::normalise_hex).unwrap_or_default());
     let swatch = value.and_then(widgets::parse_hex);
     let left: i8 = if swatch.is_some() { 30 } else { 8 };
-    let mut edit = egui::TextEdit::singleline(&mut draft)
-        .id(id)
-        .font(theme::display_font(false, 13.0))
-        .text_color(palette.ink)
-        .margin(egui::Margin { left, right: 8, top: 4, bottom: 4 });
-    if value.is_none() {
-        edit = edit.hint_text(egui::RichText::new("여러 값").color(palette.ink_3));
-    }
-    let response = ui.add_sized(vec2(width.max(60.0), theme::FIELD_HEIGHT), edit);
+    let hint = if value.is_none() { "여러 값" } else { "" };
+    let response = widgets::edit_line(ui, palette, &mut draft, widgets::Field {
+        hint,
+        width: width.max(60.0),
+        id: Some(id),
+        margin: Some(egui::Margin { left, right: 8, top: 4, bottom: 4 }),
+        ..Default::default()
+    });
     if let Some(colour) = swatch {
         let sample = Rect::from_min_size(Pos2::new(response.rect.left() + 8.0, response.rect.center().y - 8.0), Vec2::splat(16.0));
         ui.painter().rect_filled(sample, CornerRadius::same(theme::RADIUS_SMALL), colour);

@@ -2,6 +2,8 @@
 //! and a label (rule L1); icon-only buttons are for the small floating groups and the top bar
 //! (rules L2 and L4) and always carry a tooltip with their name and shortcut.
 
+use std::ops::RangeInclusive;
+
 use eframe::egui::{
     self, Align2, Color32, CornerRadius, FontId, Pos2, Rect, Response, Sense, Stroke,
     StrokeKind, TextEdit, Ui, Vec2,
@@ -60,19 +62,27 @@ pub fn labeled_button(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label:
 /// `labeled_button` with the open state (its menu is showing) and an unsaved-changes dot after the label.
 pub fn labeled_button_with(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, primary: bool, open: bool, dot: bool) -> Response {
     let font = theme::font(if primary { theme::Type::Strong } else { theme::Type::Body });
-    let ink = if primary { palette.on_accent } else { palette.ink };
+    // A disabled button (`add_enabled_ui`) keeps its shape and takes `ink-3` with no hover; a disabled main button drops to `surface-2`.
+    let enabled = ui.is_enabled();
+    let ink = if !enabled { palette.ink_3 } else if primary { palette.on_accent } else { palette.ink };
     let label_width = text_width(ui, label, font.clone(), ink);
     let left = if icon.is_some() { 8.0 } else { 10.0 };
     let icon_width = if icon.is_some() { theme::ICON_SMALL + 6.0 } else { 0.0 };
     let dot_width = if dot { 4.0 + 6.0 } else { 0.0 };
     let width = left + icon_width + label_width + dot_width + 10.0;
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, theme::CONTROL_HEIGHT), Sense::click());
-    let pressed = response.is_pointer_button_down_on();
-    let fill = if primary {
-        Some(if pressed || response.hovered() { palette.accent_ink } else { palette.accent })
+    // The colours above and below are already the disabled look: the half opacity of a disabled ui is taken back while
+    // the button paints (as `dialog_button` does), so that `ink-3` keeps its 4.5:1 on `surface` and `surface-2`.
+    let opacity = undo_disabled_fade(ui);
+    let pressed = enabled && response.is_pointer_button_down_on();
+    let hovered = enabled && response.hovered();
+    let fill = if !enabled {
+        primary.then_some(palette.surface_2)
+    } else if primary {
+        Some(if pressed || hovered { palette.accent_ink } else { palette.accent })
     } else if pressed {
         Some(palette.surface_3)
-    } else if open || response.hovered() {
+    } else if open || hovered {
         Some(palette.surface_2)
     } else {
         None
@@ -87,15 +97,26 @@ pub fn labeled_button_with(ui: &mut Ui, palette: &Palette, icon: Option<&str>, l
             Pos2::new(x, rect.center().y - theme::ICON_SMALL / 2.0),
             Vec2::splat(theme::ICON_SMALL),
         );
-        icons::paint(ui, icon_rect, icon, if primary { palette.on_accent } else { palette.ink_2 });
+        icons::paint(ui, icon_rect, icon, if !enabled { palette.ink_3 } else if primary { palette.on_accent } else { palette.ink_2 });
         x += theme::ICON_SMALL + 6.0;
     }
     ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, label, font, ink);
     if dot {
         ui.painter().circle_filled(Pos2::new(x + label_width + 4.0 + 3.0, rect.center().y), 3.0, palette.accent);
     }
+    ui.set_opacity(opacity);
     crate::ui_record::note(ui, label, &response);
     response
+}
+
+/// Takes back the half opacity egui gives a disabled ui (`Ui::disable`) for a control that paints its own disabled colours,
+/// and returns the opacity to restore after it painted. An enabled ui is left as it is.
+fn undo_disabled_fade(ui: &mut Ui) -> f32 {
+    let opacity = ui.opacity();
+    if !ui.is_enabled() {
+        ui.set_opacity((opacity / ui.visuals().disabled_alpha().max(0.01)).min(1.0));
+    }
+    opacity
 }
 
 /// The zoom button of the view group: the value and a chevron, no border (tokens `component.zoom-button`).
@@ -376,14 +397,19 @@ pub fn wide_primary(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &
 /// response with `egui::Popup::from_toggle_button_response`.
 pub fn dropdown(ui: &mut Ui, palette: &Palette, value: &str, icon: Option<&str>, width: f32) -> Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, theme::FIELD_HEIGHT), Sense::click());
-    let fill = if response.hovered() { palette.surface_2 } else { palette.surface };
+    // A disabled dropdown paints its own colours (`ink-3` text and icons, a `line` border on `surface`), so the half opacity
+    // egui gives a disabled ui is taken back for the painting and restored after it.
+    let enabled = ui.is_enabled();
+    let opacity = undo_disabled_fade(ui);
+    let fill = if enabled && response.hovered() { palette.surface_2 } else { palette.surface };
+    let (outline, ink) = if enabled { (palette.line_strong, palette.ink) } else { (palette.line, palette.ink_3) };
     let corner = CornerRadius::same(theme::RADIUS_CONTROL);
     ui.painter().rect_filled(rect, corner, fill);
-    ui.painter().rect_stroke(rect, corner, Stroke::new(1.0, palette.line_strong), StrokeKind::Inside);
+    ui.painter().rect_stroke(rect, corner, Stroke::new(1.0, outline), StrokeKind::Inside);
     let mut x = rect.left() + 8.0;
     if let Some(icon) = icon {
         let icon_rect = Rect::from_min_size(Pos2::new(x, rect.center().y - 8.0), Vec2::splat(theme::ICON_SMALL));
-        icons::paint(ui, icon_rect, icon, palette.ink_2);
+        icons::paint(ui, icon_rect, icon, if enabled { palette.ink_2 } else { palette.ink_3 });
         x += theme::ICON_SMALL + 6.0;
     }
     let chevron = Rect::from_min_size(
@@ -392,21 +418,26 @@ pub fn dropdown(ui: &mut Ui, palette: &Palette, value: &str, icon: Option<&str>,
     );
     icons::paint(ui, chevron, "chev-down", palette.ink_3);
     let room = (rect.right() - 26.0 - x).max(0.0);
-    let shown = truncate_to_width(ui, value, room, palette.ink);
+    let shown = truncate_to_width(ui, value, room, ink);
     ui.painter().text(
         Pos2::new(x, rect.center().y),
         Align2::LEFT_CENTER,
         shown,
         theme::display_font(false, 13.0),
-        palette.ink,
+        ink,
     );
+    ui.set_opacity(opacity);
     crate::ui_record::note(ui, value, &response);
     response
 }
 
 /// Cuts `text` with an ellipsis so that it fits `width` points.
 pub fn truncate_to_width(ui: &Ui, text: &str, width: f32, color: Color32) -> String {
-    let font = house_font(ui, theme::Type::Body);
+    cut_to_width(ui, text, width, house_font(ui, theme::Type::Body), color)
+}
+
+/// `truncate_to_width` in `font`.
+fn cut_to_width(ui: &Ui, text: &str, width: f32, font: FontId, color: Color32) -> String {
     if text_width(ui, text, font.clone(), color) <= width {
         return text.to_owned();
     }
@@ -448,6 +479,255 @@ pub fn text_field(ui: &mut Ui, palette: &Palette, text: &mut String, hint: &str,
     );
     crate::ui_record::note(ui, hint, &response);
     response
+}
+
+/// The options of a text edit made by `edit_line` or `edit_area` (task 68h). The defaults are a framed field in the property
+/// panel's face (display 13, ink, margin 8 × 4, enabled, 28 high). `borderless` drops the frame and the margin for an editor
+/// that is drawn inside a box of its own (a card, a canvas, a grid cell).
+#[derive(Clone)]
+pub struct Field<'a> {
+    pub hint: &'a str,
+    pub width: f32,
+    pub font: Option<FontId>,
+    pub color: Option<Color32>,
+    pub id: Option<egui::Id>,
+    pub margin: Option<egui::Margin>,
+    pub borderless: bool,
+    pub enabled: bool,
+    /// Lines shown by `edit_area` (its height before it grows).
+    pub rows: usize,
+    /// The least height of `edit_area`.
+    pub min_height: f32,
+    pub align: egui::Align,
+    /// Enter does not take the focus away from a single-line field (`return_key(None)`).
+    pub enter_keeps_focus: bool,
+    /// The label the field is recorded under for `ui.layout` (`ui_record`). None records nothing: a hint is not a label,
+    /// since many fields show the same one (`여러 값`).
+    pub record: Option<&'a str>,
+    /// The height of an `edit_line`: framed fields default to the field height, borderless ones to their text's. A field
+    /// in a grid cell or a list row takes the cell's height.
+    pub height: Option<f32>,
+}
+
+impl Default for Field<'_> {
+    fn default() -> Self {
+        Self {
+            hint: "",
+            width: 0.0,
+            font: None,
+            color: None,
+            id: None,
+            margin: None,
+            borderless: false,
+            enabled: true,
+            rows: 1,
+            min_height: 0.0,
+            align: egui::Align::Min,
+            enter_keeps_focus: false,
+            record: None,
+            height: None,
+        }
+    }
+}
+
+/// A single-line text edit in the house style (`Field`): framed at `width` × `height` (the field height unless given), or
+/// borderless at `width` (and `height` when given).
+pub fn edit_line(ui: &mut Ui, palette: &Palette, text: &mut String, field: Field<'_>) -> Response {
+    let font = field.font.clone().unwrap_or_else(|| theme::display_font(false, 13.0));
+    let mut edit = TextEdit::singleline(text)
+        .font(font.clone())
+        .text_color(field.color.unwrap_or(palette.ink))
+        .horizontal_align(field.align)
+        .hint_text(egui::RichText::new(field.hint).font(font).color(palette.ink_3))
+        .margin(field_margin(&field, egui::Margin::symmetric(8, 4)));
+    if let Some(id) = field.id {
+        edit = edit.id(id);
+    }
+    if field.enter_keeps_focus {
+        edit = edit.return_key(None);
+    }
+    if field.borderless {
+        edit = edit.frame(false);
+    }
+    let size = match (field.borderless, field.height) {
+        (_, Some(height)) => Some(egui::vec2(field.width, height)),
+        (false, None) => Some(egui::vec2(field.width, theme::FIELD_HEIGHT)),
+        (true, None) => None,
+    };
+    let response = ui
+        .add_enabled_ui(field.enabled, |ui| match size {
+            Some(size) => ui.add_sized(size, edit),
+            None => ui.add(edit.desired_width(field.width)),
+        })
+        .inner;
+    if let Some(label) = field.record {
+        crate::ui_record::note(ui, label, &response);
+    }
+    response
+}
+
+/// A multi-line text edit in the house style (`Field`): framed at `width` with `rows` lines, or borderless.
+pub fn edit_area(ui: &mut Ui, palette: &Palette, text: &mut String, field: Field<'_>) -> Response {
+    let font = field.font.clone().unwrap_or_else(|| theme::display_font(false, 13.0));
+    let mut edit = TextEdit::multiline(text)
+        .font(font.clone())
+        .text_color(field.color.unwrap_or(palette.ink))
+        .horizontal_align(field.align)
+        .hint_text(egui::RichText::new(field.hint).font(font).color(palette.ink_3))
+        .desired_rows(field.rows.max(1))
+        .desired_width(field.width)
+        .margin(field_margin(&field, egui::Margin::symmetric(8, 4)));
+    if field.min_height > 0.0 {
+        edit = edit.min_size(egui::vec2(field.width, field.min_height));
+    }
+    if let Some(id) = field.id {
+        edit = edit.id(id);
+    }
+    if field.borderless {
+        edit = edit.frame(false);
+    }
+    let response = ui.add_enabled_ui(field.enabled, |ui| ui.add(edit)).inner;
+    if let Some(label) = field.record {
+        crate::ui_record::note(ui, label, &response);
+    }
+    response
+}
+
+fn field_margin(field: &Field<'_>, framed: egui::Margin) -> egui::Margin {
+    field.margin.unwrap_or(if field.borderless { egui::Margin::ZERO } else { framed })
+}
+
+const NUMBER_FIELD_WIDTH: f32 = 36.0;
+
+/// A whole number in a dense row (task 68h: in place of a drag value): `prefix` (caption `ink-2`, may be empty), a minus
+/// button, a field the number is typed into, and a plus button. The buttons take Tab focus and say what they do
+/// (`1 줄이기`, `1 늘리기`); a typed number counts once it parses, and leaving the field shows the value again. The value is
+/// kept inside `range`. Returns true when this frame changed it.
+pub fn number_stepper(ui: &mut Ui, palette: &Palette, value: &mut u32, range: RangeInclusive<u32>, prefix: &str) -> bool {
+    let (low, high) = (*range.start(), *range.end());
+    let before = *value;
+    *value = (*value).clamp(low, high);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        if !prefix.trim().is_empty() {
+            ui.label(egui::RichText::new(prefix.trim()).font(theme::font(theme::Type::Caption)).color(palette.ink_2));
+            ui.add_space(4.0);
+        }
+        // `unique_id`: the rows of a panel share their stable id, so two steppers would share a field.
+        let id = ui.unique_id().with("number-stepper");
+        let draft_id = id.with("draft");
+        if step_button(ui, palette, false, "1 줄이기").clicked() {
+            *value = value.saturating_sub(1).max(low);
+            ui.data_mut(|data| data.remove::<String>(draft_id));
+        }
+        let mut text = ui.data(|data| data.get_temp::<String>(draft_id)).unwrap_or_else(|| value.to_string());
+        let response = edit_line(ui, palette, &mut text, Field {
+            width: NUMBER_FIELD_WIDTH,
+            height: Some(theme::MINI_BUTTON),
+            margin: Some(egui::Margin::symmetric(4, 2)),
+            align: egui::Align::Center,
+            id: Some(id),
+            ..Default::default()
+        });
+        if response.changed() {
+            if let Some(typed) = parse_whole_number(&text) {
+                *value = typed.clamp(low, high);
+            }
+        }
+        if response.has_focus() {
+            ui.data_mut(|data| data.insert_temp(draft_id, text));
+        } else {
+            ui.data_mut(|data| data.remove::<String>(draft_id));
+        }
+        if step_button(ui, palette, true, "1 늘리기").clicked() {
+            *value = value.saturating_add(1).min(high);
+            ui.data_mut(|data| data.remove::<String>(draft_id));
+        }
+    });
+    *value != before
+}
+
+/// A typed whole number; a number too large for `u32` is read as the largest one (the caller clamps it).
+fn parse_whole_number(text: &str) -> Option<u32> {
+    let digits = text.trim();
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(digits.parse::<u32>().unwrap_or(u32::MAX))
+}
+
+/// A 24 px outlined minus or plus button of a `number_stepper`, recorded and shown with its `tooltip`.
+fn step_button(ui: &mut Ui, palette: &Palette, plus: bool, tooltip: &str) -> Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(theme::MINI_BUTTON), Sense::click());
+    let opacity = undo_disabled_fade(ui);
+    let ink = paint_compact_frame(ui, palette, rect, &response);
+    let stroke = Stroke::new(1.5, ink);
+    let centre = rect.center();
+    ui.painter().line_segment([centre - egui::vec2(4.5, 0.0), centre + egui::vec2(4.5, 0.0)], stroke);
+    if plus {
+        ui.painter().line_segment([centre - egui::vec2(0.0, 4.5), centre + egui::vec2(0.0, 4.5)], stroke);
+    }
+    ui.set_opacity(opacity);
+    let enabled = ui.is_enabled();
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, tooltip));
+    crate::ui_record::note(ui, tooltip, &response);
+    if enabled { response.on_hover_text(tooltip) } else { response.on_disabled_hover_text(tooltip) }
+}
+
+/// A compact outlined button for a dense row (task 68h): 24 high, `ink-2` label, `surface-2` on hover.
+pub fn compact_button(ui: &mut Ui, palette: &Palette, label: &str) -> Response {
+    let font = theme::font(theme::Type::Caption);
+    let width = text_width(ui, label, font.clone(), palette.ink) + 16.0;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 24.0), Sense::click());
+    let opacity = undo_disabled_fade(ui);
+    let ink = paint_compact_frame(ui, palette, rect, &response);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, font, ink);
+    ui.set_opacity(opacity);
+    let enabled = ui.is_enabled();
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+    crate::ui_record::note(ui, label, &response);
+    response
+}
+
+/// The frame of a compact button: `line-strong` outline, `surface-2` on hover, the 2 px `accent` focus ring outside (§5.4).
+/// Returns the colour of its label: `ink-2`, or `ink-3` when disabled.
+fn paint_compact_frame(ui: &Ui, palette: &Palette, rect: Rect, response: &Response) -> Color32 {
+    let enabled = ui.is_enabled();
+    let corner = CornerRadius::same(theme::RADIUS_CONTROL);
+    if enabled && response.hovered() {
+        ui.painter().rect_filled(rect, corner, palette.surface_2);
+    }
+    ui.painter().rect_stroke(rect, corner, Stroke::new(1.0, if enabled { palette.line_strong } else { palette.line }), StrokeKind::Inside);
+    if response.has_focus() {
+        ui.painter().rect_stroke(rect.expand(2.0), CornerRadius::same(theme::RADIUS_CONTROL + 2), Stroke::new(2.0, palette.accent), StrokeKind::Outside);
+    }
+    if enabled { palette.ink_2 } else { palette.ink_3 }
+}
+
+/// The borderless multi-line editor that a canvas text is edited in (task 68h): it fills `size` where the text is, and returns
+/// its output, from which the IME layout is recorded. `interactive` false keeps the text shown and takes no input.
+pub fn inline_edit(
+    ui: &mut Ui,
+    text: &mut String,
+    id: egui::Id,
+    font: FontId,
+    color: Color32,
+    align: egui::Align,
+    size: Vec2,
+    interactive: bool,
+) -> egui::text_edit::TextEditOutput {
+    TextEdit::multiline(text)
+        .id(id)
+        .font(font)
+        .text_color(color)
+        .horizontal_align(align)
+        .frame(false)
+        .margin(egui::Margin::ZERO)
+        .desired_width(size.x)
+        .desired_rows(1)
+        .min_size(size)
+        .interactive(interactive)
+        .show(ui)
 }
 
 /// Parses `#RRGGBB` (the `#` is optional).
@@ -853,7 +1133,8 @@ fn dialog_button_font(ui: &Ui, kind: DialogButton) -> FontId {
     house_font(ui, if kind == DialogButton::Primary { theme::Type::Strong } else { theme::Type::Body })
 }
 
-fn dialog_button_width(ui: &Ui, label: &str, kind: DialogButton) -> f32 {
+/// The width `dialog_button` takes for `label`: the label and 16 on each side, at least 88. A row that must not wrap is sized with it.
+pub fn dialog_button_width(ui: &Ui, label: &str, kind: DialogButton) -> f32 {
     (text_width(ui, label, dialog_button_font(ui, kind), Color32::WHITE) + 2.0 * DIALOG_BUTTON_PADDING).max(DIALOG_BUTTON_MIN_WIDTH)
 }
 
@@ -889,7 +1170,7 @@ pub fn dialog_buttons(ui: &mut Ui, palette: &Palette, choices: &[DialogChoice<'_
             |ui| {
                 ui.spacing_mut().item_spacing.x = DIALOG_GAP;
                 for choice in &choices[line] {
-                    let response = dialog_button(ui, palette, choice.label, choice.kind, choice.enabled);
+                    let response = dialog_button_shape(ui, palette, choice.label, choice.kind, choice.enabled);
                     if choice.human_only {
                         crate::ui_record::note_human_only(ui, choice.label, &response);
                     } else {
@@ -906,14 +1187,27 @@ pub fn dialog_buttons(ui: &mut Ui, palette: &Palette, choices: &[DialogChoice<'_
 /// One dialog button: 32 high, radius 6, 16 padding, at least 88 wide. `Primary` takes the bold label. A disabled main button
 /// (`Primary`, `Warn`) drops its fill to `surface-2` with `ink-3` text (4.5:1, §5.1), so that it reads as off beside the
 /// outlined ones; a disabled outlined button keeps `surface` with `ink-3` text and a `line` border. The keyboard focus is
-/// the 2 px `accent` ring 2 px outside (§5.4). The caller (`dialog_buttons`) reports it to the UI-test layer.
+/// the 2 px `accent` ring 2 px outside (§5.4). It is reported to the UI-test layer under its label.
 pub fn dialog_button(ui: &mut Ui, palette: &Palette, label: &str, kind: DialogButton, enabled: bool) -> Response {
+    dialog_button_recorded(ui, palette, label, label, kind, enabled)
+}
+
+/// `dialog_button` reported under `record` instead of its label (task 68h-c): for a button whose words another control on
+/// screen shares, such as a human-only `적용`, so that the report names each control once.
+pub fn dialog_button_recorded(ui: &mut Ui, palette: &Palette, label: &str, record: &str, kind: DialogButton, enabled: bool) -> Response {
+    let response = dialog_button_shape(ui, palette, label, kind, enabled);
+    crate::ui_record::note(ui, record, &response);
+    response
+}
+
+/// `dialog_button` without the report: `dialog_buttons` reports each choice itself (human only where it says so).
+fn dialog_button_shape(ui: &mut Ui, palette: &Palette, label: &str, kind: DialogButton, enabled: bool) -> Response {
     let font = dialog_button_font(ui, kind);
     let width = dialog_button_width(ui, label, kind);
     // The colours below are the disabled look: painted without the half opacity egui gives a disabled ui, so that `ink-3`
-    // keeps its 4.5:1 on `surface-2`.
+    // keeps its 4.5:1 on `surface-2`. `add_enabled` places it in this ui (not in a scope), so that a wrapping row wraps it.
     let painter = ui.painter().clone();
-    ui.add_enabled_ui(enabled, |ui| {
+    ui.add_enabled(enabled, |ui: &mut Ui| {
         let (rect, response) = ui.allocate_exact_size(egui::vec2(width, theme::CONTROL_HEIGHT), Sense::click());
         let hover = enabled && response.hovered();
         let (fill, ink, outline) = match (kind, enabled) {
@@ -941,7 +1235,6 @@ pub fn dialog_button(ui: &mut Ui, palette: &Palette, label: &str, kind: DialogBu
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
         response
     })
-    .inner
 }
 
 /// One row of a dialog form, centred in the dialog: a `DIALOG_FORM_WIDTH` block, 32 high, with `label` in the 76 column
@@ -971,6 +1264,12 @@ pub fn dialog_row<R>(ui: &mut Ui, palette: &Palette, label: &str, field: impl Fn
 /// A `dropdown` whose menu lists `options` as menu rows, the current one checked. Returns the index picked this frame.
 pub fn dropdown_menu(ui: &mut Ui, palette: &Palette, options: &[&str], current: Option<usize>, width: f32) -> Option<usize> {
     let shown = current.and_then(|index| options.get(index)).copied().unwrap_or_default();
+    select_menu(ui, palette, shown, options, current, width)
+}
+
+/// A selection list: a `dropdown` that shows `shown` and whose menu lists `options`, the `current` one checked (task 68h: the
+/// place of a combo box). Returns the index picked this frame.
+pub fn select_menu(ui: &mut Ui, palette: &Palette, shown: &str, options: &[&str], current: Option<usize>, width: f32) -> Option<usize> {
     let button = dropdown(ui, palette, shown, None, width);
     let mut picked = None;
     egui::Popup::from_toggle_button_response(&button)
@@ -993,6 +1292,8 @@ pub fn dropdown_menu(ui: &mut Ui, palette: &Palette, options: &[&str], current: 
 pub fn checkbox(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str) -> Response {
     let width = ui.available_width().min(DIALOG_FORM_WIDTH);
     let enabled = ui.is_enabled();
+    // A disabled check box paints `ink-3` and its own `line` and `surface-3`: the half opacity of a disabled ui is taken back.
+    let opacity = undo_disabled_fade(ui);
     let ink = if enabled { palette.ink } else { palette.ink_3 };
     let text_left = theme::ICON_SMALL + DIALOG_GAP;
     let galley = ui.painter().layout(label.to_owned(), house_font(ui, theme::Type::Body), ink, (width - text_left).max(1.0));
@@ -1016,6 +1317,7 @@ pub fn checkbox(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str)
     if response.has_focus() {
         ui.painter().rect_stroke(square.expand(2.0), CornerRadius::same(theme::RADIUS_SMALL + 2), Stroke::new(2.0, palette.accent), StrokeKind::Outside);
     }
+    ui.set_opacity(opacity);
     let state = *checked;
     response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, state, label));
     crate::ui_record::note(ui, label, &response);
@@ -1039,17 +1341,15 @@ pub fn field_with_button(
     enabled: bool,
     focus: bool,
 ) -> bool {
+    let palette = theme::palette(ui.ctx());
     let mut submitted = false;
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let button = ui.add_enabled(enabled, egui::Button::new(action));
-            crate::ui_record::note(ui, action, &button);
-            if button.clicked() {
+            if dialog_button(ui, &palette, action, DialogButton::Plain, enabled).clicked() {
                 submitted = true;
             }
             let width = ui.available_width().max(48.0);
-            let field = ui.add(TextEdit::singleline(text).hint_text(hint).desired_width(width));
-            crate::ui_record::note(ui, hint, &field);
+            let field = edit_line(ui, &palette, text, Field { hint, record: Some(hint), width, ..Field::default() });
             if focus {
                 field.request_focus();
             }
@@ -1059,6 +1359,53 @@ pub fn field_with_button(
         });
     });
     submitted
+}
+
+/// The least width of a `table_cell`: an empty value stays a target.
+pub const CELL_MIN_WIDTH: f32 = 48.0;
+/// The most width of a `table_cell`; a longer value is cut with an ellipsis.
+pub const CELL_MAX_WIDTH: f32 = 120.0;
+const CELL_PADDING: f32 = 6.0;
+
+/// The header of a table column: its text 6 in from the left, as the values under it are (`table_cell`).
+pub fn table_head(ui: &mut Ui, text: &str) {
+    ui.horizontal(|ui| {
+        ui.add_space(CELL_PADDING);
+        ui.label(text);
+    });
+}
+
+/// One cell of a data table (task 68h): the value in the body face that a label takes, 6 in from each side, the cell between
+/// `CELL_MIN_WIDTH` and `CELL_MAX_WIDTH` wide and a field high. A value cut to fit shows the whole value as its tooltip. An
+/// `editable` cell takes clicks and the keyboard (Tab, then Enter or Space), shows `surface-2` on hover, the 2 px `accent`
+/// focus ring when it has the focus and the pointing-hand cursor. It is reported to the UI-test layer as `r{row}c{column}: value`
+/// (`at`, counted from 1), since the value alone repeats across a table; the others only show the value.
+pub fn table_cell(ui: &mut Ui, palette: &Palette, value: &str, color: Color32, editable: bool, at: (usize, usize)) -> Response {
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let full = text_width(ui, value, font.clone(), color);
+    let width = (full + 2.0 * CELL_PADDING).clamp(CELL_MIN_WIDTH, CELL_MAX_WIDTH);
+    let (rect, mut response) = ui.allocate_exact_size(egui::vec2(width, theme::FIELD_HEIGHT), if editable { Sense::click() } else { Sense::hover() });
+    if editable && response.hovered() {
+        ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
+    }
+    if editable && response.has_focus() {
+        ui.painter().rect_stroke(rect.expand(2.0), CornerRadius::same(theme::RADIUS_CONTROL + 2), Stroke::new(2.0, palette.accent), StrokeKind::Outside);
+    }
+    let room = width - 2.0 * CELL_PADDING;
+    let cut = full > room;
+    let shown = if cut { cut_to_width(ui, value, room, font.clone(), color) } else { value.to_owned() };
+    ui.painter().text(Pos2::new(rect.left() + CELL_PADDING, rect.center().y), Align2::LEFT_CENTER, shown, font, color);
+    if cut {
+        response = response.on_hover_text(value);
+    }
+    if editable {
+        let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        let shown = value.to_owned();
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, shown.as_str()));
+        crate::ui_record::note(ui, &format!("r{}c{}: {value}", at.0, at.1), &response);
+        return response;
+    }
+    response
 }
 
 #[cfg(test)]
@@ -1262,5 +1609,377 @@ mod tests {
             })
             .collect();
         assert_eq!(labels, [palette.ink_3, palette.ink_3], "their labels are ink-3, not faded further");
+    }
+
+    /// Runs one frame of `add` in a central panel of an 800 × 600 screen and returns the controls it recorded and its shapes.
+    fn recorded(ctx: &egui::Context, events: Vec<egui::Event>, mut add: impl FnMut(&mut Ui, &Palette)) -> (Vec<crate::ui_record::Control>, Vec<egui::epaint::Shape>) {
+        crate::ui_record::begin();
+        let output = ctx.run(screen_input(events), |ctx| {
+            let palette = theme::palette(ctx);
+            egui::CentralPanel::default().show(ctx, |ui| add(ui, &palette));
+        });
+        fn walk(shape: &egui::epaint::Shape, out: &mut Vec<egui::epaint::Shape>) {
+            match shape {
+                egui::epaint::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, out)),
+                other => out.push(other.clone()),
+            }
+        }
+        let mut shapes = Vec::new();
+        output.shapes.iter().for_each(|clipped| walk(&clipped.shape, &mut shapes));
+        (crate::ui_record::finish(), shapes)
+    }
+
+    #[test]
+    fn a_field_is_recorded_only_under_the_label_it_is_given_never_under_its_hint() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let (controls, _) = recorded(&ctx, Vec::new(), |ui, palette| {
+            let mut text = String::new();
+            edit_line(ui, palette, &mut text, Field { hint: "여러 값", width: 80.0, ..Default::default() });
+            edit_line(ui, palette, &mut text, Field { hint: "", width: 80.0, ..Default::default() });
+            edit_area(ui, palette, &mut text, Field { hint: "여러 값", width: 80.0, ..Default::default() });
+            edit_area(ui, palette, &mut text, Field { hint: "무엇을 만들까요?", record: Some("무엇을 만들까요?"), width: 200.0, ..Default::default() });
+            edit_line(ui, palette, &mut text, Field { record: Some("이름"), width: 80.0, ..Default::default() });
+        });
+        let labels: Vec<&str> = controls.iter().map(|control| control.label.as_str()).collect();
+        assert_eq!(labels, ["무엇을 만들까요?", "이름"], "a hint alone records nothing; an empty hint neither");
+    }
+
+    #[test]
+    fn a_field_takes_the_height_it_is_given_and_the_field_height_otherwise() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let mut rects = Vec::new();
+        for _ in 0..2 {
+            rects.clear();
+            let _ = recorded(&ctx, Vec::new(), |ui, palette| {
+                let mut text = "12".to_owned();
+                rects.push(edit_line(ui, palette, &mut text, Field { width: 120.0, ..Default::default() }).rect);
+                let cell = Rect::from_min_size(Pos2::new(300.0, 300.0), Vec2::new(148.0, 26.0));
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cell));
+                rects.push(edit_line(&mut child, palette, &mut text, Field { width: cell.width(), height: Some(cell.height()), margin: Some(egui::Margin::symmetric(7, 4)), ..Default::default() }).rect);
+                let row = Rect::from_min_size(Pos2::new(300.0, 400.0), Vec2::new(180.0, 24.0));
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(row));
+                rects.push(edit_line(&mut child, palette, &mut text, Field { width: row.width(), height: Some(row.height()), margin: Some(egui::Margin::symmetric(4, 2)), ..Default::default() }).rect);
+            });
+        }
+        assert!((rects[0].height() - theme::FIELD_HEIGHT).abs() < 0.5, "a framed field is the field height: {:?}", rects[0]);
+        assert_eq!(rects[1], Rect::from_min_size(Pos2::new(300.0, 300.0), Vec2::new(148.0, 26.0)), "a cell editor is its cell");
+        assert_eq!(rects[2], Rect::from_min_size(Pos2::new(300.0, 400.0), Vec2::new(180.0, 24.0)), "a row editor is its row's field");
+    }
+
+    /// The labels of the text shapes a frame drew.
+    fn drawn_texts(shapes: &[egui::epaint::Shape]) -> Vec<String> {
+        shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                egui::epaint::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_disabled_checkbox_and_dropdown_paint_their_own_colours_and_leave_the_opacity_they_found() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let mut checked = false;
+        let mut seen = Vec::new();
+        let (_, shapes) = recorded(&ctx, Vec::new(), |ui, palette| {
+            ui.add_enabled_ui(false, |ui| {
+                let before = ui.opacity();
+                checkbox(ui, palette, &mut checked, "자동");
+                seen.push((before, ui.opacity()));
+                let before = ui.opacity();
+                dropdown(ui, palette, "단위", None, 120.0);
+                seen.push((before, ui.opacity()));
+            });
+        });
+        assert!(seen[0].0 < 1.0, "a disabled ui is faded: {seen:?}");
+        assert!(seen.iter().all(|(before, after)| before == after), "each control gives the opacity back: {seen:?}");
+        let palette = theme::palette(&ctx);
+        let colours: Vec<Color32> = shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                egui::epaint::Shape::Text(text) if ["자동", "단위"].contains(&text.galley.text()) => Some(text.fallback_color),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colours, [palette.ink_3, palette.ink_3], "both labels are ink-3, not faded further");
+    }
+
+    #[test]
+    fn a_stepper_shows_the_value_again_on_blur_after_a_text_that_is_not_a_number_or_an_empty_field() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let select_all = egui::Event::Key { key: egui::Key::A, physical_key: Some(egui::Key::A), pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        let mut value = 3;
+        let (controls, _) = stepper_frame(&ctx, &mut value, Vec::new());
+        let minus = control(&controls, "1 줄이기").rect;
+        let plus = control(&controls, "1 늘리기").rect;
+        let field = Pos2::new((minus.right() + plus.left()) / 2.0, minus.center().y);
+        let blur = Pos2::new(700.0, 550.0);
+        for events in pointer_click(field) {
+            stepper_frame(&ctx, &mut value, events);
+        }
+        stepper_frame(&ctx, &mut value, vec![select_all.clone(), egui::Event::Text("x".into())]);
+        assert_eq!(value, 3, "text that is not a number leaves the value");
+        for events in pointer_click(blur) {
+            stepper_frame(&ctx, &mut value, events);
+        }
+        let (_, shapes) = recorded(&ctx, Vec::new(), |ui, palette| {
+            number_stepper(ui, palette, &mut value, 0..=5, "열");
+        });
+        let texts = drawn_texts(&shapes);
+        assert!(texts.iter().any(|text| text == "3") && !texts.iter().any(|text| text == "x"), "the value is shown again: {texts:?}");
+
+        // An empty field changes nothing either, and blur shows the value again.
+        for events in pointer_click(field) {
+            stepper_frame(&ctx, &mut value, events);
+        }
+        stepper_frame(&ctx, &mut value, vec![select_all, key(egui::Key::Backspace)]);
+        assert_eq!(value, 3, "an empty field leaves the value");
+        for events in pointer_click(blur) {
+            stepper_frame(&ctx, &mut value, events);
+        }
+        let (_, shapes) = recorded(&ctx, Vec::new(), |ui, palette| {
+            number_stepper(ui, palette, &mut value, 0..=5, "열");
+        });
+        assert!(drawn_texts(&shapes).iter().any(|text| text == "3"), "the value is shown again after an empty field");
+    }
+
+    #[test]
+    fn a_table_cell_is_clicked_and_activated_from_the_keyboard_and_reports_its_row_and_column() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let clicked = std::cell::Cell::new(0);
+        let frame = |ctx: &egui::Context, events: Vec<egui::Event>| {
+            let (controls, _) = recorded(ctx, events, |ui, palette| {
+                if table_cell(ui, palette, "0.10", palette.ink, true, (2, 3)).clicked() {
+                    clicked.set(clicked.get() + 1);
+                }
+            });
+            controls
+        };
+        let controls = frame(&ctx, Vec::new());
+        let at = controls.iter().find(|control| control.label == "r2c3: 0.10").expect("reported as r2c3: 0.10").rect;
+        assert!(controls.iter().all(|control| control.label != "0.10"), "not reported under the bare value");
+        for events in pointer_click(at.center()) {
+            frame(&ctx, events);
+        }
+        assert_eq!(clicked.get(), 1, "a click opens the cell");
+        frame(&ctx, tap(egui::Key::Tab));
+        frame(&ctx, Vec::new());
+        frame(&ctx, tap(egui::Key::Enter));
+        assert_eq!(clicked.get(), 2, "Enter on the focused cell opens it");
+    }
+
+    fn pointer_click(at: Pos2) -> [Vec<egui::Event>; 3] {
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        [vec![egui::Event::PointerMoved(at)], vec![button(true)], vec![button(false)]]
+    }
+
+    /// One frame of a stepper on `value` (range 0..=5). Returns its controls, what the call returned, and the field's place.
+    fn stepper_frame(ctx: &egui::Context, value: &mut u32, events: Vec<egui::Event>) -> (Vec<crate::ui_record::Control>, bool) {
+        let mut changed = false;
+        let (controls, _) = recorded(ctx, events, |ui, palette| {
+            changed = number_stepper(ui, palette, value, 0..=5, "열");
+        });
+        (controls, changed)
+    }
+
+    fn control<'a>(controls: &'a [crate::ui_record::Control], label: &str) -> &'a crate::ui_record::Control {
+        controls.iter().find(|control| control.label == label).unwrap_or_else(|| panic!("{label} is drawn: {controls:?}"))
+    }
+
+    #[test]
+    fn the_stepper_keeps_its_range_with_the_buttons_and_a_typed_number() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let mut value = 9;
+        let (controls, changed) = stepper_frame(&ctx, &mut value, Vec::new());
+        assert_eq!((value, changed), (5, true), "a value above the range is brought into it");
+        let minus = control(&controls, "1 줄이기").rect;
+        let plus = control(&controls, "1 늘리기").rect;
+        assert!(minus.right() < plus.left() && (minus.height() - 24.0).abs() < 0.5, "{minus:?} {plus:?}");
+
+        let click = |ctx: &egui::Context, value: &mut u32, at: Pos2| {
+            let mut changed = false;
+            for events in pointer_click(at) {
+                changed |= stepper_frame(ctx, value, events).1;
+            }
+            changed
+        };
+        assert!(!click(&ctx, &mut value, plus.center()), "+ at the top of the range changes nothing");
+        assert_eq!(value, 5);
+        assert!(click(&ctx, &mut value, minus.center()));
+        assert_eq!(value, 4, "- takes one off");
+        value = 0;
+        stepper_frame(&ctx, &mut value, Vec::new());
+        assert!(!click(&ctx, &mut value, minus.center()), "- at the bottom of the range changes nothing");
+        assert_eq!(value, 0);
+
+        // The field between the buttons takes a typed number; one outside the range is clamped, text is ignored.
+        let field = Pos2::new((minus.right() + plus.left()) / 2.0, minus.center().y);
+        click(&ctx, &mut value, field);
+        let select_all = egui::Event::Key { key: egui::Key::A, physical_key: Some(egui::Key::A), pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        stepper_frame(&ctx, &mut value, vec![select_all.clone(), egui::Event::Text("3".into())]);
+        assert_eq!(value, 3, "a typed number is the value");
+        stepper_frame(&ctx, &mut value, vec![select_all.clone(), egui::Event::Text("x".into())]);
+        assert_eq!(value, 3, "text that is not a number leaves the value");
+        stepper_frame(&ctx, &mut value, vec![select_all, egui::Event::Text("42".into())]);
+        assert_eq!(value, 5, "a number above the range is clamped");
+        assert!(click(&ctx, &mut value, minus.center()), "- after typing");
+        assert_eq!(value, 4);
+        assert_eq!(parse_whole_number(" 7 "), Some(7));
+        assert_eq!(parse_whole_number("-1"), None);
+        assert_eq!(parse_whole_number("99999999999"), Some(u32::MAX), "a number past u32 is the largest one, clamped by the caller");
+    }
+
+    #[test]
+    fn tab_reaches_the_stepper_buttons_and_its_field() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let mut value = 2;
+        let (controls, _) = stepper_frame(&ctx, &mut value, Vec::new());
+        let minus = control(&controls, "1 줄이기").id;
+        let plus = control(&controls, "1 늘리기").id;
+        let mut order = Vec::new();
+        for _ in 0..3 {
+            stepper_frame(&ctx, &mut value, tap(egui::Key::Tab));
+            stepper_frame(&ctx, &mut value, Vec::new());
+            order.push(ctx.memory(|memory| memory.focused()));
+        }
+        assert_eq!(order[0], Some(minus), "Tab focuses the minus button first: {order:?}");
+        assert!(order[1].is_some() && order[1] != Some(minus) && order[1] != Some(plus), "then the field: {order:?}");
+        assert_eq!(order[2], Some(plus), "then the plus button: {order:?}");
+        // Space presses the focused button.
+        let (_, changed) = stepper_frame(&ctx, &mut value, tap(egui::Key::Space));
+        assert!(changed && value == 3, "Space on + adds one: {value}");
+    }
+
+    #[test]
+    fn a_disabled_house_button_paints_ink_3_without_the_disabled_fade() {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let palette = theme::palette(&ctx);
+        let mut main = Rect::NOTHING;
+        let (_, shapes) = recorded(&ctx, Vec::new(), |ui, palette| {
+            ui.add_enabled_ui(false, |ui| {
+                labeled_button(ui, palette, None, "토큰 저장", false);
+                main = labeled_button(ui, palette, None, "연결 적용", true).rect;
+                compact_button(ui, palette, "빼기");
+            });
+        });
+        let labels: Vec<(String, Color32)> = shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                egui::epaint::Shape::Text(text) => Some((text.galley.text().to_owned(), text.fallback_color)),
+                _ => None,
+            })
+            .collect();
+        for label in ["토큰 저장", "연결 적용", "빼기"] {
+            let colour = labels.iter().find(|(text, _)| text == label).map(|(_, colour)| *colour);
+            assert_eq!(colour, Some(palette.ink_3), "{label}: ink-3 at full strength, {labels:?}");
+        }
+        let fills: Vec<Color32> = shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                egui::epaint::Shape::Rect(rect) if rect.rect == main && rect.fill != Color32::TRANSPARENT => Some(rect.fill),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fills, [palette.surface_2], "the disabled main button is surface-2 at full strength");
+    }
+
+    /// Runs one frame with `add` in a column `width` wide and returns what `add` gave back and the controls it reported.
+    fn in_column<R>(ctx: &egui::Context, width: f32, add: impl FnOnce(&mut Ui, &Palette) -> R) -> (R, Vec<crate::ui_record::Control>) {
+        let mut add = Some(add);
+        let mut result = None;
+        crate::ui_record::begin();
+        let _ = ctx.run(screen_input(Vec::new()), |ctx| {
+            let palette = theme::palette(ctx);
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let column = Rect::from_min_size(ui.max_rect().min, Vec2::new(width, 400.0));
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(column).layout(egui::Layout::top_down(egui::Align::Min)));
+                if let Some(add) = add.take() {
+                    result = Some(add(&mut child, &palette));
+                }
+            });
+        });
+        (result.expect("the frame was drawn"), crate::ui_record::finish())
+    }
+
+    fn house_context() -> egui::Context {
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        ctx
+    }
+
+    #[test]
+    fn a_select_menu_shows_a_value_that_is_not_one_of_its_options_and_picks_nothing_by_itself() {
+        let ctx = house_context();
+        let (picked, controls) = in_column(&ctx, 300.0, |ui, palette| select_menu(ui, palette, "지워진 근거", &["근거 없음", "근거 1"], None, 160.0));
+        assert_eq!(picked, None);
+        assert_eq!(controls.iter().map(|control| control.label.as_str()).collect::<Vec<_>>(), ["지워진 근거"], "the box shows the value it was given");
+        let (_, controls) = in_column(&ctx, 300.0, |ui, palette| dropdown_menu(ui, palette, &["근거 없음", "근거 1"], Some(1), 160.0));
+        assert_eq!(controls[0].label, "근거 1", "dropdown_menu shows the current option");
+        assert_eq!(controls[0].rect.width(), 160.0);
+    }
+
+    #[test]
+    fn edit_line_takes_the_id_it_is_given() {
+        let ctx = house_context();
+        let id = egui::Id::new(("dataset-cell", "ds-1", "r1", "c1"));
+        let mut text = "1".to_owned();
+        let (response, controls) = in_column(&ctx, 300.0, |ui, palette| edit_line(ui, palette, &mut text, Field { id: Some(id), width: 120.0, ..Field::default() }));
+        assert_eq!(response.id, id, "the caret and the IME find the field by this id");
+        assert!(controls.is_empty(), "a field without a hint is not reported under an empty label");
+    }
+
+    #[test]
+    fn a_table_cell_keeps_between_its_least_and_most_width_and_only_an_editable_cell_is_reported() {
+        let ctx = house_context();
+        let long = "세 번 반복해 잰 대조군의 평균값과 표준편차";
+        let (widths, controls) = in_column(&ctx, 400.0, |ui, palette| {
+            [("", true), ("12.5", true), (long, true), (long, false)]
+                .iter()
+                .enumerate()
+                .map(|(column, (value, editable))| table_cell(ui, palette, value, palette.ink, *editable, (1, column + 1)).rect.width())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(widths[0], CELL_MIN_WIDTH, "an empty cell keeps a target");
+        assert_eq!(widths[1], CELL_MIN_WIDTH, "a short value takes the least width");
+        assert_eq!(widths[2], CELL_MAX_WIDTH, "a long value is cut at the most width");
+        assert_eq!(widths[3], CELL_MAX_WIDTH, "a read-only cell has the same width");
+        let labels: Vec<&str> = controls.iter().map(|control| control.label.as_str()).collect();
+        assert_eq!(labels, ["r1c1: ", "r1c2: 12.5", "r1c3: 세 번 반복해 잰 대조군의 평균값과 표준편차"], "only the editable cells are controls, reported as r<row>c<column>: value");
+    }
+
+    #[test]
+    fn a_dialog_button_is_reported_once_and_wraps_in_a_wrapping_row() {
+        let ctx = house_context();
+        let (rects, controls) = in_column(&ctx, 200.0, |ui, palette| {
+            ui.horizontal_wrapped(|ui| ["다시 넣기", "복사", "버리기"].map(|label| dialog_button(ui, palette, label, DialogButton::Plain, label != "버리기").rect)).inner
+        });
+        assert_eq!(controls.iter().map(|control| control.label.as_str()).collect::<Vec<_>>(), ["다시 넣기", "복사", "버리기"]);
+        assert!(!controls[2].enabled, "a disabled button is reported disabled");
+        let left = rects[0].left();
+        assert!(rects.iter().all(|rect| rect.right() <= left + 200.0 + 0.5), "{rects:?} run past the row");
+        assert!(rects[2].top() > rects[0].top(), "the third button goes to the next line");
+        let (_, controls) = in_column(&ctx, 400.0, |ui, palette| dialog_buttons(ui, palette, &[DialogChoice::new("확인", DialogButton::Primary)]));
+        assert_eq!(controls.len(), 1, "dialog_buttons reports each choice once");
+    }
+
+    #[test]
+    fn a_field_with_a_button_is_the_house_field_and_button_inside_its_row() {
+        let ctx = house_context();
+        let mut text = String::new();
+        let (_, controls) = in_column(&ctx, 260.0, |ui, _| field_with_button(ui, &mut text, "새 값", "적용", true, false));
+        let labels: Vec<&str> = controls.iter().map(|control| control.label.as_str()).collect();
+        assert_eq!(labels, ["적용", "새 값"]);
+        assert_eq!(controls[0].rect.height(), theme::CONTROL_HEIGHT, "the button is a dialog button");
+        assert_eq!(controls[1].rect.height(), theme::FIELD_HEIGHT, "the field is a house field");
+        assert!(controls.iter().all(|control| control.rect.right() <= controls[0].rect.right() + 0.5));
     }
 }

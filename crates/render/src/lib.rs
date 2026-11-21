@@ -117,11 +117,7 @@ impl Renderer {
             Ok(&scene.pages[0])
         };
         let glyphs = encode::GlyphSource::new(&self.book);
-        let mut diags = encode::Diags::new(&scene.diagnostics);
-        let missing: Vec<String> = scene.pages.iter().flat_map(|p| p.primitives.iter()).filter_map(|p| match p { Primitive::Text { shaped, .. } => Some(shaped.missing_glyphs.clone()), _ => None }).flatten().collect();
-        if !missing.is_empty() && !diags.has_code("missing_glyphs") {
-            diags.add("missing_glyphs", format!("No available font has glyphs for {missing:?}"), None, true);
-        }
+        let mut diags = scene_diags(scene);
         let (bytes, mime, editability) = match format.as_str() {
             "png" => (raster::encode_png(&glyphs, single("PNG")?, profile, region, assets, &mut diags)?, "image/png", Editability::None),
             "svg" => (svg::encode_svg(&glyphs, single("SVG")?, assets, false, &mut diags)?.into_bytes(), "image/svg+xml", Editability::Objects),
@@ -131,6 +127,30 @@ impl Renderer {
         };
         Ok(EncodedOutput { bytes, mime: mime.into(), editability, diagnostics: diags.into_vec() })
     }
+
+    /// The pixels `encode_region(.., "png", ..)` draws, with the same checks, before PNG encoding (premultiplied alpha).
+    pub fn raster_region(&self, scene: &RenderScene, profile: &RenderProfile, region: Option<Rect>, assets: &dyn AssetStore) -> DltResult<RasterPixels> {
+        if scene.pages.is_empty() { return Err(DltError::invalid("The scene has no pages to encode")); }
+        v12::refuse_scene(scene)?;
+        if scene.pages.len() != 1 {
+            return Err(DltError::invalid(format!("PNG output holds exactly one page; the scene has {} pages (select one page or use pdf)", scene.pages.len())));
+        }
+        if let Some(r) = region { region::check(&scene.pages[0], r)?; }
+        let glyphs = encode::GlyphSource::new(&self.book);
+        let mut diags = scene_diags(scene);
+        let pm = raster::raster_page(&glyphs, &scene.pages[0], profile, region, assets, &mut diags)?;
+        Ok(RasterPixels { width: pm.width(), height: pm.height(), rgba_premultiplied: pm.take(), diagnostics: diags.into_vec() })
+    }
+}
+
+/// The scene's diagnostics, with `missing_glyphs` added when a text has glyphs no font has.
+fn scene_diags(scene: &RenderScene) -> encode::Diags {
+    let mut diags = encode::Diags::new(&scene.diagnostics);
+    let missing: Vec<String> = scene.pages.iter().flat_map(|p| p.primitives.iter()).filter_map(|p| match p { Primitive::Text { shaped, .. } => Some(shaped.missing_glyphs.clone()), _ => None }).flatten().collect();
+    if !missing.is_empty() && !diags.has_code("missing_glyphs") {
+        diags.add("missing_glyphs", format!("No available font has glyphs for {missing:?}"), None, true);
+    }
+    diags
 }
 
 impl RenderProvider for Renderer {
@@ -152,6 +172,9 @@ impl RenderProvider for Renderer {
     /// The inherent [`Renderer::encode_region`] (core's render.get passes `RenderRequest.region`).
     fn encode_region(&self, scene: &RenderScene, format: &str, profile: &RenderProfile, region: Option<Rect>, assets: &dyn AssetStore) -> DltResult<EncodedOutput> {
         Renderer::encode_region(self, scene, format, profile, region, assets)
+    }
+    fn raster_region(&self, scene: &RenderScene, profile: &RenderProfile, region: Option<Rect>, assets: &dyn AssetStore) -> DltResult<RasterPixels> {
+        Renderer::raster_region(self, scene, profile, region, assets)
     }
 
     fn font_catalog_fingerprint(&self) -> String { self.book.catalog_fingerprint().to_string() }

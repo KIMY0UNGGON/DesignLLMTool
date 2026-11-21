@@ -23,6 +23,7 @@ mod conn;
 mod gui_identity;
 mod identity;
 mod jobs;
+mod rasters;
 mod server;
 mod shared;
 mod provider;

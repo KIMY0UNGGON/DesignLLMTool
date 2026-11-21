@@ -82,7 +82,7 @@ impl Harness {
     fn sent(&mut self) -> Vec<(u64, String, Value)> {
         let mut batch = Vec::new();
         while let Ok(work) = self.work.try_recv() {
-            if let Work::Call { ticket, method, params } = work {
+            if let Work::Call { ticket, method, params, .. } = work {
                 batch.push((ticket, method, params));
             }
         }
@@ -421,4 +421,34 @@ fn a_cell_value_for_a_table_that_changed_is_kept_as_a_copy_and_the_user_is_told(
         harness.app.notices.current(Instant::now()).is_some_and(|notice| notice.text.contains("초안 목록에 남겼습니다")),
         "the user is told where the value went"
     );
+}
+
+#[test]
+fn the_cell_editor_fills_its_cell_inside_the_grid_lines() {
+    let mut host = Host::start();
+    let mut harness = Harness::open_figure(&mut host, "id,value\nA,10\nB,20\n");
+    let dataset = harness.dataset.clone();
+    harness.app.dataset_edit = Some(DatasetCellEdit {
+        dataset_id: dataset.id.clone(),
+        version_hash: dataset.version_hash.clone(),
+        row_id: dataset.rows[0].id.clone(),
+        column_id: "value".into(),
+        original: "10".into(),
+        draft: "10".into(),
+    });
+    let ctx = egui::Context::default();
+    theme::install(&ctx);
+    let palette = theme::palette(&ctx);
+    let sheet_rect = Rect::from_min_max(egui::pos2(0.0, 400.0), egui::pos2(900.0, 640.0));
+    for _ in 0..3 {
+        let _ = ctx.run(screen(1.0, 900.0, 640.0), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                harness.app.draw_data_sheet(ui, &palette, sheet_rect);
+            });
+        });
+    }
+    let focused = ctx.memory(|memory| memory.focused()).expect("the cell editor takes the focus");
+    let editor = ctx.read_response(focused).expect("the editor was drawn").rect;
+    assert!((editor.height() - (super::ROW - 2.0)).abs() < 0.5, "the editor is the cell's height inside its lines: {editor:?}");
+    assert!((editor.width() - (super::COLUMN - 2.0)).abs() < 0.5, "and its width: {editor:?}");
 }

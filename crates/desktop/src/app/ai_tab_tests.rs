@@ -60,7 +60,7 @@ impl AiTabHarness {
     fn sent(&mut self) -> Vec<(u64, String, serde_json::Value)> {
         let mut batch = Vec::new();
         while let Ok(item) = self.work.try_recv() {
-            if let Work::Call { ticket, method, params } = item {
+            if let Work::Call { ticket, method, params, .. } = item {
                 batch.push((ticket, method, params));
             }
         }

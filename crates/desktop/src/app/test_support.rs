@@ -51,7 +51,7 @@ impl Harness {
     pub(super) fn sent(&mut self) -> Vec<Request> {
         let mut batch = Vec::new();
         while let Ok(work) = self.work.try_recv() {
-            if let Work::Call { ticket, method, params } = work {
+            if let Work::Call { ticket, method, params, .. } = work {
                 batch.push((ticket, method, params));
             }
         }
@@ -412,6 +412,9 @@ pub(super) struct Window {
     pub(super) calls: Vec<(String, Value, Value)>,
     /// The shapes of the last frame `frame` drew.
     pub(super) shapes: Vec<ClippedShape>,
+    /// The RPC worker's own preview path (68i, pixels.rs) for `render.get` and preview reads, and whether the host is one without
+    /// `render.pixels` (`open_with_pixel_previews`).
+    pixel_previews: Option<(crate::pixels::Previews, bool)>,
 }
 
 impl Window {
@@ -426,7 +429,17 @@ impl Window {
         Self::open_with(host, artifact_id, true)
     }
 
+    /// A window whose previews go through the RPC worker's raw-pixel path (`render.pixels`, held pixels, decode) against
+    /// `host`, or against a host without `render.pixels` (`old_host`).
+    pub(super) fn open_with_pixel_previews(host: &mut Host, artifact_id: &str, old_host: bool) -> Self {
+        Self::open_inner(host, artifact_id, true, Some((crate::pixels::Previews::default(), old_host)))
+    }
+
     fn open_with(host: &mut Host, artifact_id: &str, previews: bool) -> Self {
+        Self::open_inner(host, artifact_id, previews, None)
+    }
+
+    fn open_inner(host: &mut Host, artifact_id: &str, previews: bool, pixel_previews: Option<(crate::pixels::Previews, bool)>) -> Self {
         let (rpc, replies, work) = RpcWorker::detached();
         let ctx = Context::default();
         theme::install(&ctx);
@@ -441,6 +454,7 @@ impl Window {
             clock: 1.0,
             calls: Vec::new(),
             shapes: Vec::new(),
+            pixel_previews,
         };
         window.settle(host);
         let list = host.call("workspace.list", json!({})).expect("the work list");
@@ -457,7 +471,21 @@ impl Window {
     /// Answers the window's requests until it asks for nothing more.
     pub(super) fn settle(&mut self, host: &mut Host) {
         settle_work(&self.work, &mut self.app, &self.ctx, |item| match item {
-            Work::Call { ticket, method, params } => {
+            Work::Call { ticket, method, params, preview_pixels: true } if method == "render.get" && self.pixel_previews.is_some() => {
+                let (previews, old) = self.pixel_previews.as_mut().expect("pixel previews");
+                let backend = HostRpc::new(host, *old);
+                let result = previews.render(&backend, ticket, params).map(RpcPayload::Json);
+                self.calls.extend(backend.calls.into_inner());
+                self.replies.send(RpcReply { ticket, result }).expect("the window listens");
+            }
+            Work::ReadAsset { ticket, asset } if self.pixel_previews.is_some() => {
+                let (previews, old) = self.pixel_previews.as_mut().expect("pixel previews");
+                let backend = HostRpc::new(host, *old);
+                let result = previews.picture(&backend, &asset).and_then(crate::pixels::decode);
+                self.calls.extend(backend.calls.into_inner());
+                self.replies.send(RpcReply { ticket, result }).expect("the window listens");
+            }
+            Work::Call { ticket, method, params, .. } => {
                 let answer = host.call(&method, params.clone());
                 let recorded = answer.as_ref().map_or(Value::Null, Value::clone);
                 self.calls.push((method, params, recorded));
@@ -678,4 +706,61 @@ fn change_set(actor: &str, workspace_id: &str, artifact_id: &str, revision: u64,
 pub(super) fn content_of(artifact: &Artifact) -> (String, String) {
     let body = serde_json::to_string(&artifact.body).expect("the body serialises");
     (designllm_contracts::sha256(body.as_bytes()), body)
+}
+
+/// The host as the RPC worker's backend (pixels.rs): `render.pixels` as the real host answers the gui connection
+/// (`dispatch_start_gui`, the job drawn, `finish_render`, the pixels in binary frames of at most 8 MiB), or (`old`) refused
+/// as an unknown method. Every call is recorded with its answer.
+pub(super) struct HostRpc<'a> {
+    host: std::cell::RefCell<&'a mut Host>,
+    old: bool,
+    pub(super) calls: std::cell::RefCell<Vec<(String, Value, Value)>>,
+}
+
+impl<'a> HostRpc<'a> {
+    pub(super) fn new(host: &'a mut Host, old: bool) -> Self {
+        Self { host: host.into(), old, calls: Vec::new().into() }
+    }
+
+    fn record(&self, method: &str, params: &Value, answer: &DltResult<Value>) {
+        self.calls.borrow_mut().push((method.into(), params.clone(), answer.as_ref().map_or(Value::Null, Value::clone)));
+    }
+}
+
+impl crate::pixels::Backend for HostRpc<'_> {
+    fn call(&self, method: &str, params: Value) -> DltResult<Value> {
+        let answer = self.host.borrow_mut().call(method, params.clone());
+        self.record(method, &params, &answer);
+        answer
+    }
+
+    fn call_binary(&self, method: &str, params: Value) -> DltResult<(Value, Vec<Vec<u8>>)> {
+        if method != "render.pixels" {
+            return self.call(method, params).map(|value| (value, Vec::new()));
+        }
+        if self.old {
+            let refused = Err(DltError::unsupported("unknown method \"render.pixels\""));
+            self.record(method, &params, &refused);
+            return refused.map(|value| (value, Vec::new()));
+        }
+        let mut host = self.host.borrow_mut();
+        let workspace = host.workspace();
+        let request = RpcRequest { protocol_version: PROTOCOL_VERSION, id: new_id(), method: method.into(), params: params.clone() };
+        let (response, pixels) = match workspace.dispatch_start_gui(request) {
+            designllm_core::Dispatch::Render(job) => {
+                let drawn = job.run();
+                workspace.finish_render(job, drawn)
+            }
+            designllm_core::Dispatch::Answered(response) => (response, None),
+            designllm_core::Dispatch::ReadPdf(_) => panic!("a render is not a PDF read"),
+        };
+        drop(host);
+        let answer = match (response.result, response.error) {
+            (_, Some(error)) => Err(error),
+            (result, None) => Ok(result.unwrap_or(Value::Null)),
+        };
+        self.record(method, &params, &answer);
+        let chunks = pixels.map(|pixels| pixels.rgba_premultiplied.chunks(designllm_contracts::MAX_FRAME_BYTES).map(<[u8]>::to_vec).collect()).unwrap_or_default();
+        answer.map(|value| (value, chunks))
+    }
 }

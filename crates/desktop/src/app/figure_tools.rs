@@ -16,7 +16,7 @@ use designllm_contracts::{
 };
 use designllm_contracts::figure_rules::{PAPER_EVIDENCE_ORIGIN, USER_AUTHORED_ORIGIN};
 use eframe::egui::{
-    self, Align, Context, Grid, Id, Layout, Rect, RichText, ScrollArea, TextEdit, Ui,
+    self, Align, Context, Grid, Id, Layout, Rect, RichText, ScrollArea, Ui,
 };
 
 use super::{
@@ -744,6 +744,36 @@ pub(super) fn owning_panel<'a>(figure: &'a FigureDocument, id: &str) -> Option<&
     })
 }
 
+/// The connector row of a diagram: `from → to` and its button.
+const CONNECT_ARROW: &str = "→";
+const CONNECT_LABEL: &str = "연결";
+/// A node picker keeps at least this width beside the button; under it the button takes a line of its own.
+pub(super) const PICKER_MIN: f32 = 96.0;
+const PICKER_MAX: f32 = 140.0;
+
+/// The width of each node picker and whether the `연결` button goes under the pickers, for the width `ui` has. The button's
+/// width is the house dialog button's (`dialog_button_width`), so the row never runs past the panel.
+pub(super) fn connect_row_layout(ui: &Ui) -> (f32, bool) {
+    let spacing = ui.spacing().item_spacing.x;
+    let arrow = ui.painter().layout_no_wrap(CONNECT_ARROW.to_owned(), egui::TextStyle::Body.resolve(ui.style()), theme::INK).size().x;
+    let button = widgets::dialog_button_width(ui, CONNECT_LABEL, DialogButton::Plain);
+    let room = ui.available_width();
+    let beside = (room - arrow - button - 3.0 * spacing) / 2.0;
+    if beside >= PICKER_MIN {
+        (beside.min(PICKER_MAX), false)
+    } else {
+        (((room - arrow - 2.0 * spacing) / 2.0).clamp(0.0, PICKER_MAX), true)
+    }
+}
+
+/// Whether a connector `from` → `to` may be added: two different nodes not linked that way yet.
+fn connect_ready(diagram: &Diagram, from: &Option<String>, to: &Option<String>) -> bool {
+    match (from, to) {
+        (Some(from), Some(to)) => from != to && !diagram.edges.iter().any(|edge| &edge.from == from && &edge.to == to),
+        _ => false,
+    }
+}
+
 fn node_title(index: usize, node: &Node) -> String {
     let text = node.text.trim();
     if !text.is_empty() {
@@ -1157,6 +1187,7 @@ impl DesktopApp {
     /// The inspector part for figures: what the selected panel offers, then the tables and the
     /// evidence the figure holds.
     pub(super) fn draw_figure_details(&mut self, ui: &mut Ui, figure: &FigureDocument) {
+        let palette = theme::palette(ui.ctx());
         let selected = self.selected_node.clone();
         if let Some(panel) = selected.as_deref().and_then(|id| owning_panel(figure, id)) {
             if selected.as_deref() == Some(panel.id.as_str()) {
@@ -1210,7 +1241,7 @@ impl DesktopApp {
                     ui.label(review_state_label(&evidence.review_state));
                     if let Some(reviewed) = target {
                         let label = if reviewed { "검토 완료로 표시" } else { "검토 해제" };
-                        if ui.add_enabled(can_review, egui::Button::new(label)).clicked() {
+                        if widgets::dialog_button(ui, &palette, label, DialogButton::Plain, can_review).clicked() {
                             review = review_change(figure, &evidence.id, reviewed);
                         }
                     }
@@ -1255,9 +1286,10 @@ impl DesktopApp {
     /// The error-key switch of a plot panel. It is offered for a plot with error bars, or for one that shows the key already
     /// (so the key can be switched off). A plot without error bars has nothing to show.
     fn draw_plot_display(&mut self, ui: &mut Ui, panel: &FigurePanel, plot: &PlotSpec) {
+        let palette = theme::palette(ui.ctx());
         let mut shown = plot.display == Some(PlotDisplayMode::ErrorKey);
         let ready = self.plot_display_ready(plot);
-        if ui.add_enabled(ready, egui::Checkbox::new(&mut shown, "오차 기준 표시")).changed() {
+        if ui.add_enabled_ui(ready, |ui| widgets::checkbox(ui, &palette, &mut shown, "오차 기준 표시")).inner.changed() {
             self.invoke_ui("figure.plot_display", serde_json::json!({ "panel_id": panel.id, "on": shown }));
         }
     }
@@ -1311,6 +1343,7 @@ impl DesktopApp {
     /// attempt said, and what the user can do with it. The sets held for another figure are counted in one line instead.
     /// Nothing here writes to a figure or a document.
     pub(super) fn draw_held_pdf_evidence(&mut self, ui: &mut Ui) {
+        let palette = theme::palette(ui.ctx());
         let open = self.active.as_ref().map(|active| active.id.clone());
         let (mut retry, mut discard) = (None, None);
         let mut elsewhere = 0;
@@ -1331,14 +1364,14 @@ impl DesktopApp {
             if !line.is_empty() {
                 ui.label(RichText::new(line).color(theme::MUTED));
             }
-            ui.horizontal(|ui| {
-                if ui.add_enabled(wait.is_none(), egui::Button::new("다시 넣기")).clicked() {
+            ui.horizontal_wrapped(|ui| {
+                if widgets::dialog_button(ui, &palette, "다시 넣기", DialogButton::Plain, wait.is_none()).clicked() {
                     retry = Some(held.id.clone());
                 }
-                if ui.button("복사").clicked() {
+                if widgets::dialog_button_recorded(ui, &palette, "복사", "보류 PDF 복사", DialogButton::Plain, true).clicked() {
                     ui.ctx().copy_text(held_pdf_copy_text(held));
                 }
-                if ui.add_enabled(held.ticket.is_none(), egui::Button::new("버리기")).clicked() {
+                if widgets::dialog_button_recorded(ui, &palette, "버리기", "보류 PDF 버리기", DialogButton::Plain, held.ticket.is_none()).clicked() {
                     discard = Some(held.id.clone());
                 }
             });
@@ -1356,19 +1389,14 @@ impl DesktopApp {
     }
 
     fn draw_diagram_tools(&mut self, ui: &mut Ui, panel: &FigurePanel, diagram: &Diagram) {
+        let palette = theme::palette(ui.ctx());
         let supported = self.feature_edit_supported(Feature::Diagram);
         let has_room = free_diagram_node_bounds(panel.bounds.size(), &diagram.nodes).is_some();
         ui.horizontal_wrapped(|ui| {
-            if ui
-                .add_enabled(supported && has_room, egui::Button::new("+ 도형"))
-                .clicked()
-            {
+            if widgets::dialog_button(ui, &palette, "+ 도형", DialogButton::Plain, supported && has_room).clicked() {
                 self.add_figure_node(&panel.id, NodeKind::Rectangle);
             }
-            if ui
-                .add_enabled(supported && has_room, egui::Button::new("+ 원"))
-                .clicked()
-            {
+            if widgets::dialog_button(ui, &palette, "+ 원", DialogButton::Plain, supported && has_room).clicked() {
                 self.add_figure_node(&panel.id, NodeKind::Ellipse);
             }
         });
@@ -1392,45 +1420,46 @@ impl DesktopApp {
                 .map(|(index, node)| node_title(index, node))
                 .unwrap_or_default()
         };
-        // Combo boxes never wrap, so the row is sized to fit: two pickers, the arrow and the button.
-        let combo_width = ((ui.available_width() - 70.0 - 4.0 * ui.spacing().item_spacing.x) / 2.0)
-            .clamp(56.0, 140.0);
+        let labels: Vec<String> = diagram.nodes.iter().enumerate().map(|(index, node)| node_title(index, node)).collect();
+        let options: Vec<&str> = labels.iter().map(String::as_str).collect();
+        // The row does not wrap: the two pickers, the arrow and the button share one line while each picker keeps
+        // `PICKER_MIN` there; in a narrower panel the button goes under the pickers.
+        let (picker_width, button_below) = connect_row_layout(ui);
+        let mut pressed = false;
         ui.horizontal(|ui| {
-            for (salt, choice) in [("connect-from", true), ("connect-to", false)] {
+            for choice in [true, false] {
                 let current = if choice { self.connect_from.clone() } else { self.connect_to.clone() };
-                egui::ComboBox::from_id_salt(salt)
-                    .width(combo_width)
-                    .selected_text(title_of(&current))
-                    .show_ui(ui, |ui| {
-                        for (index, node) in diagram.nodes.iter().enumerate() {
-                            let slot = if choice { &mut self.connect_from } else { &mut self.connect_to };
-                            ui.selectable_value(slot, Some(node.id.clone()), node_title(index, node));
-                        }
-                    });
+                let current_index = current.as_ref().and_then(|id| diagram.nodes.iter().position(|node| &node.id == id));
+                if let Some(index) = widgets::select_menu(ui, &palette, &title_of(&current), &options, current_index, picker_width) {
+                    let picked = Some(diagram.nodes[index].id.clone());
+                    if choice {
+                        self.connect_from = picked;
+                    } else {
+                        self.connect_to = picked;
+                    }
+                }
                 if choice {
-                    ui.label("→");
+                    ui.label(CONNECT_ARROW);
                 }
             }
-            let (from, to) = (self.connect_from.clone(), self.connect_to.clone());
-            let linked = |from: &str, to: &str| {
-                diagram
-                    .edges
-                    .iter()
-                    .any(|edge| edge.from == from && edge.to == to)
-            };
-            let ready = match (&from, &to) {
-                (Some(from), Some(to)) => from != to && !linked(from, to),
-                _ => false,
-            };
-            if ui.add_enabled(supported && ready, egui::Button::new("연결")).clicked() {
-                if let (Some(from), Some(to)) = (from, to) {
-                    self.connect_figure_nodes(&panel.id, &from, &to);
-                }
+            if !button_below {
+                let ready = connect_ready(diagram, &self.connect_from, &self.connect_to);
+                pressed = widgets::dialog_button(ui, &palette, CONNECT_LABEL, DialogButton::Plain, supported && ready).clicked();
             }
         });
+        if button_below {
+            let ready = connect_ready(diagram, &self.connect_from, &self.connect_to);
+            pressed = widgets::dialog_button(ui, &palette, CONNECT_LABEL, DialogButton::Plain, supported && ready).clicked();
+        }
+        if pressed {
+            if let (Some(from), Some(to)) = (self.connect_from.clone(), self.connect_to.clone()) {
+                self.connect_figure_nodes(&panel.id, &from, &to);
+            }
+        }
     }
 
     fn draw_datasets(&mut self, ui: &mut Ui, figure: &FigureDocument) {
+        let palette = theme::palette(ui.ctx());
         let can_edit = self.feature_edit_supported(Feature::Dataset);
         for dataset in &figure.datasets {
             egui::CollapsingHeader::new(format!(
@@ -1452,23 +1481,21 @@ impl DesktopApp {
                                         .as_ref()
                                         .map(|unit| format!("{} ({unit})", column.name))
                                         .unwrap_or_else(|| column.name.clone());
-                                    ui.label(title);
+                                    widgets::table_head(ui, &title);
                                 }
                                 ui.end_row();
-                                for row in &dataset.rows {
-                                    for column in &dataset.columns {
+                                for (row_index, row) in dataset.rows.iter().enumerate() {
+                                    for (column_index, column) in dataset.columns.iter().enumerate() {
                                         let Some(cell) = row.cells.get(&column.id) else {
-                                            ui.label("—");
+                                            widgets::table_cell(ui, &palette, "—", palette.ink_3, false, (row_index + 1, column_index + 1));
                                             continue;
                                         };
                                         let color = match cell.state {
                                             designllm_contracts::CellState::Valid => theme::INK,
                                             _ => theme::RED,
                                         };
-                                        let text = RichText::new(&cell.original).color(color);
-                                        if !can_edit {
-                                            ui.label(text);
-                                        } else if ui.selectable_label(false, text).clicked() {
+                                        // The same cell either way, so the table keeps its widths when editing is off.
+                                        if widgets::table_cell(ui, &palette, &cell.original, color, can_edit, (row_index + 1, column_index + 1)).clicked() {
                                             self.dataset_edit = Some(DatasetCellEdit {
                                                 dataset_id: dataset.id.clone(),
                                                 version_hash: dataset.version_hash.clone(),
@@ -1489,6 +1516,7 @@ impl DesktopApp {
     }
 
     fn draw_dataset_cell_editor(&mut self, ui: &mut Ui, figure: &FigureDocument, can_edit: bool) {
+        let palette = theme::palette(ui.ctx());
         let Some(mut edit) = self.dataset_edit.clone() else {
             return;
         };
@@ -1509,26 +1537,20 @@ impl DesktopApp {
         let mut close = false;
         ui.horizontal(|ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("닫기").clicked() {
+                if widgets::dialog_button(ui, &palette, "닫기", DialogButton::Plain, true).clicked() {
                     close = true;
                 }
-                if ui
-                    .add_enabled(edit.draft != edit.original, egui::Button::new("값 적용"))
-                    .clicked()
-                {
+                if widgets::dialog_button(ui, &palette, "값 적용", DialogButton::Plain, edit.draft != edit.original).clicked() {
                     apply = true;
                 }
                 let width = ui.available_width().max(48.0);
-                ui.add(
-                    TextEdit::singleline(&mut edit.draft)
-                        .id(Id::new((
-                            "dataset-cell",
-                            edit.dataset_id.as_str(),
-                            edit.row_id.as_str(),
-                            edit.column_id.as_str(),
-                        )))
-                        .desired_width(width),
-                );
+                let id = Id::new((
+                    "dataset-cell",
+                    edit.dataset_id.as_str(),
+                    edit.row_id.as_str(),
+                    edit.column_id.as_str(),
+                ));
+                widgets::edit_line(ui, &palette, &mut edit.draft, widgets::Field { id: Some(id), width, ..Default::default() });
             });
         });
         if close {
@@ -1811,6 +1833,42 @@ mod tests {
 
     fn overlaps(a: Rect, b: Rect) -> bool {
         a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+    }
+
+    /// The connector row's picker width and whether its button goes under the pickers, in a row `width` wide.
+    fn connect_layout_at(width: f32) -> (f32, bool) {
+        let ctx = eframe::egui::Context::default();
+        crate::theme::install(&ctx);
+        let screen = eframe::egui::RawInput {
+            screen_rect: Some(eframe::egui::Rect::from_min_size(eframe::egui::Pos2::ZERO, eframe::egui::vec2(800.0, 600.0))),
+            ..Default::default()
+        };
+        let mut layout = (0.0, false);
+        let _ = ctx.run(screen, |ctx| {
+            eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                layout = ui.allocate_ui(eframe::egui::vec2(width, 10.0), |ui| connect_row_layout(ui)).inner;
+            });
+        });
+        layout
+    }
+
+    #[test]
+    fn the_connect_button_stays_beside_the_pickers_down_to_their_least_width_and_goes_under_them_below_it() {
+        assert!(connect_layout_at(0.0).1, "no room: the button goes under the pickers");
+        assert!(!connect_layout_at(600.0).1, "a wide row keeps the button beside the pickers");
+        // The layout only changes once: bisect the width where it does, to 1/16 point.
+        let (mut under, mut beside) = (0.0_f32, 600.0_f32);
+        while beside - under > 0.0625 {
+            let middle = (under + beside) / 2.0;
+            if connect_layout_at(middle).1 {
+                under = middle;
+            } else {
+                beside = middle;
+            }
+        }
+        let (picker, below) = connect_layout_at(beside);
+        assert!(!below && picker >= PICKER_MIN && picker < PICKER_MIN + 0.1, "at {beside} the pickers are {picker} wide and the button stays beside them");
+        assert!(connect_layout_at(beside - 0.5).1, "half a point narrower the button goes under the pickers");
     }
 
     fn table(columns: &[(&str, &str)]) -> Dataset {

@@ -374,7 +374,7 @@ impl Recorded {
 
     fn settle(&mut self, host: &mut Host) {
         settle_work(&self.work, &mut self.app, &self.ctx, |item| {
-            if let Work::Call { ticket, method, params } = item {
+            if let Work::Call { ticket, method, params, .. } = item {
                 self.calls.push((method.clone(), params.clone()));
                 let result = match host.call(&method, params) {
                     Ok(value) => Ok(RpcPayload::Json(value)),
@@ -1026,4 +1026,81 @@ fn a_repeat_spec_with_an_unknown_field_is_refused_before_it_is_sent() {
     let result = window.step(&mut host, "repeat.bind", json!({ "group_id": GROUP, "bindings": [{ "source_node_id": "title", "column": 0, "format": "x" }] }));
     drop(window);
     assert!(result.is_err(), "the argument schema refuses the extra field");
+}
+
+/// The repeat group's controls as one frame of a `width` wide window draws them (the properties panel at the width the frame
+/// gives it), and the panel's rectangle.
+fn repeat_controls(window: &mut Recorded, width: f32) -> (eframe::egui::Rect, Vec<crate::ui_record::Control>) {
+    let mut drawn = (eframe::egui::Rect::NOTHING, Vec::new());
+    for _ in 0..3 {
+        let app = &mut window.app;
+        let mut panel = None;
+        crate::ui_record::begin();
+        let _ = window.ctx.run(screen(1.0, width, 2000.0), |ctx| {
+            panel = app.draw_frame(ctx).right;
+        });
+        drawn = (panel.expect("the properties panel is open"), crate::ui_record::finish());
+    }
+    drawn
+}
+
+#[test]
+fn the_repeat_rows_stay_inside_a_narrow_panel() {
+    let mut host = Host::start();
+    let gui = canvas_with_table(&mut host, "반복");
+    let mut window = Recorded::open(&mut host, &gui);
+    window.select(&mut host, "card");
+    window.invoke(&mut host, "repeat.create", create_args("card", "table", COMPONENT, GROUP)).expect("the repeat is created");
+    window.select(&mut host, GROUP);
+    window.invoke(&mut host, "repeat.bind", bind_args(GROUP, &[("title".to_owned(), 0)])).expect("one binding is stored");
+    for width in [760.0, 1280.0] {
+        let (panel, controls) = repeat_controls(&mut window, width);
+        if width < 800.0 {
+            let wide: Vec<_> = controls.iter().filter(|control| control.rect.right() > panel.left() + theme::PANEL_MIN - 12.0).map(|control| (control.label.clone(), control.rect)).collect();
+            assert!((panel.width() - theme::PANEL_MIN).abs() < 1.0, "a 760 wide window gives the panel its least width: {panel:?}, wider controls {wide:?}");
+        }
+        // The panel's content ends 12 inside its right edge.
+        let right = panel.right() - 12.0 + 0.5;
+        let repeat: Vec<_> = controls
+            .iter()
+            .filter(|control| panel.contains_rect(control.rect) || control.rect.left() >= panel.left())
+            .filter(|control| ["1 줄이기", "1 늘리기", "삭제", "card", "연결 추가", "연결 적용", "되돌리기", "반복 해제"].contains(&control.label.as_str()))
+            .collect();
+        for label in ["1 줄이기", "1 늘리기", "삭제", "card", "연결 추가", "연결 적용", "반복 해제"] {
+            assert!(repeat.iter().any(|control| control.label == label), "{width}: the panel draws {label}: {repeat:?}");
+        }
+        assert_eq!(repeat.iter().filter(|control| control.label == "1 늘리기").count(), 2, "{width}: a stepper for the binding and one for the new binding");
+        for control in &repeat {
+            assert!(control.rect.right() <= right, "{width}: {} ends at {} past the panel's content edge {right}", control.label, control.rect.right());
+        }
+        // Each control keeps its own place: no two of them overlap, the rows of the bindings included.
+        for (index, control) in repeat.iter().enumerate() {
+            for other in &repeat[index + 1..] {
+                let shared = control.rect.intersect(other.rect);
+                assert!(shared.width() <= 0.5 || shared.height() <= 0.5, "{width}: {} {:?} overlaps {} {:?}", control.label, control.rect, other.label, other.rect);
+            }
+        }
+    }
+}
+
+/// Two binding rows with the same source each key their stepper by their place among that source's rows, so the two
+/// steppers' controls get different ids and neither takes the other's focus or state.
+#[test]
+fn two_binding_rows_with_the_same_source_get_steppers_of_their_own() {
+    let mut host = Host::start();
+    let gui = canvas_with_table(&mut host, "반복");
+    create_repeat(&mut host, &gui);
+    let mut window = Recorded::open(&mut host, &gui);
+    window.select(&mut host, GROUP);
+    let key = window.app.draft_key("repeat-bindings", GROUP);
+    let edit = Draft { base: Vec::new(), value: vec![("title".to_owned(), 0), ("title".to_owned(), 1)] };
+    window.ctx.data_mut(|data| data.insert_temp(key, edit.clone()));
+    let (panel, controls) = repeat_controls(&mut window, 1280.0);
+    assert_eq!(window.ctx.data(|data| data.get_temp::<Draft<Vec<(String, u32)>>>(key)), Some(edit), "the two rows are the draft drawn");
+    for label in ["1 줄이기", "1 늘리기"] {
+        let ids: Vec<_> = controls.iter().filter(|control| control.label == label && control.rect.left() >= panel.left()).map(|control| control.id).collect();
+        assert_eq!(ids.len(), 3, "{label}: a stepper for each of the two rows and one for the new binding: {ids:?}");
+        let unique: std::collections::HashSet<_> = ids.iter().collect();
+        assert_eq!(unique.len(), ids.len(), "{label}: every stepper has its own id: {ids:?}");
+    }
 }

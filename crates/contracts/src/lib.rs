@@ -1410,6 +1410,13 @@ pub struct ExportDryRun {
 }
 #[derive(Debug, Clone)]
 pub struct EncodedOutput { pub bytes: Vec<u8>, pub mime: String, pub editability: Editability, pub diagnostics: Vec<Diagnostic> }
+/// [`RenderProvider::raster_region`]: `width` by `height` pixels, row by row, 4 bytes each (RGBA, alpha premultiplied).
+#[derive(Debug, Clone)]
+pub struct RasterPixels { pub width: u32, pub height: u32, pub rgba_premultiplied: Vec<u8>, pub diagnostics: Vec<Diagnostic> }
+/// `pixels.format` of a `render.pixels` answer: the bytes of [`RasterPixels::rgba_premultiplied`].
+pub const RASTER_PIXEL_FORMAT: &str = "rgba8_premultiplied";
+/// The most bytes of one `render.pixels` answer: the core refuses a larger render, and a client closes a connection that sends more.
+pub const MAX_RASTER_PIXEL_BYTES: usize = 1 << 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SourceRegion { pub node_id: Id, pub bounds: Rect, pub logical_range: Option<TextRange>, #[serde(default)] pub grapheme_rects: Vec<Rect> }
@@ -1552,6 +1559,12 @@ pub trait RenderProvider: Send + Sync {
             None => self.encode(scene, format, profile, assets),
             Some(_) => Err(DltError::unsupported("this renderer does not render page regions")),
         }
+    }
+    /// The pixels `encode_region` would write to a PNG, before PNG encoding: for the desktop's previews, which go to a texture
+    /// on the same machine (68i). The default refuses; the core then answers only PNG previews.
+    fn raster_region(&self, scene: &RenderScene, profile: &RenderProfile, region: Option<Rect>, assets: &dyn AssetStore) -> DltResult<RasterPixels> {
+        let _ = (scene, profile, region, assets);
+        Err(DltError::unsupported("this renderer does not return raw pixels"))
     }
     /// Fingerprint of available font configuration, not a claim about fonts used in a scene.
     fn font_catalog_fingerprint(&self) -> String;

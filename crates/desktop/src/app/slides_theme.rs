@@ -2,13 +2,13 @@
 //! page properties. A control on screen and an agent on the UI channel send the same change set.
 
 use designllm_contracts::{ArtifactBody, Operation, ThemePatch, THEME_COLOR_SLOTS};
-use eframe::egui::{self, Id, Ui};
+use eframe::egui::{Id, Ui};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::app::properties::{row, section_head};
 use crate::app::DesktopApp;
-use crate::{commands::CommandSpec, theme};
+use crate::{commands::CommandSpec, theme, widgets};
 
 /// The four faces of the theme fonts: the `ThemePatch` field and its label.
 const FACES: [(&str, &str); 4] = [("major_latin", "제목 글꼴"), ("minor_latin", "본문 글꼴"), ("major_ea", "제목 한글"), ("minor_ea", "본문 한글")];
@@ -41,11 +41,9 @@ impl DesktopApp {
         let slot_id = Id::new("slides-theme-slot");
         let mut slot = ui.data(|data| data.get_temp::<usize>(slot_id)).unwrap_or(4).min(THEME_COLOR_SLOTS.len() - 1);
         row(ui, palette, Some("색"), |ui| {
-            egui::ComboBox::from_id_salt(slot_id).selected_text(THEME_COLOR_SLOTS[slot]).width(88.0).show_ui(ui, |ui| {
-                for (index, name) in THEME_COLOR_SLOTS.iter().enumerate() {
-                    ui.selectable_value(&mut slot, index, *name);
-                }
-            });
+            if let Some(index) = widgets::select_menu(ui, palette, THEME_COLOR_SLOTS[slot], &THEME_COLOR_SLOTS, Some(slot), 88.0) {
+                slot = index;
+            }
             let name = THEME_COLOR_SLOTS[slot];
             let current = stored.colors.get(name).map_or("", String::as_str);
             if let Some(value) = committed_text(ui, Id::new(("slides-theme-colour", name)), current, "#RRGGBB", editable) {
@@ -79,8 +77,9 @@ impl DesktopApp {
 fn committed_text(ui: &mut Ui, id: Id, current: &str, hint: &str, enabled: bool) -> Option<String> {
     let draft_id = id.with("draft");
     let mut draft = ui.data(|data| data.get_temp::<String>(draft_id)).unwrap_or_else(|| current.to_owned());
-    let edit = egui::TextEdit::singleline(&mut draft).id(id).hint_text(hint).desired_width(ui.available_width());
-    let response = ui.add_enabled(enabled, edit);
+    let palette = theme::palette(ui.ctx());
+    let width = ui.available_width();
+    let response = widgets::edit_line(ui, &palette, &mut draft, widgets::Field { hint, width, id: Some(id), enabled, ..Default::default() });
     if response.has_focus() {
         ui.data_mut(|data| data.insert_temp(draft_id, draft.clone()));
     } else {

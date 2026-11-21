@@ -146,6 +146,8 @@ mod image_crop_tests;
 #[cfg(test)]
 mod video_insert_tests;
 #[cfg(test)]
+mod pixel_preview_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod layout_tests;
@@ -738,7 +740,8 @@ impl DesktopApp {
         }
         // The record of a job start is kept until its answer, so that an answer that leaves the outcome unknown can be repeated.
         let sent_start = (method == "job.start").then(|| figure_close::SentStart::of(&params)).flatten();
-        match self.rpc.call(ticket, method, params) {
+        // The flow search reads only the page's scene, not its picture: its render.get gets no raw pixels (pixels.rs).
+        match self.rpc.call_with(ticket, method, params, !matches!(action, PendingAction::FlowFindPage { .. })) {
             Ok(()) => {
                 let in_flight = self.pending.len();
                 if let Some(test) = self.ui_test.as_mut() {

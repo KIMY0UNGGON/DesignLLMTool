@@ -34,7 +34,7 @@ impl Harness {
     fn sent(&mut self) -> Vec<Request> {
         let mut requests = Vec::new();
         while let Ok(work) = self.work.try_recv() {
-            if let Work::Call { ticket, method, params } = work {
+            if let Work::Call { ticket, method, params, .. } = work {
                 requests.push((ticket, method, params));
             }
         }

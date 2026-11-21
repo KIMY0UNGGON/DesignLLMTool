@@ -12,13 +12,17 @@
 use std::{collections::BTreeSet, path::PathBuf, time::Instant};
 
 use designllm_contracts::{new_id, ArtifactKind, AssetRef, DltError, FigureRevisionRef, Intent, JobStartRequest};
-use eframe::egui::{self, Ui};
+use eframe::egui::Ui;
 use serde_json::{json, Value};
 
 use super::{
     drafts::{figure_slot, Body, Live},
     figure_close::{job_running, LATE_START_WAIT},
     user_error, DesktopApp, PendingAction,
+};
+use crate::{
+    theme,
+    widgets::{self, DialogButton},
 };
 
 /// Most evidence files one request carries; each file is one host import.
@@ -456,32 +460,33 @@ impl DesktopApp {
         if !self.figure_ai_list_applies() {
             return;
         }
+        let palette = theme::palette(ui.ctx());
         let busy = self.figure_ai_request.as_ref().map(|request| (request.imported.len(), request.files.len()));
         let mut attach = false;
         let mut remove = None;
         let mut cancel = false;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(format!("근거 자료 ({})", self.figure_ai_files().len()));
-            if ui.add_enabled(busy.is_none(), egui::Button::new("첨부")).clicked() {
+            if widgets::dialog_button(ui, &palette, "첨부", DialogButton::Plain, busy.is_none()).clicked() {
                 attach = true;
             }
         });
         for (index, file) in self.figure_ai_files().iter().enumerate() {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(file.name.as_str());
-                if ui.add_enabled(busy.is_none(), egui::Button::new("빼기")).clicked() {
+                if widgets::dialog_button(ui, &palette, "빼기", DialogButton::Plain, busy.is_none()).clicked() {
                     remove = Some(index);
                 }
             });
         }
         if let Some((imported, total)) = busy {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if imported < total {
                     ui.label(format!("근거 자료 가져오는 중 {imported}/{total}"));
                 } else {
                     ui.label("AI 요청을 보내는 중");
                 }
-                if ui.add_enabled(imported < total, egui::Button::new("취소")).clicked() {
+                if widgets::dialog_button(ui, &palette, "취소", DialogButton::Plain, imported < total).clicked() {
                     cancel = true;
                 }
             });

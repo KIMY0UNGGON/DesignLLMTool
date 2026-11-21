@@ -25,6 +25,11 @@ fn paint(c: Rgba) -> Paint<'static> {
 }
 
 pub(crate) fn encode_png(glyphs: &GlyphSource<'_>, page: &RenderPage, profile: &RenderProfile, region: Option<Rect>, assets: &dyn AssetStore, diags: &mut Diags) -> DltResult<Vec<u8>> {
+    write_png(&raster_page(glyphs, page, profile, region, assets, diags)?, profile.dpi)
+}
+
+/// The pixels of [`encode_png`] (premultiplied alpha), before PNG encoding.
+pub(crate) fn raster_page(glyphs: &GlyphSource<'_>, page: &RenderPage, profile: &RenderProfile, region: Option<Rect>, assets: &dyn AssetStore, diags: &mut Diags) -> DltResult<Pixmap> {
     // A region is drawn in page pixels moved by its origin: on whole pixels this is exact (integer
     // translations of the same coordinates), so the region equals the crop of the whole page.
     let area = region.unwrap_or(Rect { x: 0, y: 0, width: page.size.width, height: page.size.height });
@@ -162,7 +167,7 @@ pub(crate) fn encode_png(glyphs: &GlyphSource<'_>, page: &RenderPage, profile: &
             }
         }
     }
-    write_png(&pm, profile.dpi)
+    Ok(pm)
 }
 
 pub(crate) fn shape_path(kind: ShapeKind, x: f32, y: f32, w: f32, h: f32) -> Option<tiny_skia::Path> {

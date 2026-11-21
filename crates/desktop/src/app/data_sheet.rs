@@ -8,7 +8,7 @@
 //! emit `figure.dataset.edit` transforms against the current figure revision and dataset version.
 
 use designllm_contracts::{CellState, DataColumn, DataTransform, Dataset, PanelBody};
-use eframe::egui::{self, Align2, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, TextEdit, Ui, Vec2};
+use eframe::egui::{self, Align2, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use serde_json::json;
 
 use super::{figure_tools, DatasetCellEdit, DesktopApp};
@@ -25,6 +25,9 @@ const COLUMN: f32 = 150.0;
 const SORT_MENU_ID: &str = "sheet-sort-menu";
 const UNIT_SCALE_MENU_ID: &str = "sheet-unit-scale-menu";
 const UNIT_SCALE_DRAFT_ID: &str = "sheet-unit-scale-draft";
+/// The label column and the field column of the unit-scale form.
+const UNIT_FORM_LABEL: f32 = 64.0;
+const UNIT_FORM_FIELD: f32 = 200.0;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct UnitScaleDraft {
@@ -135,11 +138,11 @@ impl DesktopApp {
                         ui.horizontal(|ui| {
                             ui.label(&column.name);
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.button("내림차순").clicked() {
+                                if widgets::labeled_button(ui, palette, None, "내림차순", false).clicked() {
                                     sort_action = Some((column.id.clone(), true));
                                     ui.close();
                                 }
-                                if ui.button("오름차순").clicked() {
+                                if widgets::labeled_button(ui, palette, None, "오름차순", false).clicked() {
                                     sort_action = Some((column.id.clone(), false));
                                     ui.close();
                                 }
@@ -200,27 +203,32 @@ impl DesktopApp {
                             numeric_columns.first().map(|column| column.id.as_str()).unwrap_or_default(),
                         )
                     });
-                ui.set_width(240.0);
-                egui::Grid::new("sheet-unit-scale-grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                    ui.label("열");
+                // The column list is menu rows (at least 200 wide); the fields under it take the same width.
+                ui.set_width(UNIT_FORM_LABEL + 8.0 + UNIT_FORM_FIELD);
+                egui::Grid::new("sheet-unit-scale-grid").num_columns(2).spacing([8.0, 6.0]).min_col_width(UNIT_FORM_LABEL).show(ui, |ui| {
+                    // The column list is taller than its label: the label sits at the top of the row.
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| ui.label("열"));
                     ui.vertical(|ui| {
+                        ui.set_width(UNIT_FORM_FIELD);
                         for column in &numeric_columns {
                             let label = column_unit_label(column);
-                            ui.selectable_value(&mut draft.column_id, column.id.clone(), label);
+                            if widgets::menu_item(ui, palette, None, &label, "", draft.column_id == column.id).clicked() {
+                                draft.column_id = column.id.clone();
+                            }
                         }
                     });
                     ui.end_row();
 
                     ui.label("출력 단위");
-                    ui.add(TextEdit::singleline(&mut draft.output_unit).desired_width(140.0));
+                    widgets::edit_line(ui, palette, &mut draft.output_unit, widgets::Field { width: UNIT_FORM_FIELD, ..Default::default() });
                     ui.end_row();
 
                     ui.label("분자");
-                    ui.add(TextEdit::singleline(&mut draft.numerator).desired_width(140.0));
+                    widgets::edit_line(ui, palette, &mut draft.numerator, widgets::Field { width: UNIT_FORM_FIELD, ..Default::default() });
                     ui.end_row();
 
                     ui.label("분모");
-                    ui.add(TextEdit::singleline(&mut draft.denominator).desired_width(140.0));
+                    widgets::edit_line(ui, palette, &mut draft.denominator, widgets::Field { width: UNIT_FORM_FIELD, ..Default::default() });
                     ui.end_row();
                 });
                 ui.add_space(6.0);
@@ -230,11 +238,11 @@ impl DesktopApp {
                         && !draft.output_unit.trim().is_empty()
                         && !draft.numerator.trim().is_empty()
                         && !draft.denominator.trim().is_empty();
-                    if ui.add_enabled(can_submit, egui::Button::new("적용")).clicked() {
+                    if ui.add_enabled_ui(can_submit, |ui| widgets::labeled_button(ui, palette, None, "적용", true)).inner.clicked() {
                         submit = Some(draft.clone());
                         ui.close();
                     }
-                    if ui.button("취소").clicked() {
+                    if widgets::labeled_button(ui, palette, None, "취소", false).clicked() {
                         cancel = true;
                         ui.close();
                     }
@@ -354,10 +362,17 @@ impl DesktopApp {
                 let editing_here = editing.as_ref().is_some_and(|edit| edit.row_id == row.id && edit.column_id == column.id && edit.dataset_id == dataset.id);
                 if editing_here {
                     let mut edit = editing.clone().expect("checked");
-                    let response = ui.put(
-                        rect.shrink(1.0),
-                        TextEdit::singleline(&mut edit.draft).font(body.clone()).margin(egui::Margin::symmetric(7, 4)).horizontal_align(if numeric { egui::Align::Max } else { egui::Align::Min }),
-                    );
+                    // The editor fills the cell inside its grid lines, as the cell's own rectangle.
+                    let field = rect.shrink(1.0);
+                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field));
+                    let response = widgets::edit_line(&mut child, palette, &mut edit.draft, widgets::Field {
+                        width: field.width(),
+                        height: Some(field.height()),
+                        font: Some(body.clone()),
+                        margin: Some(egui::Margin::symmetric(7, 4)),
+                        align: if numeric { egui::Align::Max } else { egui::Align::Min },
+                        ..Default::default()
+                    });
                     if !response.has_focus() && !response.lost_focus() {
                         response.request_focus();
                     }

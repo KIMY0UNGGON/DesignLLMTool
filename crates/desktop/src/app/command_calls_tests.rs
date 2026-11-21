@@ -199,7 +199,7 @@ impl Recorder {
     /// Plays the host's side until the window has nothing left to ask.
     fn settle(&mut self, host: &mut Host) {
         settle_work(&self.work, &mut self.app, &self.ctx, |item| {
-            if let Work::Call { ticket, method, params } = item {
+            if let Work::Call { ticket, method, params, .. } = item {
                 if method == "changes.apply" {
                     for operation in params["operations"].as_array().into_iter().flatten() {
                         self.calls.push(format!("changes.apply:{}", operation["op"].as_str().unwrap_or("?")));
@@ -2389,7 +2389,7 @@ fn queue_canvas_interaction_run(recorder: &mut Recorder, host: &mut Host, args: 
 
 fn answer_recorded_work(recorder: &mut Recorder, host: &mut Host, work: Vec<Work>) {
     for item in work {
-        if let Work::Call { ticket, method, params } = item {
+        if let Work::Call { ticket, method, params, .. } = item {
             if method == "changes.apply" {
                 for operation in params["operations"].as_array().into_iter().flatten() {
                     recorder.calls.push(format!("changes.apply:{}", operation["op"].as_str().unwrap_or("?")));
@@ -2431,7 +2431,7 @@ fn deliver_ui_runs_until_rpc(recorder: &mut Recorder, host: &mut Host, expected_
     assert!(command_work.iter().all(|item| !matches!(item, Work::Call { method, .. } if method == "ui.command.complete")), "runs are not completed before changes.apply replies: {debug_calls:?}");
     let mut applies = Vec::new();
     for item in command_work {
-        if let Work::Call { ticket, method, params } = item {
+        if let Work::Call { ticket, method, params, .. } = item {
             if method == expected_method {
                 applies.push((ticket, params));
             } else if method == "ui.command.complete" {
@@ -3350,7 +3350,7 @@ fn a_target_busy_apply_keeps_its_ticket_operations_when_direct_applies_reply_out
     let mut selection_result = None;
     let mut other_results = Vec::new();
     for item in work {
-        let Work::Call { ticket, method, params } = item else { continue };
+        let Work::Call { ticket, method, params, .. } = item else { continue };
         let result = host.call(&method, params);
         match method.as_str() {
             "changes.apply" => apply_results.push((ticket, result)),
@@ -5683,7 +5683,7 @@ fn a_pending_canvas_table_add_does_not_replace_a_newer_user_selection() {
     recorder.app.invoke("canvas.table.add", json!({ "rows": 2, "columns": 2 })).expect("the table apply is queued");
     let queued: Vec<Work> = recorder.work.try_iter().collect();
     let (ticket, params) = queued.into_iter().find_map(|work| match work {
-        Work::Call { ticket, method, params } if method == "changes.apply" => Some((ticket, params)),
+        Work::Call { ticket, method, params, .. } if method == "changes.apply" => Some((ticket, params)),
         _ => None,
     }).expect("the table AddNode request is held");
 

@@ -563,3 +563,157 @@ fn the_provenance_transform_and_calibration_drafts_stay_with_their_figure_and_el
     show(&ctx, &mut h, FIGURE, "node-a", &reordered);
     assert_eq!(stored::<ProvenanceDraft>(&ctx, "r07-provenance", FIGURE, "node-a").origin.as_deref(), Some("paper_evidence"));
 }
+
+/// A figure whose properties offer every figure row: the R07 figure plus a table with a value too long for its cell.
+fn figure_with_table() -> FigureDocument {
+    let dataset: designllm_contracts::Dataset = serde_json::from_value(json!({
+        "id": "ds-1",
+        "version_hash": "v1",
+        "original_asset_hash": "h1",
+        "origin": "csv",
+        "columns": [{ "id": "c1", "name": "조건", "data_type": "text", "unit": null }],
+        "rows": [{ "id": "r1", "cells": { "c1": { "original": "세 번 반복해 잰 대조군의 평균값과 표준편차", "parsed_decimal": null, "state": "valid" } } }],
+    }))
+    .expect("a dataset");
+    FigureDocument { datasets: vec![dataset], ..figure(image_panel(None, 0, None, "experimental_original")) }
+}
+
+/// Draws the figure part of the properties panel into a column `width` wide, the way the panel lays it out, and returns the
+/// column, the rectangle its contents took and the house controls of the last frame. Grids measure their columns in a first
+/// frame, so three frames are drawn.
+fn figure_details_in(ctx: &egui::Context, app: &mut DesktopApp, figure: &FigureDocument, width: f32) -> (egui::Rect, egui::Rect, Vec<crate::ui_record::Control>) {
+    let mut drawn = None;
+    for frame in 0..3 {
+        if frame == 2 {
+            crate::ui_record::begin();
+        }
+        let _ = ctx.run(screen(1.0, 900.0, 2400.0), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let column = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(width, 2300.0));
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(column).layout(egui::Layout::top_down(egui::Align::Min)));
+                child.spacing_mut().item_spacing.y = 4.0;
+                app.draw_figure_details(&mut child, figure);
+                drawn = Some((column, child.min_rect()));
+            });
+        });
+    }
+    let (column, used) = drawn.expect("the panel was drawn");
+    (column, used, crate::ui_record::finish())
+}
+
+/// Task 68h: no figure row runs past the properties panel, at the panel's default width and at its least width (PANEL_MIN
+/// less the panel's 12 + 12 margin): the connector row puts its button under the pickers, the crop fields take two lines, and
+/// the held PDF buttons, the legend and the review rows wrap.
+#[test]
+fn the_figure_rows_stay_inside_the_properties_panel_at_its_default_and_least_width() {
+    let supported = || designllm_contracts::FeatureSupport {
+        read: designllm_contracts::Support::Supported,
+        render: designllm_contracts::Support::Supported,
+        edit: designllm_contracts::Support::Supported,
+        preserve: designllm_contracts::Support::Supported,
+        write: designllm_contracts::Support::Supported,
+        reason: String::new(),
+    };
+    let figure = figure_with_table();
+    for width in [theme::PANEL_WIDTH - 24.0, theme::PANEL_MIN - 24.0] {
+        for selected in ["node-a", IMAGE] {
+            let mut h = Harness::with_figure(figure.clone(), Some(selected));
+            for feature in [designllm_contracts::Feature::Diagram, designllm_contracts::Feature::Dataset, designllm_contracts::Feature::Evidence] {
+                h.app.context.as_mut().expect("a context").capabilities.insert(feature, supported());
+            }
+            h.app.held_pdf_evidence.push(super::HeldPdfEvidence {
+                id: "held-1".into(),
+                target: super::PdfEvidenceTarget {
+                    artifact_id: FIGURE.into(),
+                    revision: REVISION,
+                    page_index: 0,
+                    file_name: "paper.pdf".into(),
+                    asset_sha256: None,
+                    awaiting: None,
+                },
+                records: vec![evidence("ev-9", "보류한 근거")],
+                message: "변경을 보내지 못해 PDF 근거를 보류했습니다".into(),
+                ticket: None,
+            });
+            h.app.dataset_edit = Some(super::DatasetCellEdit {
+                dataset_id: "ds-1".into(),
+                version_hash: "v1".into(),
+                row_id: "r1".into(),
+                column_id: "c1".into(),
+                original: "1".into(),
+                draft: "2".into(),
+            });
+            let ctx = egui::Context::default();
+            theme::install(&ctx);
+            let mut legend = LegendDraft::of(None);
+            legend.items.push(("대조군".into(), "#1F4E79".into()));
+            legend.items.push(("처리군".into(), "#C0504D".into()));
+            ctx.data_mut(|data| data.insert_temp(draft_id("r07-legend", FIGURE, ()), legend));
+
+            let (column, used, controls) = figure_details_in(&ctx, &mut h.app, &figure, width);
+            assert!(used.right() <= column.right() + 0.5, "{selected} at {width}: the rows end at {} past the panel's {}", used.right(), column.right());
+            let own: &[&str] = if selected == IMAGE { &["자르기", "길이", "픽셀 간격", "단위"] } else { &["+ 도형", "+ 원", "연결"] };
+            for label in ["다시 넣기", "보류 PDF 복사", "보류 PDF 버리기", "삭제", "항목 추가", "제목", "메모", "값 적용", "닫기", "저장"].iter().chain(own) {
+                assert!(controls.iter().any(|control| control.label == *label), "{selected} at {width}: {label} is drawn and reported");
+            }
+            for control in &controls {
+                assert!(
+                    control.rect.right() <= column.right() + 0.5 && control.rect.left() >= column.left() - 0.5,
+                    "{selected} at {width}: {:?} at {:?} runs past the panel {:?}",
+                    control.label,
+                    control.rect,
+                    column
+                );
+            }
+        }
+    }
+}
+
+/// Each R07 button shows its own words: the four apply buttons read 적용 and are recorded under their section, while 저장 and
+/// the three clear buttons read and are recorded as their words. Checked on the text the frame painted, not only the records.
+#[test]
+fn the_r07_buttons_paint_their_own_words_and_the_apply_buttons_are_recorded_by_section() {
+    let calibrated = designllm_contracts::Calibration { length: "10".into(), unit: "mm".into(), pixel_span: "250".into(), evidence_id: None };
+    let mut figure = figure(image_panel(None, 0, Some(calibrated), "experimental_original"));
+    figure.common_legend = Some(CommonLegend {
+        items: vec![CommonLegendItem { label: "대조군".into(), color: "#1F4E79".into() }],
+        placement: CommonLegendPlacement::Bottom,
+        title: None,
+    });
+    figure.visual_review = Some(VisualReview { state: VisualReviewState::Pending, note: None, approved_digest: None });
+    let shared = ["저장", "보정 지우기", "범례 지우기", "검토 지우기"];
+    for (selected, applies, clears) in [
+        (IMAGE, &["변환 적용", "보정 적용", "범례 적용"][..], &shared[..]),
+        ("node-a", &["출처 적용", "범례 적용"][..], &["저장", "범례 지우기", "검토 지우기"][..]),
+    ] {
+        let mut h = Harness::with_figure(figure.clone(), Some(selected));
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        crate::ui_record::begin();
+        let output = ctx.run(screen(1.0, 900.0, 2400.0), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| h.app.r07_draw_figure(ui, &figure));
+        });
+        let controls = crate::ui_record::finish();
+        let texts: Vec<String> = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::epaint::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                _ => None,
+            })
+            .collect();
+        for words in clears {
+            assert_eq!(texts.iter().filter(|text| text == words).count(), 1, "{selected}: {words} is painted once: {texts:?}");
+            assert!(controls.iter().any(|control| control.label == *words), "{selected}: {words} is recorded");
+        }
+        for words in shared.iter().filter(|words| !clears.contains(words)) {
+            assert!(!texts.iter().any(|text| text == words), "{selected}: {words} is not shown: {texts:?}");
+        }
+        assert_eq!(texts.iter().filter(|text| *text == "적용").count(), applies.len(), "{selected}: one 적용 per apply button: {texts:?}");
+        for record in applies {
+            assert!(controls.iter().any(|control| control.label == *record), "{selected}: an apply button is recorded as {record}");
+            assert!(!texts.iter().any(|text| text == record), "{selected}: {record} is a record, not painted words: {texts:?}");
+        }
+        assert!(controls.iter().all(|control| control.label != "적용"), "{selected}: no R07 button is recorded as a bare 적용");
+    }
+}

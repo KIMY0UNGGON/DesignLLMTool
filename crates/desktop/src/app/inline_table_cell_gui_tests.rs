@@ -152,7 +152,7 @@ impl Driver {
                 continue;
             }
             match work {
-                Work::Call { ticket, method, params } => {
+                Work::Call { ticket, method, params, .. } => {
                     let result = host.call(&method, params).map(RpcPayload::Json);
                     window.replies.send(RpcReply { ticket, result }).expect("the window listens");
                 }

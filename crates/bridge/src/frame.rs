@@ -3,6 +3,10 @@
 //! The 8 MiB limit (`MAX_FRAME_BYTES`) applies to the payload only and is checked on the header
 //! before any payload byte is buffered. A header above the limit cannot be resynchronised, so
 //! callers must answer once and close the connection.
+//!
+//! A binary frame (68i) sets bit 31 of the header ([`BINARY_FLAG`]); its payload is raw bytes under the same limit. The host
+//! sends binary frames only to a gui connection that asked `render.pixels`, right before that request's response, which they
+//! belong to. Only a decoder made with [`FrameDecoder::with_binary`] accepts them; any other refuses the header.
 
 use std::io::{ErrorKind, Read, Write};
 
@@ -10,6 +14,21 @@ use designllm_contracts::{DltError, DltResult, ErrorCode, MAX_FRAME_BYTES};
 
 /// Length header size in bytes.
 pub const HEADER_BYTES: usize = 4;
+/// Header bit of a binary frame. The length is the header without it.
+pub const BINARY_FLAG: u32 = 1 << 31;
+
+/// One frame payload of a decoder that accepts binary frames.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Frame {
+    Json(Vec<u8>),
+    Binary(Vec<u8>),
+}
+
+/// The header of a binary frame of `len` bytes. Refuses an empty or oversized payload.
+pub fn binary_header(len: usize) -> DltResult<[u8; HEADER_BYTES]> {
+    check_length(len)?;
+    Ok((len as u32 | BINARY_FLAG).to_le_bytes())
+}
 
 fn frame_error(message: impl Into<String>) -> DltError {
     DltError::new(ErrorCode::InvalidArgument, message)
@@ -83,6 +102,10 @@ pub fn read_frame<R: Read>(reader: &mut R) -> DltResult<Option<Vec<u8>>> {
 #[derive(Debug, Default)]
 pub struct FrameDecoder {
     buffer: Vec<u8>,
+    binary: bool,
+    /// A binary frame whose body is still arriving, and its length: its bytes go straight into it, so a large frame is copied
+    /// once instead of through `buffer` (68i).
+    body: Option<(Vec<u8>, usize)>,
 }
 
 impl FrameDecoder {
@@ -90,24 +113,67 @@ impl FrameDecoder {
         Self::default()
     }
 
-    /// Appends bytes and returns the complete payloads now available, in order.
+    /// A decoder that also accepts binary frames ([`FrameDecoder::push_frames`]).
+    pub fn with_binary() -> Self {
+        FrameDecoder { buffer: Vec::new(), binary: true, body: None }
+    }
+
+    /// Appends bytes and returns the complete JSON payloads now available, in order. A binary frame is an error.
     pub fn push(&mut self, bytes: &[u8]) -> DltResult<Vec<Vec<u8>>> {
-        self.buffer.extend_from_slice(bytes);
+        self.push_frames(bytes)?
+            .into_iter()
+            .map(|frame| match frame {
+                Frame::Json(payload) => Ok(payload),
+                Frame::Binary(_) => Err(frame_error("binary frame on a JSON-only stream")),
+            })
+            .collect()
+    }
+
+    /// Appends bytes and returns the complete frames now available, in order. A binary header is refused before its body
+    /// is buffered unless the decoder was made [`FrameDecoder::with_binary`].
+    pub fn push_frames(&mut self, mut bytes: &[u8]) -> DltResult<Vec<Frame>> {
         let mut frames = Vec::new();
+        if let Some((body, len)) = self.body.as_mut() {
+            let take = (*len - body.len()).min(bytes.len());
+            body.extend_from_slice(&bytes[..take]);
+            bytes = &bytes[take..];
+            if body.len() < *len {
+                return Ok(frames);
+            }
+            if let Some((body, _)) = self.body.take() {
+                frames.push(Frame::Binary(body));
+            }
+        }
+        self.buffer.extend_from_slice(bytes);
         let mut offset = 0usize;
         loop {
             let rest = &self.buffer[offset..];
             if rest.len() < HEADER_BYTES {
                 break;
             }
-            let len = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
+            let header = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]);
+            let binary = header & BINARY_FLAG != 0;
+            if binary && !self.binary {
+                return Err(frame_error("binary frames are not accepted on this stream; connection will be closed"));
+            }
+            let len = (header & !BINARY_FLAG) as usize;
             check_length(len)?;
             if rest.len() < HEADER_BYTES + len {
+                if binary && rest.len() > HEADER_BYTES {
+                    let mut body = Vec::with_capacity(len);
+                    body.extend_from_slice(&rest[HEADER_BYTES..]);
+                    self.body = Some((body, len));
+                    offset = self.buffer.len();
+                }
                 break;
             }
             let payload = &rest[HEADER_BYTES..HEADER_BYTES + len];
-            check_utf8(payload)?;
-            frames.push(payload.to_vec());
+            if binary {
+                frames.push(Frame::Binary(payload.to_vec()));
+            } else {
+                check_utf8(payload)?;
+                frames.push(Frame::Json(payload.to_vec()));
+            }
             offset += HEADER_BYTES + len;
         }
         self.buffer.drain(..offset);
@@ -116,7 +182,7 @@ impl FrameDecoder {
 
     /// Bytes received but not yet forming a complete frame.
     pub fn buffered_bytes(&self) -> usize {
-        self.buffer.len()
+        self.buffer.len() + self.body.as_ref().map_or(0, |(body, _)| body.len())
     }
 }
 
@@ -189,6 +255,37 @@ mod tests {
         }
         assert_eq!(frames, vec![br#"{"a":1}"#.to_vec(), br#"{"b":2}"#.to_vec()]);
         assert_eq!(decoder.buffered_bytes(), 0);
+    }
+
+    #[test]
+    fn binary_frames_reach_only_a_decoder_that_accepts_them() {
+        let mut wire = binary_header(3).unwrap().to_vec();
+        wire.extend_from_slice(&[0xFF, 0, 1]);
+        wire.extend(encode_frame(br#"{"a":1}"#).unwrap());
+        let mut decoder = FrameDecoder::with_binary();
+        let mut frames = Vec::new();
+        for byte in &wire {
+            frames.extend(decoder.push_frames(&[*byte]).expect("byte-wise push"));
+        }
+        assert_eq!(frames, vec![Frame::Binary(vec![0xFF, 0, 1]), Frame::Json(br#"{"a":1}"#.to_vec())]);
+        // A body filled straight into its own buffer, with pushes that end it and start the next frame at once.
+        let big: Vec<u8> = (0..1000u32).map(|n| n as u8).collect();
+        let mut stream = encode_frame(br#"{"a":0}"#).unwrap();
+        stream.extend(binary_header(big.len()).unwrap());
+        stream.extend(&big);
+        stream.extend(binary_header(2).unwrap());
+        stream.extend([7, 8]);
+        stream.extend(encode_frame(br#"{"a":1}"#).unwrap());
+        let mut decoder = FrameDecoder::with_binary();
+        let frames: Vec<Frame> = stream.chunks(7).flat_map(|piece| decoder.push_frames(piece).expect("push")).collect();
+        assert_eq!(frames, vec![Frame::Json(br#"{"a":0}"#.to_vec()), Frame::Binary(big), Frame::Binary(vec![7, 8]), Frame::Json(br#"{"a":1}"#.to_vec())]);
+        assert_eq!(decoder.buffered_bytes(), 0);
+        let mut json_only = FrameDecoder::new();
+        assert!(json_only.push(&wire[..HEADER_BYTES]).is_err(), "refused at the header");
+        assert_eq!(json_only.buffered_bytes(), HEADER_BYTES, "no body bytes were accumulated");
+        assert!(binary_header(0).is_err() && binary_header(MAX_FRAME_BYTES + 1).is_err());
+        let mut over = FrameDecoder::with_binary();
+        assert!(over.push_frames(&((MAX_FRAME_BYTES as u32 + 1) | BINARY_FLAG).to_le_bytes()).is_err());
     }
 
     #[test]

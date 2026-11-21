@@ -10,13 +10,11 @@ use std::{
     time::Instant,
 };
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use designllm_bridge::{home, home::HomeRequest, Client};
 use designllm_contracts::{AssetRef, DltError, DltResult, ErrorCode};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
-const ASSET_CHUNK: u64 = 4 * 1024 * 1024;
+use crate::pixels::{self, Picture, Previews};
 
 pub struct RpcWorker {
     send: Sender<Work>,
@@ -94,6 +92,8 @@ pub(crate) enum Work {
         ticket: u64,
         method: String,
         params: Value,
+        /// For `render.get`: the window reads the snapshot's preview, so the worker asks the page's raw pixels (68i, pixels.rs).
+        preview_pixels: bool,
     },
     ReadAsset {
         ticket: u64,
@@ -113,10 +113,11 @@ pub enum RpcPayload {
 }
 
 impl RpcPayload {
-    /// The PNG picture of an `Image` answer; None for another answer, another type or an empty picture.
+    /// The picture of an `Image` answer (a PNG, or a page's raw pixels, `pixels::PIXELS_MIME`); None for another answer, another
+    /// type or an empty picture.
     pub(crate) fn png_image(self) -> Option<eframe::egui::ColorImage> {
         match self {
-            RpcPayload::Image { mime, image } if mime == "image/png" && image.width() > 0 && image.height() > 0 => Some(image),
+            RpcPayload::Image { mime, image } if (mime == "image/png" || mime == pixels::PIXELS_MIME) && image.width() > 0 && image.height() > 0 => Some(image),
             _ => None,
         }
     }
@@ -153,16 +154,6 @@ impl Outbox {
     }
 }
 
-/// A preview PNG as texture pixels.
-fn decode_preview(mime: String, bytes: &[u8]) -> Result<RpcPayload, DltError> {
-    let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
-        .map_err(|error| DltError::new(ErrorCode::IntegrityError, format!("Preview PNG could not be decoded: {error}")))?;
-    let rgba = decoded.into_rgba8();
-    let size = [rgba.width() as usize, rgba.height() as usize];
-    let image = eframe::egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
-    Ok(RpcPayload::Image { mime, image })
-}
-
 impl RpcWorker {
     pub fn spawn(workspace: &Path) -> DltResult<Self> {
         let client = Client::gui(workspace);
@@ -175,13 +166,13 @@ impl RpcWorker {
         // A preview is decoded on its own thread, so the requests queued behind its read (a click's) do not wait for the
         // decode as well (68f 3-1). Previews keep their order; one waits while another decodes, so at most three pictures
         // (read, waiting, decoding) are held at once.
-        let (decode, decode_work) = mpsc::sync_channel::<(u64, Instant, String, Vec<u8>)>(1);
+        let (decode, decode_work) = mpsc::sync_channel::<(u64, Instant, Picture)>(1);
         let decoder = outbox.clone();
         thread::Builder::new()
             .name("designllm-decode".into())
             .spawn(move || {
-                for (ticket, started, mime, bytes) in decode_work {
-                    if !decoder.deliver(ticket, started, decode_preview(mime, &bytes)) {
+                for (ticket, started, picture) in decode_work {
+                    if !decoder.deliver(ticket, started, pixels::decode(picture)) {
                         break;
                     }
                 }
@@ -192,6 +183,7 @@ impl RpcWorker {
             .spawn(move || {
                 let mut queue = VecDeque::new();
                 let mut overtakes = 0;
+                let mut previews = Previews::default();
                 loop {
                     if queue.is_empty() {
                         match work.recv() {
@@ -203,22 +195,27 @@ impl RpcWorker {
                     let Some(task) = next_work(&mut queue, &mut overtakes) else { continue };
                     let started = Instant::now();
                     let (ticket, result) = match task {
-                        Work::Call { ticket, method, params } => (ticket, client.call(&method, params).map(RpcPayload::Json)),
+                        Work::Call { ticket, method, params, preview_pixels: true } if method == "render.get" => {
+                            (ticket, previews.render(&client, ticket, params).map(RpcPayload::Json))
+                        }
+                        Work::Call { ticket, method, params, .. } => (ticket, client.call(&method, params).map(RpcPayload::Json)),
                         Work::Home { ticket, request } => (
                             ticket,
                             home::create_from_home(&client, &request).map(|outcome| {
                                 RpcPayload::Json(json!({ "artifact": outcome.artifact, "job": outcome.job, "sources": outcome.sources }))
                             }),
                         ),
-                        Work::ReadAsset { ticket, asset } => match read_asset(&client, &asset) {
-                            Ok(bytes) => {
-                                if decode.send((ticket, started, asset.mime, bytes)).is_err() {
-                                    break;
+                        Work::ReadAsset { ticket, asset } => {
+                            match previews.picture(&client, &asset) {
+                                Ok(picture) => {
+                                    if decode.send((ticket, started, picture)).is_err() {
+                                        break;
+                                    }
+                                    continue;
                                 }
-                                continue;
+                                Err(error) => (ticket, Err(error)),
                             }
-                            Err(error) => (ticket, Err(error)),
-                        },
+                        }
                     };
                     if !outbox.deliver(ticket, started, result) {
                         break;
@@ -254,12 +251,13 @@ impl RpcWorker {
     }
 
     pub fn call(&self, ticket: u64, method: &str, params: Value) -> DltResult<()> {
+        self.call_with(ticket, method, params, true)
+    }
+
+    /// `call`; `preview_pixels` false for a `render.get` whose preview the window does not read (pixels.rs).
+    pub(crate) fn call_with(&self, ticket: u64, method: &str, params: Value, preview_pixels: bool) -> DltResult<()> {
         self.send
-            .send(Work::Call {
-                ticket,
-                method: method.into(),
-                params,
-            })
+            .send(Work::Call { ticket, method: method.into(), params, preview_pixels })
             .map_err(|error| DltError::new(ErrorCode::Internal, error.to_string()))
     }
 
@@ -280,86 +278,12 @@ impl RpcWorker {
     }
 }
 
-fn read_asset(client: &Client, asset: &AssetRef) -> DltResult<Vec<u8>> {
-    let capacity = usize::try_from(asset.bytes)
-        .map_err(|_| DltError::invalid("Asset is too large for this process"))?;
-    let mut bytes = Vec::with_capacity(capacity);
-    let mut offset = 0_u64;
-
-    while offset < asset.bytes {
-        let maximum = ASSET_CHUNK.min(asset.bytes - offset);
-        let result = client.call(
-            "asset.read",
-            json!({
-                "sha256": asset.sha256,
-                "offset": offset,
-                "max_bytes": maximum,
-            }),
-        )?;
-        let actual_offset = result
-            .get("offset")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| DltError::invalid("asset.read omitted its offset"))?;
-        let total = result
-            .get("total_bytes")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| DltError::invalid("asset.read omitted its byte count"))?;
-        let encoded = result
-            .get("base64")
-            .and_then(Value::as_str)
-            .ok_or_else(|| DltError::invalid("asset.read omitted its payload"))?;
-        let eof = result
-            .get("eof")
-            .and_then(Value::as_bool)
-            .ok_or_else(|| DltError::invalid("asset.read omitted eof"))?;
-        let mime = result
-            .get("mime")
-            .and_then(Value::as_str)
-            .ok_or_else(|| DltError::invalid("asset.read omitted mime"))?;
-        if actual_offset != offset || total != asset.bytes || mime != asset.mime {
-            return Err(DltError::new(
-                ErrorCode::IntegrityError,
-                "asset.read metadata changed during transfer",
-            ));
-        }
-
-        let chunk = STANDARD
-            .decode(encoded)
-            .map_err(|error| DltError::invalid(format!("Invalid asset base64: {error}")))?;
-        if chunk.is_empty() || chunk.len() as u64 > maximum {
-            return Err(DltError::new(
-                ErrorCode::IntegrityError,
-                "asset.read returned an empty or oversized chunk",
-            ));
-        }
-        offset = offset
-            .checked_add(chunk.len() as u64)
-            .ok_or_else(|| DltError::invalid("Asset offset overflow"))?;
-        bytes.extend_from_slice(&chunk);
-        if eof != (offset == asset.bytes) || offset > asset.bytes {
-            return Err(DltError::new(
-                ErrorCode::IntegrityError,
-                "asset.read eof or length did not match the asset reference",
-            ));
-        }
-    }
-
-    let actual_hash = format!("{:x}", Sha256::digest(&bytes));
-    if actual_hash != asset.sha256 {
-        return Err(DltError::new(
-            ErrorCode::IntegrityError,
-            "Downloaded preview did not match its asset hash",
-        ));
-    }
-    Ok(bytes)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn call(ticket: u64, method: &str) -> Work {
-        Work::Call { ticket, method: method.into(), params: Value::Null }
+        Work::Call { ticket, method: method.into(), params: Value::Null, preview_pixels: true }
     }
 
     #[test]

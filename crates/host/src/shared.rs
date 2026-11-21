@@ -19,6 +19,7 @@ use designllm_contracts::{CoreEvent, DltResult};
 use designllm_core::{EventBatch, PdfCancel, Workspace};
 
 use crate::jobs::JobSupervisor;
+use crate::rasters::RasterPermits;
 use crate::{HostMode, HostOptions};
 
 /// Events requested from the core per batch.
@@ -212,6 +213,8 @@ pub(crate) struct Shared {
     pub subscribers: Mutex<Vec<Weak<Subscriber>>>,
     pub pump_seq: AtomicU64,
     pub jobs: JobSupervisor,
+    /// Renders drawn outside `core` at once (68i, `rasters.rs`). Its lock is never held with `core`.
+    pub rasters: RasterPermits,
 }
 
 impl Shared {
@@ -230,6 +233,7 @@ impl Shared {
             subscribers: Mutex::new(Vec::new()),
             pump_seq: AtomicU64::new(0),
             jobs: JobSupervisor::new(),
+            rasters: RasterPermits::default(),
         }
     }
 

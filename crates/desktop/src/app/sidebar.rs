@@ -1422,6 +1422,7 @@ impl DesktopApp {
 
     /// Explicitly pins the exact Figure revisions available to the AI request.
     pub(super) fn draw_ai_figure_refs(&mut self, ui: &mut Ui) {
+        let palette = &theme::palette(ui.ctx());
         let artifacts = &self.artifacts;
         let refs = &mut self.ai_figure_refs;
         if !artifacts.iter().any(|summary| summary.kind == ArtifactKind::Figure) && refs.is_empty() { return; }
@@ -1436,14 +1437,14 @@ impl DesktopApp {
                     .map_or(reference.figure_id.as_str(), |summary| summary.title.as_str());
                 ui.horizontal(|ui| {
                     ui.label(format!("{title} · 버전 {}", reference.figure_revision));
-                    if ui.small_button("빼기").clicked() { remove = Some(index); }
+                    if widgets::compact_button(ui, palette, "빼기").clicked() { remove = Some(index); }
                 });
             }
             if selected_count < MAX_JOB_FIGURE_REFS {
                 for summary in artifacts.iter().filter(|summary| summary.kind == ArtifactKind::Figure) {
                     if refs.iter().any(|reference| reference.figure_id == summary.id && reference.figure_revision == summary.revision) { continue; }
                     let mut checked = false;
-                    if ui.checkbox(&mut checked, format!("{} · 버전 {} 승인", summary.title, summary.revision)).changed() && checked {
+                    if widgets::checkbox(ui, palette, &mut checked, &format!("{} · 버전 {} 승인", summary.title, summary.revision)).changed() && checked {
                         additions.push(FigureRevisionRef { figure_id: summary.id.clone(), figure_revision: summary.revision });
                     }
                 }
@@ -1810,13 +1811,13 @@ impl DesktopApp {
             return;
         };
         let field = Rect::from_min_max(Pos2::new(x, rect.top() + 2.0), Pos2::new(rect.right() - 6.0, rect.bottom() - 2.0));
-        let response = ui.put(
-            field,
-            egui::TextEdit::singleline(&mut rename.text)
-                .font(theme::display_font(false, 13.0))
-                .text_color(palette.ink)
-                .margin(egui::Margin::symmetric(4, 2)),
-        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field));
+        let response = widgets::edit_line(&mut child, palette, &mut rename.text, widgets::Field {
+            width: field.width(),
+            height: Some(field.height()),
+            margin: Some(egui::Margin::symmetric(4, 2)),
+            ..Default::default()
+        });
         if !response.lost_focus() {
             response.request_focus();
             self.layer_rename = Some(rename);

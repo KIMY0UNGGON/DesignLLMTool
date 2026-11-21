@@ -213,7 +213,7 @@ impl DesktopApp {
         if images_ok && !slides {
             if self.video_insert_for_active().is_some() {
                 ui.small(self.video_insert_status_for_active());
-                if ui.add_enabled(self.video_insert_can_cancel(), egui::Button::new("동영상 추가 취소")).clicked() {
+                if ui.add_enabled_ui(self.video_insert_can_cancel(), |ui| widgets::labeled_button(ui, palette, None, "동영상 추가 취소", false)).inner.clicked() {
                     if let Err(message) = self.cancel_canvas_video_insert() { self.set_error(message); }
                 }
             } else if widgets::menu_item(ui, palette, Some("ins-video"), "동영상", "", false).clicked() {
@@ -286,21 +286,18 @@ impl DesktopApp {
         let mut changed = false;
         let mut place = false;
         ui.add_space(4.0);
-        changed |= ui
-            .add(
-                egui::TextEdit::multiline(&mut draft.d)
-                    .hint_text(egui::RichText::new("M 0 0 L 24 24 Z").color(palette.ink_3))
-                    .font(theme::display_font(false, 13.0))
-                    .desired_rows(4)
-                    .desired_width(ui.available_width()),
-            )
-            .changed();
+        let width = ui.available_width();
+        changed |= widgets::edit_area(ui, palette, &mut draft.d, widgets::Field {
+            hint: "M 0 0 L 24 24 Z",
+            width,
+            rows: 4,
+            ..Default::default()
+        })
+        .changed();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            let view_box = egui::TextEdit::singleline(&mut draft.view_box)
-                .font(theme::display_font(false, 13.0))
-                .margin(egui::Margin::symmetric(8, 4));
-            changed |= ui.add_sized(egui::vec2(ui.available_width() - 80.0, theme::FIELD_HEIGHT), view_box).changed();
+            let width = ui.available_width() - 80.0;
+            changed |= widgets::edit_line(ui, palette, &mut draft.view_box, widgets::Field { width, ..Default::default() }).changed();
             place = widgets::labeled_button(ui, palette, None, "넣기", true).clicked();
         });
         if changed {

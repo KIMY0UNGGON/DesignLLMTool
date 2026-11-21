@@ -428,18 +428,20 @@ impl DesktopApp {
                             .max_height(max_text_height)
                             .auto_shrink([false, true])
                             .show(ui, |ui| {
-                                let edit = if is_title {
-                                    egui::TextEdit::singleline(&mut text).return_key(None)
-                                } else {
-                                    egui::TextEdit::multiline(&mut text).desired_rows(1)
+                                let field = crate::widgets::Field {
+                                    width: f32::INFINITY,
+                                    font: Some(font.clone()),
+                                    color: Some(text_color),
+                                    id: Some(text_id),
+                                    borderless: true,
+                                    enter_keeps_focus: is_title,
+                                    ..Default::default()
                                 };
-                                ui.add(edit
-                                    .id(text_id)
-                                    .frame(false)
-                                    .margin(egui::Margin::ZERO)
-                                    .font(font.clone())
-                                    .text_color(text_color)
-                                    .desired_width(f32::INFINITY));
+                                if is_title {
+                                    crate::widgets::edit_line(ui, &palette, &mut text, field);
+                                } else {
+                                    crate::widgets::edit_area(ui, &palette, &mut text, crate::widgets::Field { rows: 1, ..field });
+                                }
                             });
                     });
                 });

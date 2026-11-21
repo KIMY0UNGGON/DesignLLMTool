@@ -176,7 +176,7 @@ impl LinkWindow {
         let (failure, cached_hello) = (self.failure.clone(), self.cached_hello);
         let (replies, lose_next, sent) = (&self.replies, &mut self.lose_next, &mut self.sent);
         settle_work(&self.work, &mut self.app, &self.ctx, |item| {
-            if let Work::Call { ticket, method, params } = item {
+            if let Work::Call { ticket, method, params, .. } = item {
                 sent.push(method.clone());
                 let lost = (stopped && !(cached_hello && method == "system.hello")) || *lose_next > 0;
                 *lose_next = lose_next.saturating_sub(1);
@@ -441,6 +441,10 @@ fn drawing_while_the_host_is_gone_sends_nothing_and_raises_no_notice() {
     window.app.invoke("select.node", json!({ "node_id": "a" })).expect("the box is selected");
     window.settle(&mut host);
     window.stop_host(&mut host);
+    // Enter is the lost-host dialog's `다시 연결` while a starter is set, and that starts the host and sends its startup requests
+    // (those are not sent while the host is gone). This test is about what the window draws and sends with no restart, so the
+    // starter goes: Enter is still taken by the dialog, and still starts no text edit.
+    window.app.host_link.starter = None;
     window.app.notices.clear_transient();
     window.sent.clear();
     window.app.invoke("view.zoom_in", json!({})).expect("the zoom is the window's own");

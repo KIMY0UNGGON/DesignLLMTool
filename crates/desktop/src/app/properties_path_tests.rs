@@ -54,7 +54,7 @@ impl Window {
     /// Plays the host's side until the window has nothing left to ask.
     fn settle(&mut self, host: &mut Host) {
         settle_work(&self.work, &mut self.app, &self.ctx, |item| {
-            if let Work::Call { ticket, method, params } = item {
+            if let Work::Call { ticket, method, params, .. } = item {
                 self.calls.push((method.clone(), params.clone()));
                 let result = host.call(&method, params).map(RpcPayload::Json);
                 self.replies.send(RpcReply { ticket, result }).expect("the window listens");
