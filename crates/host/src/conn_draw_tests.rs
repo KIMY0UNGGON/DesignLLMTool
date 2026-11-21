@@ -64,9 +64,9 @@ fn workspace(name: &str) -> (PathBuf, Workspace, String) {
     (root, ws, artifact)
 }
 
-/// A `render.pixels` the way a connection gets it: checked under the workspace, and a job to draw.
-fn render_job(ws: &mut Workspace, params: Value) -> Box<RenderJob> {
-    match ws.dispatch_start(request("render.pixels", params), None) {
+/// A `render.get` or `render.pixels` the way a connection gets it: checked under the workspace, and a job to draw.
+fn render_job(ws: &mut Workspace, method: &str, params: Value) -> Box<RenderJob> {
+    match ws.dispatch_start(request(method, params), None) {
         Dispatch::Render(job) => job,
         Dispatch::Answered(response) => panic!("a render is answered before it draws: {:?}", response.error),
         _ => panic!("a render is drawn outside the workspace"),
@@ -77,7 +77,7 @@ fn render_job(ws: &mut Workspace, params: Value) -> Box<RenderJob> {
 fn a_cached_pixels_answer_is_given_while_every_raster_permit_is_taken() {
     let (root, mut ws, doc) = workspace("cached");
     let params = json!({ "artifact_id": doc, "expected_revision": 0, "page_index": 0, "profile": { "dpi": 48, "transparent": false } });
-    let first = render_job(&mut ws, params.clone());
+    let first = render_job(&mut ws, "render.pixels", params.clone());
     let drawn = draw(&first, &RasterPermits::default(), || false).expect("the first render draws");
     let (response, _) = ws.finish_render(first, Ok(drawn));
     assert!(response.error.is_none(), "{:?}", response.error);
@@ -86,7 +86,7 @@ fn a_cached_pixels_answer_is_given_while_every_raster_permit_is_taken() {
     let permits = RasterPermits::default();
     let held = [permits.try_acquire(1), permits.try_acquire(1)];
     assert!(held.iter().all(Option::is_some), "both permits are taken");
-    let again = render_job(&mut ws, params);
+    let again = render_job(&mut ws, "render.pixels", params);
     assert_eq!(again.draw_pixels().expect("the page fits"), None, "held pixels draw nothing");
     let answered = draw(&again, &permits, || true).expect("the cached answer is given without a permit");
     let (response, pixels) = ws.finish_render(again, Ok(answered));
@@ -94,13 +94,29 @@ fn a_cached_pixels_answer_is_given_while_every_raster_permit_is_taken() {
     assert!(pixels.is_some(), "the held pixels are sent");
 
     // A render that does draw needs a permit: with `stop` already true it gives up at once, as Canceled.
-    let fresh = render_job(&mut ws, json!({ "artifact_id": doc, "expected_revision": 0, "page_index": 0, "profile": { "dpi": 49, "transparent": false } }));
+    let fresh = render_job(&mut ws, "render.pixels", json!({ "artifact_id": doc, "expected_revision": 0, "page_index": 0, "profile": { "dpi": 49, "transparent": false } }));
     assert!(fresh.draw_pixels().expect("the page fits").is_some(), "a render that draws has a size");
     assert_eq!(draw(&fresh, &permits, || true).err().expect("it waits for a permit").code, ErrorCode::Canceled);
 
     // A page that does not exist is refused before any permit is waited for: no permit is free here, and it is still refused.
-    let missing = render_job(&mut ws, json!({ "artifact_id": doc, "expected_revision": 0, "page_index": 7, "profile": { "dpi": 49, "transparent": false } }));
+    let missing = render_job(&mut ws, "render.pixels", json!({ "artifact_id": doc, "expected_revision": 0, "page_index": 7, "profile": { "dpi": 49, "transparent": false } }));
     assert_eq!(draw(&missing, &permits, || true).err().expect("refused").code, ErrorCode::InvalidArgument);
+    drop(held);
+    drop(ws);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_page_the_document_does_not_have_is_refused_with_the_page_count_by_both_renders() {
+    let (root, mut ws, doc) = workspace("missing-page");
+    let permits = RasterPermits::default();
+    let held = [permits.try_acquire(1), permits.try_acquire(1)];
+    for method in ["render.get", "render.pixels"] {
+        let job = render_job(&mut ws, method, json!({ "artifact_id": doc, "expected_revision": 0, "page_index": 7, "profile": { "dpi": 49, "transparent": false } }));
+        let error = draw(&job, &permits, || true).err().expect("refused before a permit is waited for");
+        assert_eq!(error.code, ErrorCode::InvalidArgument, "{method}");
+        assert!(error.message.contains("does not exist; the document has 1 page(s)"), "{method}: {}", error.message);
+    }
     drop(held);
     drop(ws);
     let _ = std::fs::remove_dir_all(root);

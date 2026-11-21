@@ -10,7 +10,7 @@ use designllm_bridge::{Client, ClientRole};
 use designllm_contracts::{new_id, AssetRef, EngineAdapter, MAX_FRAME_BYTES};
 use designllm_core::Workspace;
 use designllm_host::{HostMode, HostOptions, HostReady};
-use eframe::egui::ColorImage;
+use eframe::egui::{Color32, ColorImage};
 use serde_json::json;
 
 use super::{decode, Picture, Previews};
@@ -56,8 +56,20 @@ fn a_page_sent_as_pixel_frames_over_the_gui_connection_is_the_page_the_png_shows
         .call("artifact.create", json!({ "request_id": new_id(), "actor": "gui", "kind": "canvas", "title": "Pixels", "size": null, "template": null }))
         .expect("a canvas");
     let doc = created["id"].as_str().expect("the canvas id").to_string();
-    // A4 at 150 dpi is about 8.7 MB of pixels: more than one 8 MiB frame.
-    let params = json!({ "artifact_id": doc, "expected_revision": 0, "page_index": 0, "profile": { "dpi": 150, "transparent": false } });
+    let page = gui.call("artifact.inspect", json!({ "artifact_id": doc })).expect("the canvas")["body"]["document"]["pages"][0]["id"].clone();
+    // A blank slide at 150 dpi is 2000 x 1125 px, 9.0 MB of pixels: more than one 8 MiB frame. Two shapes, a red one in the first frame's
+    // rows and a blue one in the second's, make the content differ between the frames, so their order is checked too.
+    let applied = gui.call("changes.apply", json!({
+        "request_id": new_id(), "actor": "gui", "workspace_id": gui.hello().expect("the host's hello")["workspace_id"], "artifact_id": doc,
+        "base_revision": 0, "allowed_intents": ["content", "design"],
+        "operations": [
+            { "op": "add_node", "page_id": page, "node": { "id": "top", "kind": "rectangle", "bounds": { "x": 0, "y": 0, "width": 12192000, "height": 1000000 },
+                "style": { "fill": "#FF0000", "stroke": "#FF0000" } } },
+            { "op": "add_node", "page_id": page, "node": { "id": "bottom", "kind": "rectangle", "bounds": { "x": 0, "y": 6600000, "width": 12192000, "height": 258000 },
+                "style": { "fill": "#0000FF", "stroke": "#0000FF" } } }
+        ]
+    })).expect("two shapes on the blank slide");
+    let params = json!({ "artifact_id": doc, "expected_revision": applied["revision"], "page_index": 0, "profile": { "dpi": 150, "transparent": false } });
 
     let mut previews = Previews::default();
     let answer = previews.render(&gui, 1, params.clone()).expect("render.pixels over the gui connection");
@@ -66,6 +78,7 @@ fn a_page_sent_as_pixel_frames_over_the_gui_connection_is_the_page_the_png_shows
         Picture::Pixels { size, chunks } => (size, chunks),
         Picture::Encoded { .. } => panic!("the window gets the pixels, not a PNG"),
     };
+    assert_eq!(size, [2000, 1125], "a slide with two shapes at 150 dpi");
     assert!(chunks.len() >= 2, "the pixels arrive in {} frames", chunks.len());
     assert!(chunks.iter().all(|chunk| chunk.len() <= MAX_FRAME_BYTES), "no frame is over the frame limit");
     assert_eq!(chunks.iter().map(Vec::len).sum::<usize>(), size[0] * size[1] * 4, "every pixel arrived once");
@@ -76,6 +89,8 @@ fn a_page_sent_as_pixel_frames_over_the_gui_connection_is_the_page_the_png_shows
     let png_preview: AssetRef = serde_json::from_value(png["preview"].clone()).expect("the PNG preview");
     let from_png = image_of(decode(previews.picture(&gui, &png_preview).expect("the PNG preview")).expect("the PNG decodes"));
 
+    // One shape per frame (red in the first, blue in the second), so a frame out of order changes the pixels.
+    assert!(from_png.pixels.contains(&Color32::from_rgb(255, 0, 0)) && from_png.pixels.contains(&Color32::from_rgb(0, 0, 255)), "the red and blue shapes are drawn");
     assert_eq!(from_pixels.size, from_png.size, "the same page size");
     assert!(from_pixels.pixels == from_png.pixels, "the reassembled pixels are the pixels the PNG shows");
 

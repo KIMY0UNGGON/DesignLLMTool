@@ -5,9 +5,11 @@
 //! permits keep that bounded for every role (gui, bridge, cli, job-bound), without making a render wait for the core lock: a
 //! connection's render waits here only for other renders. A wait ends early when its connection closes or the host stops; a
 //! job's cancel does not end it (the job's processes and PDF reads stop; a render is short). A render that draws nothing takes
-//! no permit (`conn::draw`). A render of more than [`HEAVY_PIXELS`] takes every permit, so two of them never draw at once. A
-//! waiting heavy render is not passed by newer small ones: they wait behind it, so it cannot starve.
+//! no permit (`conn::draw`). A render of more than [`HEAVY_PIXELS`] takes every permit, so two of them never draw at once.
+//! Renders draw in arrival order: a render waits behind every earlier one, so a heavy render is not passed by small ones and a
+//! small one is not held back by heavy ones that come later.
 
+use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
@@ -33,8 +35,10 @@ pub(crate) fn permits_for(pixels: u64) -> usize {
 struct Books {
     /// Permits taken.
     running: usize,
-    /// Renders waiting for every permit (the limit). Smaller renders wait behind them.
-    wide_waiting: usize,
+    /// The arrival number of the next render that waits.
+    next_ticket: u64,
+    /// Renders waiting for permits, oldest first. Only the first one in the queue draws next; none is passed over.
+    queue: VecDeque<u64>,
 }
 
 pub(crate) struct RasterPermits {
@@ -55,54 +59,66 @@ impl RasterPermits {
     }
 
     /// Waits for `weight` permits (at most the limit), or returns None as soon as `stop` is true (checked every [`WAIT_POLL`]).
+    /// Renders take permits in arrival order: a render that fits draws only when every earlier waiter has drawn.
     pub(crate) fn acquire(&self, weight: usize, stop: impl Fn() -> bool) -> Option<RasterPermit<'_>> {
         let weight = weight.clamp(1, self.limit);
-        let wide = weight == self.limit;
+        let ticket = {
+            let mut books = lock(&self.books);
+            let ticket = books.next_ticket;
+            books.next_ticket += 1;
+            books.queue.push_back(ticket);
+            ticket
+        };
+        // Declared before the guard below, so that its drop (which takes the lock) runs after the guard's.
+        let _queued = Queued { permits: self, ticket };
         let mut books = lock(&self.books);
-        let mut waiting = false;
         loop {
             if stop() {
-                if waiting {
-                    books.wide_waiting -= 1;
-                    self.freed.notify_all();
-                }
                 return None;
             }
-            // A narrow render does not pass a wide one that waits for every permit.
-            if wide || books.wide_waiting == 0 {
-                if let Some(permit) = self.take(&mut books.running, weight) {
-                    if waiting {
-                        books.wide_waiting -= 1;
-                    }
-                    return Some(permit);
-                }
-            }
-            if wide && !waiting {
-                books.wide_waiting += 1;
-                waiting = true;
+            if books.queue.front() == Some(&ticket) && books.running + weight <= self.limit {
+                books.queue.pop_front();
+                books.running += weight;
+                return Some(RasterPermit { permits: self, weight });
             }
             books = self.freed.wait_timeout(books, WAIT_POLL).map(|(guard, _)| guard).unwrap_or_else(|poisoned| poisoned.into_inner().0);
         }
     }
 
-    fn take(&self, running: &mut usize, weight: usize) -> Option<RasterPermit<'_>> {
-        if *running + weight > self.limit {
-            return None;
-        }
-        *running += weight;
-        Some(RasterPermit { permits: self, weight })
-    }
-
-    /// A permit now, or None: for tests that hold the permits by hand.
+    /// A permit now, unless a render is waiting first, or None: for tests that hold the permits by hand.
     #[cfg(test)]
     pub(crate) fn try_acquire(&self, weight: usize) -> Option<RasterPermit<'_>> {
+        let weight = weight.clamp(1, self.limit);
         let mut books = lock(&self.books);
-        self.take(&mut books.running, weight.clamp(1, self.limit))
+        if !books.queue.is_empty() || books.running + weight > self.limit {
+            return None;
+        }
+        books.running += weight;
+        Some(RasterPermit { permits: self, weight })
     }
 
     #[cfg(test)]
     fn running(&self) -> usize {
         lock(&self.books).running
+    }
+
+    #[cfg(test)]
+    fn queued(&self) -> usize {
+        lock(&self.books).queue.len()
+    }
+}
+
+/// A render's place in the queue, taken back when its wait ends by any way, a panic of `stop` included. The renders behind it are
+/// woken then, so none waits for a render that has gone.
+struct Queued<'a> {
+    permits: &'a RasterPermits,
+    ticket: u64,
+}
+
+impl Drop for Queued<'_> {
+    fn drop(&mut self) {
+        lock(&self.permits.books).queue.retain(|ticket| *ticket != self.ticket);
+        self.permits.freed.notify_all();
     }
 }
 
@@ -263,5 +279,60 @@ mod tests {
         small_draws.recv_timeout(Duration::from_secs(10)).expect("the small render draws after the heavy one");
         small.join().expect("the small render ends");
         assert_eq!(permits.running(), 0, "every permit is given back");
+    }
+
+    #[test]
+    fn a_small_render_draws_before_the_heavy_renders_that_queue_after_it() {
+        let permits = Arc::new(RasterPermits::default());
+        let held = permits.try_acquire(1).expect("a small render");
+        let order = Arc::new(Mutex::new(Vec::new()));
+        // Each render is started once the one before it has queued, so the queue is in this order.
+        let spawn = |name: &'static str, weight: usize| {
+            let (queued, is_queued) = mpsc::channel();
+            let (permits, order) = (Arc::clone(&permits), Arc::clone(&order));
+            let render = std::thread::spawn(move || {
+                let _permit = permits.acquire(weight, reports_its_second_check(queued)).expect("a permit");
+                order.lock().expect("the order").push(name);
+            });
+            is_queued.recv_timeout(Duration::from_secs(10)).expect("the render waits in line");
+            render
+        };
+        let heavy_first = spawn("heavy", permits_for(HEAVY_PIXELS + 1));
+        let small = spawn("small", permits_for(1));
+        let heavy_last = spawn("heavy", permits_for(HEAVY_PIXELS + 1));
+        drop(held);
+        for render in [heavy_first, small, heavy_last] {
+            render.join().expect("the render ends");
+        }
+        assert_eq!(*order.lock().expect("the order"), ["heavy", "small", "heavy"], "the small render draws after the heavy one ahead of it only");
+        assert_eq!(permits.running(), 0, "every permit is given back");
+        assert_eq!(permits.queued(), 0, "nobody is left in line");
+    }
+
+    #[test]
+    fn a_panicking_stop_takes_its_place_out_of_the_queue_so_the_renders_behind_it_draw() {
+        let permits = Arc::new(RasterPermits::with_limit(1));
+        let held = permits.try_acquire(1).expect("the only permit");
+        let waiter = {
+            let permits = Arc::clone(&permits);
+            std::thread::spawn(move || {
+                let checks = std::cell::Cell::new(0_usize);
+                permits
+                    .acquire(1, move || {
+                        let n = checks.get() + 1;
+                        checks.set(n);
+                        assert!(n < 2, "the stop check panics on its second call");
+                        false
+                    })
+                    .is_some()
+            })
+        };
+        assert!(waiter.join().is_err(), "the panic reaches the waiter");
+        assert_eq!(permits.queued(), 0, "the panicking wait left the queue");
+        drop(held);
+        assert_eq!(permits.running(), 0, "every permit is given back");
+        let after = permits.acquire(1, || false).expect("a render after it draws");
+        drop(after);
+        assert_eq!(permits.queued(), 0, "the render after it left the queue too");
     }
 }

@@ -85,13 +85,7 @@ impl RenderJob {
         if self.cached.is_some() && self.held.is_some() {
             return Ok(None);
         }
-        let page = self
-            .entry
-            .scene
-            .pages
-            .iter()
-            .find(|p| p.page_index == self.page_index)
-            .ok_or_else(|| invalid(format!("page_index {} does not exist", self.page_index)))?;
+        let page = self.entry.scene.pages.iter().find(|p| p.page_index == self.page_index).ok_or_else(|| no_such_page(&self.entry.scene, self.page_index))?;
         if let Some(region) = self.region {
             check_region(region, page.size, self.page_index)?;
         }
@@ -113,13 +107,18 @@ fn with_pixels(mut value: Value, pixels: &RasterPixels) -> Value {
     value
 }
 
+/// The refusal of a page `scene` does not have. It names the document's pages, so that a caller can ask again with one of them.
+/// `draw_pixels` (the host's check before it takes a raster permit) and `page_scene` give the same message.
+fn no_such_page(scene: &RenderScene, page_index: u32) -> DltError {
+    let total = scene.pages.len();
+    let indices: Vec<u32> = scene.pages.iter().map(|p| p.page_index).collect();
+    invalid(format!("page_index {page_index} does not exist; the document has {total} page(s) {indices:?}"))
+}
+
 /// The one-page scene of `page_index` that a snapshot holds and the renderer draws.
 fn page_scene(scene: &RenderScene, page_index: u32, region: Option<Rect>) -> DltResult<RenderScene> {
     let total = scene.pages.len();
-    let page = scene.pages.iter().find(|p| p.page_index == page_index).cloned().ok_or_else(|| {
-        let indices: Vec<u32> = scene.pages.iter().map(|p| p.page_index).collect();
-        invalid(format!("page_index {page_index} does not exist; the document has {total} page(s) {indices:?}"))
-    })?;
+    let page = scene.pages.iter().find(|p| p.page_index == page_index).cloned().ok_or_else(|| no_such_page(scene, page_index))?;
     if let Some(r) = region { check_region(r, page.size, page_index)?; }
     let links = links_for_page(scene, &page);
     let mut metadata = scene.metadata.clone();
