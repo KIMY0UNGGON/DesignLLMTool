@@ -145,6 +145,120 @@ fn the_error_key_switch_gives_the_same_figure_by_command_and_by_tool() {
     assert_same_content(&before, &gui_after, &mcp_after);
 }
 
+#[test]
+fn output_profile_matches_the_mcp_change() {
+    let mut host = Host::start();
+    let (gui, tool_figure, _) = two_charts_with_error_bars(&mut host);
+    let before = host.artifact(&gui);
+    let figure = host.figure(&tool_figure).0;
+    let operations = vec![Operation::SetStyle {
+        node_ids: vec![figure.panels[0].id.clone()],
+        patch: designllm_contracts::StylePatch {
+            font_size: Some(9 * designllm_contracts::EMU_PER_PT),
+            stroke_width: Some(designllm_contracts::EMU_PER_PT),
+            fill: Some("#1F4E79".into()),
+            ..Default::default()
+        },
+    }];
+    let mut window = Window::open(&mut host, &gui);
+    window.step(&mut host, "figure.output_profile", json!({ "profile": "double_column" })).expect("the profile is sent");
+    let gui_after = host.artifact(&gui);
+    window.step(&mut host, "edit.undo", json!({})).expect("the profile change undoes");
+    assert_eq!(content_of(&host.artifact(&gui)), content_of(&before));
+    let run = window.agent_run_granted(&mut host, "figure.output_profile", json!({ "profile": "double_column" }), "change", &["design"]);
+    assert_eq!(run["status"], "completed", "{run}");
+    let agent_after = host.artifact(&gui);
+    assert_same_content(&before, &gui_after, &agent_after);
+    drop(window);
+    let backend = HostBackend::new(host);
+    let mcp = Mcp::connect(backend.clone());
+    let mcp_after = mcp_change(&backend, &mcp, &tool_figure, &[Intent::Design], operations);
+    assert_same_content(&before, &gui_after, &mcp_after);
+}
+
+#[test]
+fn refused_figure_profile_does_not_change_the_view() {
+    use crate::rpc::{RpcReply, Work};
+    let mut host = Host::start();
+    let (figure, _, _) = two_charts_with_error_bars(&mut host);
+    let mut window = Window::open(&mut host, &figure);
+    window.app.invoke("figure.output_profile", json!({ "profile": "high_res_print" })).expect("the change is sent");
+    assert_eq!(window.app.view_ref().figure_export_dpi, 300);
+    assert_eq!(window.app.view_ref().figure_output_profile, None);
+    let ticket = window.work.try_iter().find_map(|work| match work {
+        Work::Call { ticket, method, .. } if method == "changes.apply" => Some(ticket),
+        _ => None,
+    }).expect("the change is queued");
+    window.replies.send(RpcReply { ticket, result: Err(designllm_contracts::DltError::invalid("refused")) }).unwrap();
+    window.app.process_replies(&window.ctx);
+    assert_eq!(window.app.view_ref().figure_export_dpi, 300);
+    assert_eq!(window.app.view_ref().figure_output_profile, None);
+}
+
+#[test]
+fn figure_profile_is_kept_per_document() {
+    let mut host = Host::start();
+    let (first, second, _) = two_charts_with_error_bars(&mut host);
+    let mut window = Window::open(&mut host, &first);
+    window.step(&mut host, "figure.output_profile", json!({ "profile": "high_res_print" })).unwrap();
+    assert_eq!(window.app.view_ref().figure_export_dpi, 600);
+    assert_eq!(window.app.view_ref().figure_output_profile.as_deref(), Some("high_res_print"));
+    let summary = serde_json::from_value(super::test_support::summary(&second, "figure", host.artifact(&second).revision)).unwrap();
+    window.app.activate(summary);
+    window.settle(&mut host);
+    assert_eq!(window.app.view_ref().figure_export_dpi, 300);
+    assert_eq!(window.app.view_ref().figure_output_profile, None);
+}
+
+#[test]
+fn empty_figure_rejects_profile_without_waiting_for_a_change() {
+    let mut host = Host::start();
+    let figure = host.create("figure", "빈 그림");
+    let mut window = Window::open(&mut host, &figure);
+    let error = window.step(&mut host, "figure.output_profile", json!({ "profile": "double_column" })).expect_err("an empty figure has no styles to change");
+    assert!(error.contains("스타일을 적용할 패널이 없습니다"));
+    let run = window.agent_run_granted(&mut host, "figure.output_profile", json!({ "profile": "double_column" }), "change", &["design"]);
+    assert_eq!(run["status"], "failed", "{run}");
+}
+
+#[test]
+fn figure_png_export_uses_requested_dpi_and_pixel_size() {
+    let mut host = Host::start();
+    let (gui, _, _) = two_charts_with_error_bars(&mut host);
+    let size = host.figure(&gui).0.size;
+    let dir = scratch_dir("figure-dpi");
+    let mut window = Window::open(&mut host, &gui);
+    let default_args = json!({ "format": "png", "target_path": "test.png" });
+    assert_eq!(window.app.export_request("test.png".into(), Some(&default_args)).unwrap().options.profile.dpi, 300);
+    let scaled_args = json!({ "format": "png", "target_path": "test.png", "scale": 2 });
+    assert_eq!(window.app.export_request("test.png".into(), Some(&scaled_args)).unwrap().options.profile.dpi, 192);
+    window.app.export_format = "png".into();
+    window.app.view().figure_export_dpi = 600;
+    let popover = window.app.popover_export_args("");
+    assert_eq!(window.app.export_request("test.png".into(), Some(&popover)).unwrap().options.profile.dpi, 600);
+    let explicit = json!({ "format": "png", "scale": 2, "dpi": 600 });
+    assert_eq!(window.app.export_request("test.png".into(), Some(&explicit)).unwrap().options.profile.dpi, 600);
+    let dialog_path = dir.join("dialog-scale.png");
+    crate::dialogs::set_test_answers(Some([dialog_path].into_iter().collect()));
+    window.step(&mut host, "file.export", json!({ "format": "png", "scale": 2 })).expect("the dialog export is sent");
+    crate::dialogs::set_test_answers(None);
+    let sent = window.calls.iter().rev().find(|(method, _, _)| method == "artifact.export").expect("the dialog export reached the host");
+    assert_eq!(sent.1["options"]["profile"]["dpi"], 192);
+    for dpi in [300, 600] {
+        let path = dir.join(format!("figure-{dpi}.png"));
+        let args = json!({ "format": "png", "target_path": path.to_string_lossy(), "dpi": dpi });
+        let request = window.app.export_request(path.to_string_lossy().into_owned(), Some(&args)).expect("the export request");
+        assert_eq!(request.options.profile.dpi, dpi);
+        window.step(&mut host, "file.export", args).expect("the export is sent");
+        let sent = window.calls.iter().rev().find(|(method, _, _)| method == "artifact.export").expect("the host received the export");
+        assert_eq!(sent.1["options"]["profile"]["dpi"], dpi);
+        let bytes = std::fs::read(path).expect("the PNG is written");
+        assert_eq!(designllm_contracts::media_header::png_size(&bytes), Some(designllm_contracts::figure_rules::figure_png_pixels(size, dpi).expect("valid size")));
+    }
+    drop(window);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The centre of the one text `label` the window's last frame drew.
 fn drawn_at(window: &Window, label: &str) -> eframe::egui::Pos2 {
     use eframe::egui::epaint::Shape;

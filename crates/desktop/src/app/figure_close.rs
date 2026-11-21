@@ -427,6 +427,7 @@ impl DesktopApp {
         let open = self.active.as_ref().map(|active| active.id.clone());
         self.held_pdf_evidence
             .retain(|held| held.ticket.is_some() || open.as_deref() != Some(held.target.artifact_id.as_str()));
+        self.held_pdf_warnings.retain(|id, _| self.held_pdf_evidence.iter().any(|held| &held.id == id));
         self.pdf_evidence_target = None;
         self.figure_ai_attachments = None;
         self.figure_ai_request = None;
@@ -652,6 +653,7 @@ impl DesktopApp {
         let artifacts = &self.artifacts;
         let listed = |id: &str| artifacts.iter().any(|summary| summary.id == id);
         self.held_pdf_evidence.retain(|held| listed(held.target.artifact_id.as_str()));
+        self.held_pdf_warnings.retain(|id, _| self.held_pdf_evidence.iter().any(|held| &held.id == id));
         if self.pdf_evidence_target.as_ref().is_some_and(|target| !listed(target.artifact_id.as_str())) {
             self.pdf_evidence_target = None;
         }

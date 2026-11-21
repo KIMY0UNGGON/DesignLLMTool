@@ -1464,6 +1464,7 @@ impl DesktopApp {
                 Ok(())
             }
             "ai.deliver_as" | "proposal.select" | "proposal.discard" | "proposal.apply" => self.proposal_command(id, args),
+            "figure.output_profile" => self.apply_figure_output_profile(args),
             // Files.
             "file.save" => {
                 if self.run_context.is_some() || args.get("target_path").is_some() {
@@ -1481,6 +1482,10 @@ impl DesktopApp {
                 Ok(())
             }
             "file.export" => {
+                if args.get("dpi").is_some_and(|dpi| !dpi.as_u64().is_some_and(|dpi| (72..=1200).contains(&dpi))) {
+                    return Err("dpi는 72부터 1200까지의 정수여야 합니다".into());
+                }
+                if let Some(dpi) = args.get("dpi").and_then(Value::as_u64) { self.view().figure_export_dpi = dpi as u32; }
                 if self.run_context.is_some() || args.get("target_path").is_some() {
                     return self.export_active_to(args);
                 }
@@ -1504,7 +1509,10 @@ impl DesktopApp {
                 if let Some(path) = crate::dialogs::save_export(self.parent_hwnd, &extension) {
                     self.export_path = path.to_string_lossy().into_owned();
                     // The settings just taken from the arguments, as the popover's own export sends them.
-                    let options = self.popover_export_args(pages);
+                    let mut options = self.popover_export_args(pages);
+                    if args.get("dpi").is_none() && args.get("scale").is_some() {
+                        options.as_object_mut().expect("export options are an object").remove("dpi");
+                    }
                     self.export_active_with(Some(&options));
                 }
                 Ok(())
@@ -1590,7 +1598,9 @@ impl DesktopApp {
                     return Ok(());
                 }
                 let preset = text(args, "preset").unwrap_or_default().to_owned();
-                if !preset.is_empty() && designllm_contracts::frame_preset(&preset).is_none() {
+                if !preset.is_empty() && designllm_contracts::frame_preset(&preset).is_none()
+                    && super::home::custom_size(&preset).is_none()
+                    && !(matches!(self.home.tile.as_str(), "figure" | "diagram") && designllm_contracts::figure_rules::figure_output_profile(&preset).is_some()) {
                     return Err("없는 크기입니다".into());
                 }
                 self.home_preset = preset;

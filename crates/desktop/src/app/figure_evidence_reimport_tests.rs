@@ -1175,6 +1175,23 @@ fn a_successful_page_read_shows_and_reports_nonblocking_diagnostics() {
 }
 
 #[test]
+fn commit_keeps_both_pdf_and_engine_warnings() {
+    let mut window = Window::open_figure(Vec::new());
+    window.read_page(PAGE, reply_with_report(PAGE, true, 1,
+        json!([{ "code": "PDF_XOBJECT_MISSING", "message": "missing" }]),
+        vec![read_record("pdf-p11-l000", PAGE, "A activates B", "unreviewed")]));
+    let requests = window.sent();
+    window.answer(&requests, "changes.apply", json!({
+        "revision": REVISION + 1, "changed_ids": [],
+        "diagnostics": [{ "code": "NATIVE_UNIT_ROUNDING", "message": "rounding", "node_id": null, "blocking": false }],
+    }));
+    let (severity, text) = window.message().expect("both warnings are visible");
+    assert_eq!(severity, Severity::Warning);
+    assert!(text.contains("일부 누락된 PDF 요소"), "{text}");
+    assert!(text.contains("정밀도에 맞게 조정"), "{text}");
+}
+
+#[test]
 fn diagnostic_messages_are_not_collected_as_codes() {
     for (name, read, count) in [("fake-read", true, 1), ("fake-empty", true, 0), ("fake-unsafe", false, 0)] {
         let mut window = Window::open_figure(Vec::new());
@@ -1205,6 +1222,31 @@ fn warning_is_combined_with_an_unchanged_or_held_read() {
         assert!(text.contains("일부 누락된 PDF 요소"));
         assert!(!text.contains("PDF_XOBJECT_MISSING") && !text.contains("missing"));
     }
+}
+
+#[test]
+fn warning_survives_a_held_read_failed_commit_and_retry() {
+    let mut window = Window::open_figure(Vec::new());
+    window.app.dataset_edit = Some(DatasetCellEdit {
+        dataset_id: "dataset-1".into(), version_hash: "v1".into(), row_id: "row-1".into(),
+        column_id: "column-1".into(), original: "0.10".into(), draft: "0.25".into(),
+    });
+    window.read_page(PAGE, reply_with_report(PAGE, true, 1,
+        json!([{ "code": "PDF_XOBJECT_MISSING", "message": "missing" }]),
+        vec![read_record("pdf-p11-l000", PAGE, "A activates B", "unreviewed")]));
+    let id = window.app.held_pdf_evidence[0].id.clone();
+    assert!(window.app.held_pdf_warnings.contains_key(&id));
+    window.app.dataset_edit = None;
+    window.app.retry_held_pdf_evidence(&id);
+    let first = window.sent();
+    window.refuse(&first, "changes.apply", DltError::new(ErrorCode::RevisionConflict, "retry"));
+    window.app.pending.clear();
+    window.sent();
+    window.app.retry_held_pdf_evidence(&id);
+    let retry = window.sent();
+    window.answer(&retry, "changes.apply", json!({ "revision": REVISION + 1, "changed_ids": [] }));
+    assert!(window.message().is_some_and(|(_, text)| text.contains("일부 누락된 PDF 요소")));
+    assert!(!window.app.held_pdf_warnings.contains_key(&id));
 }
 
 #[test]

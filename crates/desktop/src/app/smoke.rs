@@ -20,15 +20,19 @@ fn smoke_pdf_path() -> Option<String> {
     std::env::var("DESIGNLLM_SMOKE_PDF").ok().filter(|path| !path.trim().is_empty())
 }
 
+fn is_valid_pdf_code(token: &str) -> bool {
+    token.strip_prefix("PDF_").is_some_and(|suffix| {
+        !suffix.is_empty() && suffix.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_')
+            && !suffix.starts_with('_') && !suffix.ends_with('_') && !suffix.contains("__")
+    })
+}
+
 /// The complete PDF codes in a message, in order, each once.
 #[cfg(test)]
 fn pdf_codes(message: &str) -> Vec<String> {
     let mut codes: Vec<String> = Vec::new();
     for token in message.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
-        let Some(suffix) = token.strip_prefix("PDF_") else { continue };
-        if !suffix.is_empty() && suffix.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_')
-            && !suffix.starts_with('_') && !suffix.ends_with('_') && !suffix.contains("__")
-            && !codes.iter().any(|code| code == token)
+        if is_valid_pdf_code(token) && codes.len() < SMOKE_PDF_CODE_LIMIT && !codes.iter().any(|code| code == token)
         {
             codes.push(token.to_owned());
         }
@@ -65,6 +69,18 @@ mod pdf_smoke_tests {
         assert!(pdf_codes("PDF 근거를 넣지 않았습니다").is_empty());
         assert!(pdf_codes("PDF__ abcPDF_FAKE XPDF_FAKE PDF_FOO_bar PDF_FOO_ PDF_FOO__BAR").is_empty());
         assert_eq!(pdf_codes("(PDF_TYPE1_ENCODING_UNREADABLE)"), vec!["PDF_TYPE1_ENCODING_UNREADABLE"]);
+    }
+
+    #[test]
+    fn structured_codes_are_valid_unique_and_bounded() {
+        let mut harness = super::super::test_support::Harness::new();
+        harness.app.smoke_output = Some(std::env::temp_dir().join("smoke-codes.png"));
+        let mut codes = vec!["PDF_OK".into(), "".into(), "PDF_".into(), "PDF_bad".into(), "PDF_A__B".into(), "PDF_OK".into(), "NOT_PDF_CODE".into()];
+        codes.extend((0..40).map(|n| format!("PDF_CODE_{n}")));
+        harness.app.smoke_note_pdf_code_list(&codes);
+        assert_eq!(harness.app.smoke_pdf_codes.len(), 32);
+        assert_eq!(harness.app.smoke_pdf_codes[0], "PDF_OK");
+        assert!(harness.app.smoke_pdf_codes.iter().all(|code| super::is_valid_pdf_code(code)));
     }
 
     #[test]
@@ -135,7 +151,7 @@ impl DesktopApp {
             if self.smoke_pdf_codes.len() >= SMOKE_PDF_CODE_LIMIT {
                 break;
             }
-            if !self.smoke_pdf_codes.contains(code) {
+            if is_valid_pdf_code(code) && !self.smoke_pdf_codes.contains(code) {
                 self.smoke_pdf_codes.push(code.clone());
             }
         }

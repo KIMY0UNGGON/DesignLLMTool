@@ -221,6 +221,7 @@ impl DesktopApp {
         }
         self.held_edits.clear();
         self.held_pdf_evidence.clear();
+        self.held_pdf_warnings.clear();
         self.discard_figure_work();
         self.held_refusal_id = None;
         self.refusal = None;

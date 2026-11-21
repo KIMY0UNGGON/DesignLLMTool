@@ -671,6 +671,7 @@ fn figure_change_on_its_way(request: &PendingRequest) -> bool {
         || matches!(
             request.action,
             PendingAction::Apply
+                | PendingAction::FigureProfile { .. }
                 | PendingAction::FigureDataset
                 | PendingAction::FigureEvidence
                 | PendingAction::FigureImageAsset { .. }
@@ -1043,10 +1044,10 @@ impl DesktopApp {
                 self.set_error(message);
             }
             PageOutcome::Legacy if read.is_empty() => self.set_error(no_text_message(target.page_index)),
-            PageOutcome::Legacy => { self.hold_pdf_evidence(read, target); }
+            PageOutcome::Legacy => { self.hold_pdf_evidence(read, target, None); }
             PageOutcome::Read => {
                 let warning = pdf_read_warning(&codes);
-                let id = self.hold_pdf_evidence(read, target);
+                let id = self.hold_pdf_evidence(read, target, warning.clone());
                 if let Some(warning) = warning {
                     if let Some(held) = self.held_pdf_evidence.iter_mut().find(|held| held.id == id && held.ticket.is_some()) {
                         held.message = warning;
@@ -1064,10 +1065,13 @@ impl DesktopApp {
     }
 
     /// Holds the records one page read produced, under a new id, and tries to put them into the figure they were read for.
-    fn hold_pdf_evidence(&mut self, records: Vec<Evidence>, target: PdfEvidenceTarget) -> String {
+    fn hold_pdf_evidence(&mut self, records: Vec<Evidence>, target: PdfEvidenceTarget, warning: Option<String>) -> String {
         // The import is over: the held records wait for no reply.
         let target = PdfEvidenceTarget { awaiting: None, ..target };
         let id = new_id();
+        if let Some(warning) = warning {
+            self.held_pdf_warnings.insert(id.clone(), warning);
+        }
         self.held_pdf_evidence.push(HeldPdfEvidence {
             id: id.clone(),
             target,
@@ -1112,6 +1116,7 @@ impl DesktopApp {
         }
         if import.additions.is_empty() {
             self.held_pdf_evidence.retain(|held| held.id != id);
+            self.held_pdf_warnings.remove(id);
             self.notices.info(format!("이미 넣은 근거 {}개는 그대로 두었습니다", import.unchanged), Instant::now());
             return;
         }
@@ -1173,19 +1178,31 @@ impl DesktopApp {
     /// The discard button of a held set. A set whose commit is on its way stays until the host answers.
     pub(super) fn discard_held_pdf_evidence(&mut self, id: &str) {
         self.held_pdf_evidence.retain(|held| held.id != id || held.ticket.is_some());
+        if !self.held_pdf_evidence.iter().any(|held| held.id == id) {
+            self.held_pdf_warnings.remove(id);
+        }
     }
 
     /// The host accepted the commit of held records: they are in the figure now. `reply` is the host's answer, which names the
     /// revision the commit made.
-    pub(super) fn pdf_evidence_committed(&mut self, ticket: u64, reply: &serde_json::Value) {
-        if let Some(held) = self.held_pdf_evidence.iter().find(|held| held.ticket == Some(ticket)) {
+    pub(super) fn pdf_evidence_committed(&mut self, ticket: u64, reply: &serde_json::Value, commit_active: bool) {
+        let held_warning = if let Some(held) = self.held_pdf_evidence.iter().find(|held| held.ticket == Some(ticket)) {
             let committed_revision = reply.get("revision").and_then(serde_json::Value::as_u64);
             carry_pdf_coverage(&mut self.pdf_coverage, &held.target, committed_revision);
-            if !held.message.is_empty() {
-                self.notices.warning(&held.message, Instant::now());
-            }
-        }
+            self.held_pdf_warnings.remove(&held.id).or_else(|| (!held.message.is_empty()).then(|| held.message.clone()))
+        } else { None };
         self.held_pdf_evidence.retain(|held| held.ticket != Some(ticket));
+        if commit_active { self.committed_keeping_cell_draft(reply); }
+        if let Some(pdf_warning) = held_warning {
+            let now = Instant::now();
+            let existing = self.notices.current(now).filter(|notice| notice.severity == Severity::Warning).map(|notice| notice.text.clone());
+            let warning = match existing {
+                Some(existing) if existing.contains(&pdf_warning) => existing,
+                Some(existing) => format!("{existing} {pdf_warning}"),
+                None => pdf_warning,
+            };
+            self.notices.warning(warning, now);
+        }
     }
 
     /// The host refused the commit of held records, or its answer did not come through: they stay held with the reason.
@@ -1231,8 +1248,8 @@ impl DesktopApp {
                     self.pdf_import_moved_on();
                 }
             }
-            (PendingAction::FigureEvidence, Ok(RpcPayload::Json(reply))) => self.pdf_evidence_committed(ticket, reply),
-            (PendingAction::FigureEvidence, Ok(_)) => self.pdf_evidence_committed(ticket, &serde_json::Value::Null),
+            (PendingAction::FigureEvidence, Ok(RpcPayload::Json(reply))) => self.pdf_evidence_committed(ticket, reply, false),
+            (PendingAction::FigureEvidence, Ok(_)) => self.pdf_evidence_committed(ticket, &serde_json::Value::Null, false),
             (PendingAction::FigureEvidence, Err(error)) => {
                 self.pdf_evidence_commit_failed(ticket, &super::user_error(error));
             }

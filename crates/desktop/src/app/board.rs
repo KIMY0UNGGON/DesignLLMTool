@@ -64,6 +64,8 @@ pub(super) struct EditorView {
     pub guides_visible: bool,
     /// Moves, resizes and creations snap to the page guides (`view.toggle_snap`).
     pub snap_guides: bool,
+    pub figure_export_dpi: u32,
+    pub figure_output_profile: Option<String>,
 }
 
 impl Default for EditorView {
@@ -84,6 +86,8 @@ impl Default for EditorView {
             sheet_hidden: false,
             guides_visible: true,
             snap_guides: true,
+            figure_export_dpi: 300,
+            figure_output_profile: None,
         }
     }
 }

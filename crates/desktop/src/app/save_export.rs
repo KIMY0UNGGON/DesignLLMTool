@@ -243,6 +243,9 @@ impl DesktopApp {
         if args.get("scale").is_some_and(|scale| !matches!(scale.as_u64(), Some(1 | 2 | 3))) {
             return Err("scale은 1, 2 또는 3이어야 합니다".into());
         }
+        if args.get("dpi").is_some_and(|dpi| !dpi.as_u64().is_some_and(|dpi| (72..=1200).contains(&dpi))) {
+            return Err("dpi는 72부터 1200까지의 정수여야 합니다".into());
+        }
         if args.get("background").is_some_and(|background| !matches!(background.as_str(), Some("page" | "transparent"))) {
             return Err("background는 page 또는 transparent여야 합니다".into());
         }
@@ -278,7 +281,8 @@ impl DesktopApp {
     pub(crate) fn export_key(&self, pages: &str) -> String {
         let revision = self.active.as_ref().map_or(0, |item| item.revision);
         let pages = if self.export_scope == "range" { pages } else { "" };
-        format!("{}|{}|{}|{}|{}|{}|{}", self.export_format, self.export_scope, self.export_scale, self.export_transparent, self.page_index, revision, pages)
+        let dpi = if self.export_format == "png" && self.active.as_ref().is_some_and(|item| item.kind == ArtifactKind::Figure) { self.view_ref().figure_export_dpi } else { 0 };
+        format!("{}|{}|{}|{}|{}|{}|{}|{}", self.export_format, self.export_scope, self.export_scale, self.export_transparent, self.page_index, revision, pages, dpi)
     }
 
     /// The arguments of the popover's settings as its button sends them to `file.export` (without the target).
@@ -289,6 +293,9 @@ impl DesktopApp {
             "scope": self.export_scope,
             "background": if self.export_transparent { "transparent" } else { "page" },
         });
+        if self.export_format == "png" && self.active.as_ref().is_some_and(|item| item.kind == ArtifactKind::Figure) {
+            args["dpi"] = json!(self.view_ref().figure_export_dpi);
+        }
         if self.export_scope == "range" {
             args["pages"] = json!(pages);
         }
@@ -366,7 +373,9 @@ impl DesktopApp {
             let transparent = options
                 .and_then(|options| options.get("background").and_then(Value::as_str))
                 .map_or(if explicit { false } else { self.export_transparent }, |background| background == "transparent");
-            RenderProfile { dpi: 96 * scale, transparent }
+            let dpi = options.and_then(|options| options.get("dpi")).and_then(Value::as_u64).map(|dpi| dpi as u32)
+                .unwrap_or_else(|| if active.kind == ArtifactKind::Figure && !options.is_some_and(|options| options.get("scale").is_some()) { self.view_ref().figure_export_dpi } else { 96 * scale });
+            RenderProfile { dpi, transparent }
         } else {
             RenderProfile::default()
         };

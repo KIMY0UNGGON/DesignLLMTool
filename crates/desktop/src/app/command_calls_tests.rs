@@ -51,6 +51,7 @@ const NOT_RUN: &[(&str, &str)] = &[
     ("file.export_selection", "native dialog"),
     ("figure.diagram_provenance", "needs a figure with a diagram element; figure_r07_tests sends it"),
     ("figure.common_legend", "needs an open figure; figure_r07_tests sends it"),
+    ("figure.output_profile", "needs an open figure with a panel; parity_tests sends it"),
     ("figure.visual_review", "needs an open figure; figure_r07_tests sends it"),
     ("figure.image_transform", "needs an image panel; figure_r07_tests sends it"),
     ("figure.image_calibration", "needs an image panel; figure_r07_tests sends it"),

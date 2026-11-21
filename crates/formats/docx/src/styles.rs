@@ -49,6 +49,10 @@ pub struct StyleOverride {
 
 pub type Overrides = BTreeMap<String, StyleOverride>;
 
+fn is_paragraph_style(kind: &str) -> bool {
+    kind.is_empty() || kind == "paragraph"
+}
+
 impl StyleTable {
     /// Parses styles.xml. A missing part yields an empty table (all defaults).
     pub fn parse(bytes: Option<&[u8]>) -> DltResult<Self> {
@@ -74,7 +78,7 @@ impl StyleTable {
                 }
                 let kind = w_attr(child, "type").unwrap_or_default().to_string();
                 let is_default = w_attr(child, "default") == Some("1") || w_attr(child, "default") == Some("true");
-                if kind == "paragraph" && is_default && table.default_paragraph.is_none() {
+                if is_paragraph_style(&kind) && is_default && table.default_paragraph.is_none() {
                     table.default_paragraph = Some(id.clone());
                 }
                 let name = tree::elements(child)
@@ -144,18 +148,18 @@ impl StyleTable {
         None
     }
 
-    /// The style whose chain a paragraph with `pstyle` reads. A pStyle that styles.xml does not define takes the default
-    /// paragraph style, as Word does. No pStyle takes the default paragraph style too.
+    /// A missing or non-paragraph pStyle takes the default paragraph style, as does a missing pStyle.
     fn paragraph_chain_start<'a>(&'a self, pstyle: Option<&'a str>) -> Option<&'a str> {
-        match pstyle {
-            Some(id) if !self.styles.contains_key(id) => self.default_paragraph.as_deref(),
-            _ => pstyle.or(self.default_paragraph.as_deref()),
-        }
+        pstyle.filter(|id| self.styles.get(*id).is_some_and(|style| is_paragraph_style(&style.kind)))
+            .or(self.default_paragraph.as_deref())
     }
 
     /// Effective run style of a run with paragraph style `pstyle`, character style `rstyle` and direct props.
     pub fn run_style(&self, pstyle: Option<&str>, rstyle: Option<&str>, direct: &RunProps) -> Style {
-        let para = self.paragraph_chain_start(pstyle);
+        self.run_style_from_chain(self.paragraph_chain_start(pstyle), rstyle, direct)
+    }
+
+    fn run_style_from_chain(&self, para: Option<&str>, rstyle: Option<&str>, direct: &RunProps) -> Style {
         let font_family = direct
             .font_family
             .clone()
@@ -231,7 +235,8 @@ impl StyleTable {
 
     /// Model entry for a named style: the style's own chain with defaults applied.
     pub fn model_style(&self, id: &str) -> Style {
-        let mut style = self.run_style(Some(id), None, &RunProps::default());
+        let start = if self.styles.contains_key(id) { Some(id) } else { self.default_paragraph.as_deref() };
+        let mut style = self.run_style_from_chain(start, None, &RunProps::default());
         if let Some(align) = self.chain_para(Some(id), |p| p.align.clone()) {
             style.align = align;
         }
@@ -364,7 +369,7 @@ pub fn list_flow_styles(styles_xml: &[u8]) -> DltResult<FlowStyleList> {
     for style in tree::elements(tree.root()).into_iter().filter(|n| is_w(*n, "style")) {
         let Some(id) = w_attr(style, "styleId").filter(|id| !id.is_empty()) else { continue };
         let kind = match w_attr(style, "type") {
-            None | Some("paragraph") => FlowStyleKind::Paragraph,
+            None | Some("") | Some("paragraph") => FlowStyleKind::Paragraph,
             Some("character") => FlowStyleKind::Character,
             Some("table") => FlowStyleKind::Table,
             Some("numbering") => FlowStyleKind::Numbering,
@@ -496,6 +501,22 @@ mod tests {
         let none = table.run_style(None, None, &RunProps::default());
         assert_eq!(none.font_family, normal.font_family);
         assert_eq!(none.font_size, normal.font_size);
+    }
+
+    #[test]
+    fn paragraph_style_type_controls_the_chain_and_default() {
+        let xml = br#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:default="1" w:styleId="Normal"><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="28"/></w:rPr></w:style><w:style w:styleId="Implicit"><w:pPr><w:jc w:val="right"/></w:pPr><w:rPr><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="character" w:styleId="Char"><w:pPr><w:jc w:val="left"/></w:pPr><w:rPr><w:sz w:val="40"/></w:rPr></w:style><w:style w:type="table" w:styleId="Table"><w:pPr><w:jc w:val="left"/></w:pPr><w:rPr><w:sz w:val="42"/></w:rPr></w:style><w:style w:type="numbering" w:styleId="Number"><w:rPr><w:sz w:val="44"/></w:rPr></w:style></w:styles>"#;
+        let table = StyleTable::parse(Some(xml)).unwrap();
+        assert_eq!(table.default_paragraph_style(), Some("Normal"));
+        for id in ["Char", "Table", "Number", "Missing"] {
+            assert_eq!(table.para_format(Some(id), &ParaProps::default()).align, "center");
+            assert_eq!(table.run_style(Some(id), None, &RunProps::default()).font_size, 14 * EMU_PER_PT);
+        }
+        assert_eq!(table.para_format(Some("Implicit"), &ParaProps::default()).align, "right");
+        assert_eq!(table.run_style(Some("Implicit"), None, &RunProps::default()).font_size, 16 * EMU_PER_PT);
+        assert_eq!(table.model_style("Char").font_size, 20 * EMU_PER_PT);
+        let listed = list_flow_styles(xml).unwrap();
+        assert!(listed.styles.iter().any(|s| s.id == "Implicit" && s.kind == FlowStyleKind::Paragraph));
     }
 
     #[test]

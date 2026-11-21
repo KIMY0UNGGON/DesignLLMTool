@@ -225,8 +225,35 @@ fn mark_paragraph(plan: &mut Plan, at: &ParaAt) {
     plan.docinfo_append.insert(inspect::TAG_PARA_SHAPE);
 }
 
+fn page_def_digests(doc: &rhwp::model::document::Document) -> Vec<Vec<[u8; 32]>> {
+    doc.sections.iter().map(|section| {
+        let mut defs = vec![rhwp::model::raw_provenance::record_digest(&section.section_def.page_def)];
+        defs.extend(section.paragraphs.iter().flat_map(|p| &p.controls).filter_map(|control| match control {
+            Control::SectionDef(def) => Some(rhwp::model::raw_provenance::record_digest(&def.page_def)),
+            _ => None,
+        }));
+        defs
+    }).collect()
+}
+
+#[cfg(test)]
+mod page_def_tests {
+    use super::*;
+
+    #[test]
+    fn page_def_digest_includes_attributes_outside_the_page_view() {
+        let mut doc = rhwp::model::document::Document::default();
+        doc.sections.push(rhwp::model::document::Section::default());
+        let before = page_def_digests(&doc);
+        doc.sections[0].section_def.page_def.attr ^= 2;
+        assert_ne!(before, page_def_digests(&doc));
+    }
+}
+
 /// Apply one native edit to rhwp and record the permitted changes in `plan`.
 pub fn apply_native(core: &mut Core, edit: &NativeEdit, assets: &dyn AssetStore, plan: &mut Plan) -> DltResult<()> {
+    let pages_before = matches!(edit, NativeEdit::InsertParagraph { .. } | NativeEdit::DeleteParagraph { .. } | NativeEdit::InsertTable { .. } | NativeEdit::InsertPicture { .. })
+        .then(|| page_def_digests(core.document()));
     match edit {
         NativeEdit::Text { at, offset, delete, text } => {
             mark_paragraph(plan, at);
@@ -361,6 +388,9 @@ pub fn apply_native(core: &mut Core, edit: &NativeEdit, assets: &dyn AssetStore,
             plan.named_styles.push(NamedStylePlan { style: *style, old, new });
             plan.docinfo_append.insert(inspect::TAG_CHAR_SHAPE);
         }
+    }
+    if pages_before.is_some_and(|before| before != page_def_digests(core.document())) {
+        return Err(mismatch("Page definition changed during a structural edit"));
     }
     plan.char_shapes = Some(core.document().doc_info.char_shapes.len());
     Ok(())
@@ -1258,6 +1288,16 @@ fn same_except(before: &DocView, after: &DocView, at: &ParaAt) -> DltResult<()> 
     Ok(())
 }
 
+fn same_other_sections_and_page(before: &DocView, after: &DocView, section: usize) -> DltResult<()> {
+    if before.sections.len() != after.sections.len() { return Err(mismatch("The section count changed")); }
+    if section >= before.sections.len() { return Err(mismatch("Edited section missing")); }
+    for (index, (a, b)) in before.sections.iter().zip(&after.sections).enumerate() {
+        if a.page != b.page { return Err(mismatch(format!("Section {index} page setup changed unexpectedly"))); }
+        if index != section && a != b { return Err(mismatch(format!("Section {index} changed unexpectedly"))); }
+    }
+    Ok(())
+}
+
 /// Cell heights follow their content; compare the rest of a table host paragraph.
 fn same_host(before: &ParaView, after: &ParaView, cell_target: Option<(usize, (u16, u16), usize)>) -> DltResult<()> {
     let strip = |p: &ParaView| { let mut q = p.clone(); for t in q.tables.iter_mut() { for c in t.cells.iter_mut() { c.height = 0; } } q };
@@ -1372,6 +1412,7 @@ pub fn check_intent(edit: &NativeEdit, before: &DocView, after: &DocView, doc_af
             Ok(())
         }
         NativeEdit::InsertParagraph { section, para } | NativeEdit::DeleteParagraph { section, para } => {
+            same_other_sections_and_page(before, after, *section)?;
             let (bs, as_) = (&before.sections[*section].paras, &after.sections[*section].paras);
             let insert = matches!(edit, NativeEdit::InsertParagraph { .. });
             let expected_len = if insert { bs.len() + 1 } else { bs.len() - 1 };
@@ -1380,14 +1421,15 @@ pub fn check_intent(edit: &NativeEdit, before: &DocView, after: &DocView, doc_af
             for (k, pb) in bs.iter().enumerate() {
                 let j = if insert { if k < *para { k } else { k + 1 } } else if k == *para { continue } else if k < *para { k } else { k - 1 };
                 let pa = &as_[j];
-                if pb.text != pa.text || pb.ctrls != pa.ctrls || pb.marks != pa.marks || pb.styles != pa.styles || pb.format != pa.format || kept_breaks[k] != pa.page_break { return Err(mismatch(format!("Paragraph {k} changed while inserting/removing paragraph {para}"))); }
+                if pb.text != pa.text || pb.ctrls != pa.ctrls || pb.marks != pa.marks || pb.styles != pa.styles || pb.format != pa.format || kept_breaks[k] != pa.page_break || pb.pictures != pa.pictures || pb.tables != pa.tables { return Err(mismatch(format!("Paragraph {k} changed while inserting/removing paragraph {para}"))); }
             }
-            if insert && (!as_[*para].text.is_empty() || !as_[*para].ctrls.is_empty()) { return Err(mismatch("The inserted paragraph is not empty")); }
+            if insert && (!as_[*para].text.is_empty() || !as_[*para].ctrls.is_empty() || !as_[*para].marks.is_empty() || !as_[*para].tables.is_empty() || !as_[*para].pictures.is_empty() || as_[*para].unverifiable.is_some()) { return Err(mismatch("The inserted paragraph is not empty")); }
             // A page break asked for on a new paragraph is its own edit (NativeEdit::PageBreak), checked after this one.
             if insert && as_[*para].page_break != new_break { return Err(mismatch("The inserted paragraph's page break is not the one of its place")); }
             Ok(())
         }
         NativeEdit::InsertTable { section, para, rows, cols } => {
+            same_other_sections_and_page(before, after, *section)?;
             let (bs, as_) = (&before.sections[*section].paras, &after.sections[*section].paras);
             // The table paragraph and the empty paragraph rhwp keeps after it (`create_table_with_options_native`) are new.
             if as_.len() != bs.len() + 2 { return Err(mismatch("Paragraph count did not grow by the table paragraph and its trailing paragraph")); }
@@ -1397,18 +1439,28 @@ pub fn check_intent(edit: &NativeEdit, before: &DocView, after: &DocView, doc_af
                 if pb.text != pa.text || pb.ctrls != pa.ctrls || pb.marks != pa.marks || pb.styles != pa.styles || pb.format != pa.format || kept_breaks[k] != pa.page_break || pb.pictures != pa.pictures || pb.tables != pa.tables { return Err(mismatch(format!("Paragraph {k} changed while inserting a table"))); }
             }
             let trailing = as_.get(*para + 1).ok_or_else(|| mismatch("Trailing paragraph of the table missing"))?;
-            if !trailing.text.is_empty() || !trailing.ctrls.is_empty() || trailing.page_break { return Err(mismatch("The paragraph after the table is not an empty paragraph without a page break")); }
+            if !trailing.text.is_empty() || !trailing.ctrls.is_empty() || !trailing.marks.is_empty() || !trailing.tables.is_empty() || !trailing.pictures.is_empty() || trailing.page_break || trailing.unverifiable.is_some() { return Err(mismatch("The paragraph after the table is not an empty paragraph without a page break")); }
             let pa = as_.get(*para).ok_or_else(|| mismatch("Table paragraph missing"))?;
             if pa.page_break != new_break { return Err(mismatch("The table paragraph's page break is not the one of its place")); }
-            let t = pa.tables.first().ok_or_else(|| mismatch("Inserted table missing"))?;
-            if (t.rows, t.cols) != (*rows, *cols) || t.cells.len() != usize::from(*rows) * usize::from(*cols) { return Err(mismatch("Inserted table has the wrong grid")); }
-            let native = match doc_after.sections[*section].paragraphs[*para].controls.first() { Some(Control::Table(t)) => t, _ => return Err(mismatch("Inserted table is not the first control")) };
+            if !pa.text.is_empty() || !pa.marks.is_empty() || pa.ctrls.len() != 1 || pa.ctrls[0].id != "tbl " || pa.ctrls[0].pos != 0 || pa.ctrls[0].field.is_some() || pa.tables.len() != 1 || !pa.pictures.is_empty() || pa.unverifiable.is_some() {
+                return Err(mismatch("The table paragraph does not hold exactly one table"));
+            }
+            let t = &pa.tables[0];
+            if *rows == 0 || *cols == 0 || (t.rows, t.cols) != (*rows, *cols) || t.cells.len() != usize::from(*rows) * usize::from(*cols) { return Err(mismatch("Inserted table has the wrong grid")); }
+            for (i, cell) in t.cells.iter().enumerate() {
+                if usize::from(cell.row) != i / usize::from(*cols) || usize::from(cell.col) != i % usize::from(*cols) || cell.row_span != 1 || cell.col_span != 1 || cell.paras.len() != 1 || cell.paras.iter().any(|p| !p.text.is_empty() || !p.ctrls.is_empty() || !p.marks.is_empty() || !p.tables.is_empty() || !p.pictures.is_empty() || p.page_break || p.unverifiable.is_some()) {
+                    return Err(mismatch("Inserted table has unexpected cell content or grid"));
+                }
+            }
+            let native = match doc_after.sections[*section].paragraphs[*para].controls.as_slice() { [Control::Table(t)] => t, _ => return Err(mismatch("Inserted table is not the only control")) };
+            if native.cells.len() != t.cells.len() { return Err(mismatch("Inserted table has the wrong native cell count")); }
             for (i, c) in native.cells.iter().enumerate() {
                 if usize::from(c.row) * usize::from(*cols) + usize::from(c.col) != i { return Err(mismatch("Inserted table cells are not in row-major order")); }
             }
             Ok(())
         }
         NativeEdit::InsertPicture { section, para, width, height, .. } => {
+            same_other_sections_and_page(before, after, *section)?;
             let (bs, as_) = (&before.sections[*section].paras, &after.sections[*section].paras);
             if as_.len() != bs.len() + 1 { return Err(mismatch("Paragraph count did not grow by the picture paragraph")); }
             let (kept_breaks, new_break) = breaks_after_insert(bs, *para);
@@ -1417,7 +1469,7 @@ pub fn check_intent(edit: &NativeEdit, before: &DocView, after: &DocView, doc_af
                 if pb.text != pa.text || pb.ctrls != pa.ctrls || pb.marks != pa.marks || pb.styles != pa.styles || pb.format != pa.format || kept_breaks[k] != pa.page_break || pb.pictures != pa.pictures || pb.tables != pa.tables { return Err(mismatch(format!("Paragraph {k} changed while inserting a picture"))); }
             }
             let pa = as_.get(*para).ok_or_else(|| mismatch("Picture paragraph missing"))?;
-            if !pa.text.is_empty() || pa.ctrls.iter().map(|c| c.id.as_str()).collect::<Vec<_>>() != ["gso "] || pa.pictures.len() != 1 { return Err(mismatch("The picture paragraph does not hold exactly one picture")); }
+            if !pa.text.is_empty() || !pa.marks.is_empty() || pa.ctrls.iter().map(|c| c.id.as_str()).collect::<Vec<_>>() != ["gso "] || pa.pictures.len() != 1 || !pa.tables.is_empty() || pa.unverifiable.is_some() { return Err(mismatch("The picture paragraph does not hold exactly one picture")); }
             if pa.page_break != new_break { return Err(mismatch("The picture paragraph's page break is not the one of its place")); }
             let pic = &pa.pictures[0];
             if (pic.width, pic.height) != (*width, *height) { return Err(mismatch(format!("Inserted picture size {}x{} != {width}x{height}", pic.width, pic.height))); }

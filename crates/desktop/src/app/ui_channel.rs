@@ -35,6 +35,7 @@ const SELECTED_NODES_COMMANDS: &[&str] = &[
     "edit.lock", "edit.unlock", "edit.hide", "edit.show", "edit.rename", "canvas.token.bind", "canvas.token.unbind",
     "props.fill", "props.fill_remove", "props.stroke", "props.stroke_width", "props.stroke_remove", "props.corner_radius",
     "props.opacity", "props.shadow", "props.shadow_remove", "props.text_style", "props.text_align",
+    "props.line_height", "props.letter_spacing", "props.vertical_align", "props.stroke_style", "props.gradient", "props.gradient_remove",
 ];
 
 /// Commands whose runs change the one selected node on its page and refuse without it (dispatch.rs `selected_with_page`).
@@ -125,19 +126,7 @@ pub(super) struct UiChannel {
     pub commands_sent: bool,
     /// The artifact context the last published registry enables.
     commands_kind: Option<ArtifactKind>,
-    commands_list_support: Option<(Support, Support)>,
-    commands_token_support: Option<(Support, Support)>,
-    commands_token_stale: Option<bool>,
-    commands_design_system_publisher: Option<bool>,
-    commands_have_selectable_layers: Option<bool>,
-    commands_native_save_supported: Option<bool>,
-    commands_can_cancel_job: Option<bool>,
-    commands_table_state: Option<(bool, bool, bool, bool)>,
-    /// Picture, deletion and figure-link availability at the last registry publish.
-    commands_picture_state: Option<(bool, bool, bool, bool, bool, bool)>,
-    /// Whether nodes are selected, and whether one selected node is on a page, as the registry last published them: the commands
-    /// of `SELECTED_NODES_COMMANDS` and `SELECTED_ON_PAGE_COMMANDS` follow them.
-    commands_selection_state: Option<(bool, bool)>,
+    commands_enabled: Option<Vec<bool>>,
     /// The items the user chose on the open document, as (view id, artifact id, node ids in the order chosen). Only the user's own
     /// selection sets it, never a reload that re-applies the window's selection or an agent's run; an AI request names these items.
     pub user_selection: Option<(String, String, Vec<String>)>,
@@ -164,16 +153,7 @@ impl Default for UiChannel {
             last_publish: None,
             commands_sent: false,
             commands_kind: None,
-            commands_list_support: None,
-            commands_token_support: None,
-            commands_token_stale: None,
-            commands_design_system_publisher: None,
-            commands_have_selectable_layers: None,
-            commands_native_save_supported: None,
-            commands_can_cancel_job: None,
-            commands_table_state: None,
-            commands_picture_state: None,
-            commands_selection_state: None,
+            commands_enabled: None,
             user_selection: None,
             restoring_selection: false,
             agent_commits: VecDeque::new(),
@@ -227,8 +207,93 @@ impl RunContext {
     }
 }
 
+#[derive(Clone, Copy)]
+enum CommandScope { Always, Home, Editor, Canvas, CanvasFigure, CanvasSlides, CanvasSlidesFigure, TextSetSupported, TextStyleSupported, Web, Slides, Flow, Figure }
+
+fn command_scope(id: &str) -> Option<CommandScope> {
+    match id {
+        "nav.home" | "nav.new" | "nav.open_project" | "nav.open_file" | "nav.focus_request" | "home.runner"
+            | "nav.toggle_left" | "nav.toggle_right" | "nav.toggle_panels" => Some(CommandScope::Always),
+        "nav.ai" | "nav.tab" | "nav.page"
+            | "view.zoom_in" | "view.zoom_out" | "view.zoom_100" | "view.zoom_fit" | "view.zoom_selection"
+            | "view.zoom_set" | "view.zoom_page" | "view.toggle_guides" | "view.toggle_snap"
+            | "select.node" | "select.many" | "select.clear" | "select.next" | "select.previous" | "layer.find"
+            | "layer.find.next" | "layer.find.previous" | "edit.undo" | "edit.redo" | "edit.delete" | "edit.rename"
+            | "add.arrow" | "add.pen" | "add.pencil" | "add.memo" | "add.image" | "add.figure_link"
+            | "ai.request" | "ai.cancel" | "ai.retry"
+            | "ai.undo_change" | "ai.toggle_intent" | "ai.deliver_as" | "proposal.select" | "proposal.apply"
+            | "proposal.discard" | "file.save" | "file.save_as" | "file.export" | "file.overwrite"
+            | "file.dismiss_loss" | "figure.update_link" | "figure.open_source" | "canvas.design_system.list" => Some(CommandScope::Editor),
+        "edit.copy" | "edit.paste" | "edit.duplicate" | "edit.order_forward" | "edit.order_backward"
+            | "edit.order_front" | "edit.order_back" | "edit.nudge" | "add.text" | "add.rect" | "add.oval"
+            | "add.line" | "add.frame" | "add.page" | "add.slide" | "add.icon" | "props.position" | "props.size" | "props.align"
+            | "props.distribute" | "layer.move_to" | "fix.grow_to_min" | "fix.darken_text" | "fix.grow_box"
+            | "fix.shrink_text" | "fix.grow_parent" | "fix.move_into_page" | "page.remove" | "page.reorder"
+            | "page.notes" | "layer.move" | "props.page_size" | "props.rename_page"
+            | "props.shadow" | "props.shadow_remove" => Some(CommandScope::CanvasSlides),
+        "edit.copy_properties" | "edit.paste_properties" | "props.fill" | "props.fill_remove" | "props.stroke"
+            | "props.stroke_width" | "props.stroke_remove" | "props.text_align" => Some(CommandScope::CanvasSlidesFigure),
+        "props.opacity" | "props.corner_radius" | "props.line_height" | "props.letter_spacing"
+            | "props.vertical_align" | "props.stroke_style" => Some(CommandScope::CanvasFigure),
+        "text.set" => Some(CommandScope::TextSetSupported),
+        "props.text_style" => Some(CommandScope::TextStyleSupported),
+        "edit.group" | "edit.ungroup" | "edit.stack" | "edit.lock" | "edit.unlock" | "edit.hide" | "edit.show"
+            | "canvas.table.add" | "canvas.table.add_row" | "canvas.table.remove_row" | "canvas.table.add_column"
+            | "canvas.table.remove_column" | "canvas.table.set_header" | "canvas.table.set_column_widths"
+            | "table.merge_cells" | "table.unmerge_cell" | "add.path" | "props.size_mode"
+            | "props.gradient" | "props.gradient_remove"
+            | "props.image_fit" | "props.image_alt" | "props.path" | "canvas.token.put" | "canvas.token.remove"
+            | "canvas.token.mode" | "canvas.token.bind" | "canvas.token.unbind"
+            | "canvas.design_system.publish" | "canvas.design_system.set" | "props.layout_mode"
+            | "props.layout_direction" | "props.layout_justify" | "props.layout_align" | "props.layout_gap"
+            | "props.layout_padding" | "props.grid" | "props.grid_span" | "props.padding_sides"
+            | "props.align_self" | "props.variant_style" | "canvas.open_url" | "canvas.interaction.set"
+            | "canvas.interaction.remove" | "canvas.image.replace" | "canvas.image.crop" | "canvas.board_memos.set"
+            | "canvas.page_sections.set" | "canvas.guides.set" | "canvas.guides.clear" | "page.component"
+            | "component.instantiate" | "component.detach" | "repeat.create" | "repeat.bind" | "repeat.clear"
+            | "repeat.condition_set" | "repeat.condition_clear" | "text.list" | "file.export_selection" | "view.play" => Some(CommandScope::Canvas),
+        "add.table" | "add.paragraph" | "doc.paragraph_format" | "doc.page_setup" | "doc.named_style"
+            | "doc.table_columns" | "text.replace" | "text.style_range" => Some(CommandScope::Flow),
+        "data.edit_cell" | "add.figure_image" | "data.add_column" | "data.add_row" | "data.remove_row"
+            | "data.remove_column" | "add.figure_panel" | "add.diagram_node" | "figure.add_equation"
+            | "add.connector" | "add.evidence" | "add.csv" | "add.chart" | "figure.arrange_panels"
+            | "figure.remove_panel" | "figure.reorder_panels" | "figure.caption" | "figure.panel_label"
+            | "figure.plot" | "figure.plot_display" | "figure.style" | "figure.toggle_sheet" | "figure.axis_label"
+            | "figure.axis_ticks" | "figure.put_dataset" | "figure.put_evidence" | "figure.diagram_provenance"
+            | "figure.common_legend" | "figure.output_profile" | "figure.visual_review" | "figure.image_transform"
+            | "figure.image_calibration" => Some(CommandScope::Figure),
+        "slides.theme" => Some(CommandScope::Slides),
+        "web.replace_source" | "web.mapped_edit" | "web.open_file" | "web.refresh" | "web.preview" => Some(CommandScope::Web),
+        "home.create" | "home.attach" | "home.view" | "home.starred_only" | "home.star" | "home.mode"
+            | "home.design_system" | "home.tile" | "home.tab" | "home.preset" | "home.search" | "home.use_template"
+            | "home.workspace" => Some(CommandScope::Home),
+        _ => None,
+    }
+}
+
 impl DesktopApp {
     pub(super) fn command_enabled_for_current_kind(&self, id: &str) -> bool {
+        let editor = self.screen_is_editor();
+        let kind = self.active.as_ref().map(|active| active.kind);
+        let in_scope = match command_scope(id) {
+            Some(CommandScope::Always) => true,
+            // Existing GUI callers may prepare or create from home while an editor is open.
+            Some(CommandScope::Home) => true,
+            Some(CommandScope::Editor) => editor,
+            Some(CommandScope::Canvas) => editor && kind == Some(ArtifactKind::Canvas),
+            Some(CommandScope::CanvasFigure) => editor && matches!(kind, Some(ArtifactKind::Canvas | ArtifactKind::Figure)),
+            Some(CommandScope::CanvasSlides) => editor && matches!(kind, Some(ArtifactKind::Canvas | ArtifactKind::Slides)),
+            Some(CommandScope::CanvasSlidesFigure) => editor && matches!(kind, Some(ArtifactKind::Canvas | ArtifactKind::Slides | ArtifactKind::Figure)),
+            Some(CommandScope::TextSetSupported) => editor && matches!(kind, Some(ArtifactKind::Canvas | ArtifactKind::Slides | ArtifactKind::Figure | ArtifactKind::Docx | ArtifactKind::Hwpx)),
+            Some(CommandScope::TextStyleSupported) => editor && matches!(kind, Some(ArtifactKind::Canvas | ArtifactKind::Slides | ArtifactKind::Figure | ArtifactKind::Docx | ArtifactKind::Hwpx | ArtifactKind::Hwp)),
+            Some(CommandScope::Web) => editor && kind == Some(ArtifactKind::WebCode),
+            Some(CommandScope::Slides) => editor && kind == Some(ArtifactKind::Slides),
+            Some(CommandScope::Flow) => editor && matches!(kind, Some(ArtifactKind::Docx | ArtifactKind::Hwpx | ArtifactKind::Hwp)),
+            Some(CommandScope::Figure) => editor && kind == Some(ArtifactKind::Figure),
+            None => false,
+        };
+        let direct_gui_figure_openers = matches!(id, "add.figure_image" | "add.evidence" | "add.csv" | "add.chart");
+        if !in_scope && id != "canvas.design_system.set" && id != "web.preview" && !direct_gui_figure_openers { return false; }
         let canvas_editor = self.screen_is_editor() && self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::Canvas);
         let web_editor = self.screen_is_editor() && self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::WebCode);
         let flow_editor = self.screen_is_editor()
@@ -289,7 +354,7 @@ impl DesktopApp {
                     && self.active.as_ref().is_some_and(|active| matches!(active.kind, ArtifactKind::Canvas | ArtifactKind::Slides))
                     && !self.selected_nodes.is_empty()
             }
-            _ => true,
+            _ => in_scope || direct_gui_figure_openers,
         }
     }
 
@@ -300,12 +365,13 @@ impl DesktopApp {
         }
         self.command_enabled_for_current_kind(id)
             && match id {
-                "home.create" | "home.use_template" => !self.screen_is_editor(),
-                "add.chart" | "add.figure_image" | "data.edit_cell" | "data.add_row" | "data.add_column" | "data.remove_row" | "data.remove_column" =>
+                id if matches!(command_scope(id), Some(CommandScope::Home)) => !self.screen_is_editor(),
+                "add.chart" | "add.csv" | "add.evidence" | "add.figure_image" | "data.edit_cell" | "data.add_row" | "data.add_column" | "data.remove_row" | "data.remove_column" =>
                     self.screen_is_editor() && self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::Figure),
                 "add.figure_link" => self.screen_is_editor() && self.feature_edit_supported(Feature::FigureLinks)
                     && self.artifacts.iter().any(|item| item.kind == ArtifactKind::Figure),
                 "figure.update_link" => self.screen_is_editor() && self.feature_edit_supported(Feature::FigureLinks),
+                "figure.open_source" => self.artifact.as_ref().is_some_and(|artifact| !artifact.figure_links.is_empty()),
                 "canvas.image.replace" => self.image_replacement_check().is_ok(),
                 "file.export_selection" => self.screen_is_editor() && !self.selected_nodes.is_empty()
                     && self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::Canvas),
@@ -320,7 +386,7 @@ impl DesktopApp {
                 id if SELECTED_NODES_COMMANDS.contains(&id) => !self.selected_nodes.is_empty(),
                 // The runs take the one selected node on its page and refuse without it (dispatch.rs `selected_with_page`).
                 id if SELECTED_ON_PAGE_COMMANDS.contains(&id) => self.selected_on_page().is_some(),
-                _ => true,
+                _ => command_scope(id).is_some(),
             }
     }
 
@@ -476,45 +542,15 @@ impl DesktopApp {
     }
 
     /// Publishes the state when it changed, and at least every few seconds so that the view stays
-    /// alive. The command registry is republished when the active artifact kind changes.
+    /// alive. The command registry follows the active kind and every command availability change.
     pub(super) fn publish_ui_if_due(&mut self) {
         let state = self.ui_state();
         let fingerprint = serde_json::to_string(&state).unwrap_or_default();
         let command_kind = if self.screen_is_editor() { self.active.as_ref().map(|active| active.kind) } else { None };
-        let commands_list_support = self.canvas_list_support();
-        let commands_token_support = self.canvas_token_support();
-        let commands_token_stale = self.canvas_token_form_stale();
-        let commands_design_system_publisher = self.artifact.as_ref().map(|artifact| artifact.publishes_design_system);
-        let commands_have_selectable_layers = self.has_selectable_layers();
-        let commands_native_save_supported = self.feature_write_supported(Feature::NativeRoundtrip);
-        let commands_can_cancel_job = self.can_cancel_current_job();
-        let commands_table_state = (
-            self.canvas_table_context_current(),
-            self.feature_write_supported(Feature::Tables),
-            self.feature_edit_supported(Feature::Tables),
-            self.selected_canvas_table_node().is_some(),
-        );
-        let commands_picture_state = (
-            self.ui_command_enabled_for_current_kind("props.image_fit"),
-            self.ui_command_enabled_for_current_kind("props.image_alt"),
-            self.ui_command_enabled_for_current_kind("edit.delete"),
-            self.ui_command_enabled_for_current_kind("canvas.image.replace"),
-            self.ui_command_enabled_for_current_kind("add.figure_link"),
-            self.ui_command_enabled_for_current_kind("figure.update_link"),
-        );
-        let commands_selection_state = (!self.selected_nodes.is_empty(), self.selected_on_page().is_some());
+        let commands_enabled: Vec<bool> = commands::COMMANDS.iter().map(|spec| self.ui_command_enabled_for_current_kind(spec.id)).collect();
         let registry_changed = !self.ui.commands_sent
             || self.ui.commands_kind != command_kind
-            || self.ui.commands_list_support != commands_list_support
-            || self.ui.commands_token_support != commands_token_support
-            || self.ui.commands_token_stale != Some(commands_token_stale)
-            || self.ui.commands_design_system_publisher != commands_design_system_publisher
-            || self.ui.commands_have_selectable_layers != Some(commands_have_selectable_layers)
-            || self.ui.commands_native_save_supported != Some(commands_native_save_supported)
-            || self.ui.commands_can_cancel_job != Some(commands_can_cancel_job)
-            || self.ui.commands_table_state != Some(commands_table_state)
-            || self.ui.commands_picture_state != Some(commands_picture_state)
-            || self.ui.commands_selection_state != Some(commands_selection_state);
+            || self.ui.commands_enabled.as_ref() != Some(&commands_enabled);
         let due = self.ui.last_publish.is_none_or(|at| at.elapsed() >= REPUBLISH);
         if !due && !registry_changed && self.ui.last_state.as_deref() == Some(fingerprint.as_str()) {
             return;
@@ -532,16 +568,7 @@ impl DesktopApp {
         self.ui.last_publish = Some(Instant::now());
         self.ui.commands_sent = true;
         self.ui.commands_kind = command_kind;
-        self.ui.commands_list_support = commands_list_support;
-        self.ui.commands_token_support = commands_token_support;
-        self.ui.commands_token_stale = Some(commands_token_stale);
-        self.ui.commands_design_system_publisher = commands_design_system_publisher;
-        self.ui.commands_have_selectable_layers = Some(commands_have_selectable_layers);
-        self.ui.commands_native_save_supported = Some(commands_native_save_supported);
-        self.ui.commands_can_cancel_job = Some(commands_can_cancel_job);
-        self.ui.commands_table_state = Some(commands_table_state);
-        self.ui.commands_picture_state = Some(commands_picture_state);
-        self.ui.commands_selection_state = Some(commands_selection_state);
+        self.ui.commands_enabled = Some(commands_enabled);
         if let Ok(params) = serde_json::to_value(request) {
             self.call("ui.state.publish", params, PendingAction::UiPublish);
         }
@@ -1023,6 +1050,129 @@ mod tests {
         link_flow_tests::{canvas_with_three_boxes, drawn_figure},
         test_support::{Host, Window},
     };
+
+    #[test]
+    fn every_registered_command_has_an_explicit_scope() {
+        for spec in crate::commands::COMMANDS {
+            assert!(super::command_scope(spec.id).is_some(), "unclassified command: {}", spec.id);
+        }
+        assert!(super::command_scope("figure.output_profile").is_some());
+        assert!(super::command_scope("unknown.command").is_none());
+    }
+
+    #[test]
+    fn registry_follows_home_and_all_artifact_kinds() {
+        use designllm_contracts::ArtifactKind;
+        let mut host = Host::start();
+        let canvas = host.create("canvas", "scope");
+        let mut window = Window::open(&mut host, &canvas);
+        let commands = ["add.icon", "web.replace_source", "slides.theme", "doc.paragraph_format", "figure.add_equation"];
+        window.app.screen = crate::app::Screen::Home;
+        for id in commands { assert!(!listed(&window, id), "home: {id}"); }
+        let home_registry = window.app.ui_commands();
+        for spec in crate::commands::COMMANDS {
+            if matches!(super::command_scope(spec.id), Some(super::CommandScope::Canvas | super::CommandScope::CanvasFigure | super::CommandScope::CanvasSlides | super::CommandScope::CanvasSlidesFigure | super::CommandScope::TextSetSupported | super::CommandScope::TextStyleSupported | super::CommandScope::Web | super::CommandScope::Slides | super::CommandScope::Flow | super::CommandScope::Figure)) {
+                assert!(!home_registry.iter().find(|entry| entry.id == spec.id).unwrap().enabled, "home: {}", spec.id);
+            }
+        }
+        assert!(listed(&window, "home.view"));
+        for (kind, expected) in [
+            (ArtifactKind::Canvas, 0), (ArtifactKind::WebCode, 1), (ArtifactKind::Slides, 2),
+            (ArtifactKind::Docx, 3), (ArtifactKind::Hwpx, 3), (ArtifactKind::Hwp, 3), (ArtifactKind::Figure, 4),
+        ] {
+            window.app.screen = crate::app::Screen::Editor;
+            window.app.active.as_mut().unwrap().kind = kind;
+            for (index, id) in commands.iter().enumerate() {
+                assert_eq!(listed(&window, id), index == expected || (kind == ArtifactKind::Slides && *id == "add.icon"), "{kind:?}: {id}");
+            }
+            let registry = window.app.ui_commands();
+            for spec in crate::commands::COMMANDS {
+                let allowed = match super::command_scope(spec.id) {
+                    Some(super::CommandScope::Canvas) => kind == ArtifactKind::Canvas || spec.id == "canvas.design_system.set",
+                    Some(super::CommandScope::CanvasFigure) => matches!(kind, ArtifactKind::Canvas | ArtifactKind::Figure),
+                    Some(super::CommandScope::CanvasSlides) => matches!(kind, ArtifactKind::Canvas | ArtifactKind::Slides),
+                    Some(super::CommandScope::CanvasSlidesFigure) => matches!(kind, ArtifactKind::Canvas | ArtifactKind::Slides | ArtifactKind::Figure),
+                    Some(super::CommandScope::TextSetSupported) => matches!(kind, ArtifactKind::Canvas | ArtifactKind::Slides | ArtifactKind::Figure | ArtifactKind::Docx | ArtifactKind::Hwpx),
+                    Some(super::CommandScope::TextStyleSupported) => kind != ArtifactKind::WebCode,
+                    Some(super::CommandScope::Web) => kind == ArtifactKind::WebCode,
+                    Some(super::CommandScope::Slides) => kind == ArtifactKind::Slides,
+                    Some(super::CommandScope::Flow) => matches!(kind, ArtifactKind::Docx | ArtifactKind::Hwpx | ArtifactKind::Hwp),
+                    Some(super::CommandScope::Figure) => kind == ArtifactKind::Figure,
+                    _ => true,
+                };
+                if !allowed { assert!(!registry.iter().find(|entry| entry.id == spec.id).unwrap().enabled, "{kind:?}: {}", spec.id); }
+            }
+            assert!(!listed(&window, "home.view"), "{kind:?}");
+            assert!(window.app.command_enabled_for_current_kind("home.runner"));
+            assert!(window.app.command_enabled_for_current_kind("home.tile"));
+        }
+    }
+
+    #[test]
+    fn registry_matches_independent_kind_and_selection_expectations() {
+        use designllm_contracts::ArtifactKind;
+        let mut host = Host::start();
+        let canvas = canvas_with_three_boxes(&mut host, [0, 1_000_000, 3_000_000]);
+        let mut window = Window::open(&mut host, &canvas);
+        let kinds = [ArtifactKind::Canvas, ArtifactKind::Slides, ArtifactKind::Figure, ArtifactKind::Docx,
+            ArtifactKind::Hwpx, ArtifactKind::Hwp, ArtifactKind::WebCode];
+        let cases = [
+            ("add.icon",             [true, true,  false, false, false, false, false]),
+            ("text.set",             [true, true,  true,  true,  true,  false, false]),
+            ("props.fill",           [true, true,  true,  false, false, false, false]),
+            ("props.fill_remove",    [true, true,  true,  false, false, false, false]),
+            ("props.stroke",         [true, true,  true,  false, false, false, false]),
+            ("props.stroke_width",   [true, true,  true,  false, false, false, false]),
+            ("props.stroke_remove",  [true, true,  true,  false, false, false, false]),
+            ("props.opacity",        [true, false, true,  false, false, false, false]),
+            ("props.corner_radius",  [true, false, true,  false, false, false, false]),
+            ("props.shadow",         [true, true,  false, false, false, false, false]),
+            ("props.shadow_remove",  [true, true,  false, false, false, false, false]),
+            ("props.text_style",     [true, true,  true,  true,  true,  true,  false]),
+            ("props.text_align",     [true, true,  true,  false, false, false, false]),
+            ("props.line_height",    [true, false, true,  false, false, false, false]),
+            ("props.letter_spacing", [true, false, true,  false, false, false, false]),
+            ("props.vertical_align", [true, false, true,  false, false, false, false]),
+            ("props.stroke_style",   [true, false, true,  false, false, false, false]),
+            ("props.gradient",       [true, false, false, false, false, false, false]),
+            ("props.gradient_remove",[true, false, false, false, false, false, false]),
+        ];
+        for (index, kind) in kinds.into_iter().enumerate() {
+            window.app.active.as_mut().unwrap().kind = kind;
+            window.app.selected_nodes = vec!["a".into()];
+            for (id, expected) in cases {
+                assert_eq!(listed(&window, id), expected[index], "{kind:?}: {id}");
+            }
+            window.app.selected_nodes.clear();
+            for (id, expected) in cases {
+                let without_selection = if id.starts_with("props.") { false } else { expected[index] };
+                assert_eq!(listed(&window, id), without_selection, "{kind:?} without selection: {id}");
+            }
+        }
+    }
+
+    #[test]
+    fn registry_is_republished_when_home_or_loaded_artifact_changes() {
+        let mut host = Host::start();
+        let figure = drawn_figure(&mut host, "figure", 1);
+        let canvas = canvas_with_three_boxes(&mut host, [0, 1_000_000, 3_000_000]);
+        let mut window = Window::open(&mut host, &canvas);
+        window.step(&mut host, "add.figure_link", json!({ "figure_id": figure })).unwrap();
+        let enabled = |window: &mut Window, host: &mut Host, id: &str| {
+            window.app.publish_ui_if_due();
+            window.settle(host);
+            let listing = host.call("ui.command.list", json!({ "view_id": window.app.ui.view_id })).unwrap();
+            listing["commands"].as_array().unwrap().iter().find(|entry| entry["id"] == id).unwrap()["enabled"].as_bool().unwrap()
+        };
+        assert!(enabled(&mut window, &mut host, "figure.open_source"));
+        let artifact = window.app.artifact.take();
+        assert!(!enabled(&mut window, &mut host, "figure.open_source"));
+        window.app.artifact = artifact;
+        assert!(enabled(&mut window, &mut host, "figure.open_source"));
+        window.step(&mut host, "nav.home", json!({})).unwrap();
+        assert!(enabled(&mut window, &mut host, "home.view"));
+        assert!(!enabled(&mut window, &mut host, "figure.open_source"));
+    }
 
     /// An agent's run as the core hands it over: change permission, content intent, no expected view state.
     fn agent_run(command_id: &str, args: serde_json::Value) -> designllm_contracts::UiRun {

@@ -620,7 +620,7 @@ fn set_named_style(
         .resolve_name(name)
         .ok_or_else(|| not_found("Named style", name))?;
     let kind = base_styles.styles.get(&id).map(|d| d.kind.clone()).unwrap_or_default();
-    if patch.align.is_some() && kind != "paragraph" {
+    if patch.align.is_some() && !matches!(kind.as_str(), "paragraph" | "") {
         return Err(DltError::unsupported("align applies to paragraph styles only"));
     }
     let entry = work.overrides.entry(id.clone()).or_insert_with(StyleOverride::default);
@@ -655,6 +655,22 @@ fn set_named_style(
     Ok(())
 }
 
+#[cfg(test)]
+mod named_style_tests {
+    use super::*;
+
+    #[test]
+    fn alignment_accepts_a_style_without_a_type() {
+        let xml = br#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:styleId="Untyped"><w:name w:val="Untyped"/></w:style></w:styles>"#;
+        let base = StyleTable::parse(Some(xml)).unwrap();
+        let mut styles = base.clone();
+        let mut state = State { document: FlowDocument::default(), records: Records::default(), overrides: Overrides::default(), figure_links: Vec::new() };
+        let patch = StylePatch { align: Some("center".into()), ..Default::default() };
+        set_named_style(&mut state, &base, &mut styles, "Untyped", &patch, false, &mut Changed::default()).unwrap();
+        assert_eq!(state.overrides["Untyped"].ppr.align.as_deref(), Some("center"));
+    }
+}
+
 /// `in_cell` marks blocks inside a table cell. There a direct page break off stays when the style chain would turn the
 /// break on without it: the style's page break must not reach the cell, which `cell_page_break_refusal` refuses for every
 /// other path. Any other direct page break is cleared like the rest of the direct formatting.
@@ -670,7 +686,7 @@ fn clear_direct_for_style(
     for block in blocks.iter_mut() {
         match block {
             FlowBlock::Paragraph(p) => {
-                let para_style = p.style_ref.as_deref() == Some(style_id) && kind == "paragraph";
+                let para_style = p.style_ref.as_deref() == Some(style_id) && matches!(kind, "paragraph" | "");
                 if para_style {
                     let (direct, _) = para_rec_mut(records, &p.id)?;
                     let keep_off = in_cell

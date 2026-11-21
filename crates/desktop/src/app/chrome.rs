@@ -2,7 +2,7 @@
 //! the properties panel, the board and the floating groups on it. Every control here invokes a
 //! registered command (`DesktopApp::invoke`); nothing in this file calls the engine directly.
 
-use designllm_contracts::{ArtifactKind, JobStatus};
+use designllm_contracts::{Artifact, ArtifactBody, ArtifactKind, JobStatus};
 use eframe::egui::{
     self, Align, Area, Context, CornerRadius, Frame, Layout, Margin, Order, Pos2, Rect, Response, Sense, Stroke,
     TopBottomPanel, Ui, Vec2,
@@ -387,9 +387,19 @@ impl DesktopApp {
             pages_text = text;
         }
         if self.export_format == "png" {
-            let current = (self.export_scale as usize).saturating_sub(1).min(2);
-            if let Some(index) = widgets::option_row(ui, palette, "배율", &["1×", "2×", "3×"], current) {
-                self.export_scale = index as u32 + 1;
+            if kind == ArtifactKind::Figure {
+                let choices = [150, 300, 600];
+                let current = choices.iter().position(|dpi| *dpi == self.view_ref().figure_export_dpi).unwrap_or(usize::MAX);
+                if let Some(index) = widgets::option_row(ui, palette, "DPI", &["150", "300", "600"], current) { self.view().figure_export_dpi = choices[index]; }
+                if current == usize::MAX { ui.label(format!("{} DPI", self.view_ref().figure_export_dpi)); }
+                if let Some(Artifact { body: ArtifactBody::Figure(figure), .. }) = self.artifact.as_ref() {
+                    if let Ok((width, height)) = designllm_contracts::figure_rules::figure_png_pixels(figure.size, self.view_ref().figure_export_dpi) {
+                        ui.label(format!("예상 크기: {width} × {height} px"));
+                    }
+                }
+            } else {
+                let current = (self.export_scale as usize).saturating_sub(1).min(2);
+                if let Some(index) = widgets::option_row(ui, palette, "배율", &["1×", "2×", "3×"], current) { self.export_scale = index as u32 + 1; }
             }
             if let Some(index) = widgets::option_row(ui, palette, "배경", &["페이지 색", "투명"], usize::from(self.export_transparent)) {
                 self.export_transparent = index == 1;

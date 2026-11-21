@@ -154,7 +154,8 @@ impl DesktopApp {
             if tile == "resume" && preset != "a4" {
                 return Err("이력서 템플릿은 A4 크기만 지원합니다".into());
             }
-            if designllm_contracts::frame_preset(preset).is_none() {
+            if designllm_contracts::frame_preset(preset).is_none() && custom_size(preset).is_none()
+                && !(matches!(tile, "figure" | "diagram") && designllm_contracts::figure_rules::figure_output_profile(preset).is_some()) {
                 return Err("없는 크기입니다".into());
             }
         }
@@ -164,7 +165,8 @@ impl DesktopApp {
         // size; without a choice it keeps its own page (size None). A size it cannot fit comes back
         // as `TEMPLATE_FIT`.
         let preset = text("preset").unwrap_or(&self.home_preset);
-        let chosen = designllm_contracts::frame_preset(preset).map(|preset| preset.size).or_else(|| {
+        let profile = if matches!(tile, "figure" | "diagram") { designllm_contracts::figure_rules::figure_output_profile(preset) } else { None };
+        let chosen = profile.map(|profile| Size { width: profile.width_emu, height: profile.height_emu }).or_else(|| designllm_contracts::frame_preset(preset).map(|preset| preset.size)).or_else(|| {
             custom_size(preset).map(|(width, height)| {
                 let emu = if print_tile(tile) { designllm_contracts::EMU_PER_MM } else { designllm_contracts::EMU_PER_CSS_PX };
                 Size { width: width * emu, height: height * emu }
@@ -179,15 +181,15 @@ impl DesktopApp {
         self.home.create_refusal = None;
         self.home.create_attempt = (tile.to_owned(), preset.to_owned());
         let create = CreateRequest { kind, title, size, template: template.map(str::to_owned) };
+        let create_ticket;
         if prompt.trim().is_empty() {
             if self.run_context.is_none() && (!self.home.attachments.is_empty() || !self.ai_figure_refs.is_empty()) {
                 return Err("첨부와 그림 참조는 요청과 함께 보냅니다. 요청을 적어 주세요".into());
             }
             let request = CreateArtifactRequest { request_id: new_id(), actor: "desktop".into(), options: create };
             let params = serde_json::to_value(request).map_err(|_| "작업물을 만들지 못했습니다".to_owned())?;
-            if self.call("artifact.create", params, PendingAction::Create).is_none() {
-                return Ok(());
-            }
+            let Some(sent) = self.call("artifact.create", params, PendingAction::Create) else { return Ok(()); };
+            create_ticket = sent;
         } else if let Some(run) = &self.run_context {
             // Use only the supplied prompt. The user's composer and its draft belong to the GUI.
             let request = HomeRequest {
@@ -195,9 +197,8 @@ impl DesktopApp {
                 runtime: text("runtime").unwrap_or(&self.ai_runtime).to_owned(), model, effort: text("effort").unwrap_or(&self.ai_effort).to_owned(),
                 attachments: Vec::new(), figure_refs: Vec::new(),
             };
-            if self.call_home(request).is_none() {
-                return Ok(()); // The channel returns the worker's enqueue error.
-            }
+            let Some(sent) = self.call_home(request) else { return Ok(()); };
+            create_ticket = sent;
         } else {
             // The box gives up its text and files for this request. They are written, marked with the request id, before the
             // request goes out, and they come back if it is refused (`drafts.rs`). Text typed while it is on its way stays in the box.
@@ -233,7 +234,7 @@ impl DesktopApp {
             };
             self.home.attachments.clear();
             match self.call_home(request) {
-                Some(sent) => self.drafts.rebind(ticket, sent),
+                Some(sent) => { self.drafts.rebind(ticket, sent); create_ticket = sent; }
                 None => {
                     // Not sent: the text and files come back to the box, and the home screen stays.
                     self.answer_sent_outcome(ticket, Outcome::Refused);
@@ -241,6 +242,9 @@ impl DesktopApp {
                     return Ok(());
                 }
             }
+        }
+        if let Some(profile) = profile {
+            self.pending_figure_create_profile = Some((create_ticket, Some(profile.id.to_owned()), profile.default_dpi));
         }
         self.screen = Screen::Editor;
         Ok(())
@@ -703,6 +707,15 @@ impl DesktopApp {
                 chosen = Some(id);
                 ui.close();
             }
+            if matches!(self.home.tile.as_str(), "figure" | "diagram") {
+                for profile in designllm_contracts::figure_rules::FIGURE_OUTPUT_PROFILES {
+                    let value = format!("{} × {} mm", profile.width_mm, profile.height_mm);
+                    if crate::widgets::menu_item_value(ui, palette, Some("preset-custom"), profile.label, &value, self.home_preset == profile.id).clicked() {
+                        chosen = Some(profile.id);
+                        ui.close();
+                    }
+                }
+            }
             // The slide tile also offers 4:3 (lead item 27), kept as a user size in CSS px.
             if slides_tile && crate::widgets::menu_item_value(ui, palette, Some("preset-slide"), "4:3", "960 × 720", custom_checked).clicked() {
                 custom = Some((960.0, 720.0));
@@ -731,6 +744,11 @@ impl DesktopApp {
         let (kind, size, _) = tile_recipe(&self.home.tile);
         if let Some(preset) = designllm_contracts::frame_preset(&self.home_preset) {
             return (preset_value(preset), super::tools::preset_icon(preset.id));
+        }
+        if matches!(self.home.tile.as_str(), "figure" | "diagram") {
+            if let Some(profile) = designllm_contracts::figure_rules::figure_output_profile(&self.home_preset) {
+                return (format!("{} × {} mm", profile.width_mm, profile.height_mm), "preset-custom");
+            }
         }
         let slides = kind == ArtifactKind::Slides;
         if let Some((width, height)) = custom_size(&self.home_preset) {
@@ -1286,9 +1304,11 @@ fn print_tile(tile: &str) -> bool {
 }
 
 /// A user size kept by `home.preset {width, height}` as `custom:<w>x<h>`.
-fn custom_size(preset: &str) -> Option<(i64, i64)> {
+pub(super) fn custom_size(preset: &str) -> Option<(i64, i64)> {
     let (width, height) = preset.strip_prefix("custom:")?.split_once('x')?;
-    Some((width.parse().ok()?, height.parse().ok()?))
+    let (width, height): (i64, i64) = (width.parse().ok()?, height.parse().ok()?);
+    if width <= 0 || height <= 0 || width.checked_mul(designllm_contracts::EMU_PER_MM).is_none() || height.checked_mul(designllm_contracts::EMU_PER_MM).is_none() { return None; }
+    Some((width, height))
 }
 
 /// The size menu of the request box (mockup `home-presets`): the frame presets in groups, each

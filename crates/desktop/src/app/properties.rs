@@ -755,6 +755,7 @@ impl DesktopApp {
                 if let Some(figure) = self.figure_document() {
                     ui.spacing_mut().item_spacing.y = 4.0;
                     self.draw_figure_details(ui, &figure);
+                    self.draw_figure_output_profile_section(ui, palette, &figure, &mut first);
                     // A selected panel's `내보내기 ›` is the panel's last row (below the data rows).
                     let panel_selected = self.selected_node.as_deref().is_some_and(|id| figure.panels.iter().any(|panel| panel.id == id));
                     if panel_selected {

@@ -14,6 +14,9 @@ impl DesktopApp {
         }
         for reply in replies {
             self.note_host_reply(reply.ticket, reply.result.as_ref().err());
+            if reply.result.is_err() && self.pending_figure_create_profile.as_ref().is_some_and(|(ticket, _, _)| *ticket == reply.ticket) {
+                self.pending_figure_create_profile.take();
+            }
             if let Some(sent) = self.job_starts.remove(&reply.ticket) {
                 self.remember_job_prompt(&sent, &reply.result);
                 self.settle_job_start(sent, &reply.result);
@@ -47,6 +50,11 @@ impl DesktopApp {
             if pending.require_active && pending.artifact_id.as_ref().is_some_and(|id| {
                 self.active.as_ref().is_none_or(|active| active.id != *id)
             }) {
+                if let (PendingAction::FigureProfile { artifact_id, profile_id, dpi }, Ok(RpcPayload::Json(_))) = (&pending.action, &reply.result) {
+                    let view = self.editor_views.entry(artifact_id.clone()).or_default();
+                    view.figure_output_profile = Some(profile_id.clone());
+                    view.figure_export_dpi = *dpi;
+                }
                 self.figure_ai_reply_dropped(&pending.action);
                 self.pdf_evidence_reply_dropped(&pending.action, reply.ticket, &reply.result);
                 // The window left the document, so the commit's selection is not applied here either.
@@ -373,7 +381,7 @@ impl DesktopApp {
                         PendingAction::Apply if method == "proposal.apply" => proposals::apply_failure_message(&error),
                         _ => user_error(&error),
                     };
-                    if matches!(action, PendingAction::LinkApply | PendingAction::Apply | PendingAction::ApplyWithSelectionIfUnchanged { .. })
+                    if matches!(action, PendingAction::LinkApply | PendingAction::Apply | PendingAction::FigureProfile { .. } | PendingAction::ApplyWithSelectionIfUnchanged { .. })
                         && self.select_after_commit_ticket.is_none_or(|ticket| ticket == reply.ticket)
                     {
                         self.select_after_commit = None;
@@ -412,7 +420,7 @@ impl DesktopApp {
                     }
                     // A reserved node refuses the edit: the callout names the node, and the status line stays clear.
                     let on_node = error.code == ErrorCode::TargetBusy;
-                    if matches!(action, PendingAction::Apply | PendingAction::TokenChange { .. } | PendingAction::ApplyWithSelectionIfUnchanged { .. }) {
+                    if matches!(action, PendingAction::Apply | PendingAction::FigureProfile { .. } | PendingAction::TokenChange { .. } | PendingAction::ApplyWithSelectionIfUnchanged { .. }) {
                         let kind = self.active.as_ref().map_or(ArtifactKind::Canvas, |item| item.kind);
                         let (line, fixes) = selection::refusal_for(&error, &friendly, kind, self.artifact.as_ref());
                         self.refusal_fixes = if on_node { Vec::new() } else { fixes };
@@ -436,7 +444,7 @@ impl DesktopApp {
                     if self.state_moved_on(&error, user_action) {
                         continue;
                     }
-                    if on_node && matches!(action, PendingAction::Apply | PendingAction::TokenChange { .. } | PendingAction::ApplyWithSelectionIfUnchanged { .. }) {
+                    if on_node && matches!(action, PendingAction::Apply | PendingAction::FigureProfile { .. } | PendingAction::TokenChange { .. } | PendingAction::ApplyWithSelectionIfUnchanged { .. }) {
                         continue;
                     }
                     if matches!(action, PendingAction::StopForEdit) {

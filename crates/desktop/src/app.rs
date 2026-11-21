@@ -44,6 +44,7 @@ mod chrome;
 mod data_sheet;
 mod dispatch;
 mod figure_tools;
+mod figure_profile;
 mod figure_math;
 mod fix_commands;
 mod home;
@@ -229,6 +230,7 @@ pub struct DesktopApp {
     recent_open: bool,
     export_open: bool,
     export_scale: u32,
+    pending_figure_create_profile: Option<(u64, Option<String>, u32)>,
     /// `page` (the current page) or `all`.
     export_scope: String,
     /// PNG only: a transparent background instead of the page colour.
@@ -382,6 +384,7 @@ pub struct DesktopApp {
     pdf_evidence_target: Option<PdfEvidenceTarget>,
     /// PDF evidence not in its figure yet, until it is retried, copied or discarded (`figure_tools`).
     held_pdf_evidence: Vec<HeldPdfEvidence>,
+    held_pdf_warnings: BTreeMap<String, String>,
     pdf_coverage: Option<pdf_coverage::PdfCoverage>,
     csv_draft: Option<CsvImportDraft>,
     page_rect: Option<Rect>,
@@ -476,6 +479,7 @@ impl DesktopApp {
             recent_open: false,
             export_open: false,
             export_scale: 1,
+            pending_figure_create_profile: None,
             export_scope: String::from("page"),
             export_transparent: false,
             export_preview: None,
@@ -587,6 +591,7 @@ impl DesktopApp {
             pdf_page: "1".into(),
             pdf_evidence_target: None,
             held_pdf_evidence: Vec::new(),
+            held_pdf_warnings: BTreeMap::new(),
             pdf_coverage: None,
             csv_draft: None,
             page_rect: None,

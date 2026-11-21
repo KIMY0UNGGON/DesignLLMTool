@@ -962,6 +962,7 @@ impl Default for PageSetup {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TextRun { pub id: Id, pub text: String, #[serde(default)] pub style: Style, #[serde(default)] pub protected: bool }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ParagraphFormat {
     pub align: String, pub space_before: i64, pub space_after: i64, pub line_spacing: i64, pub indent: i64,
     /// The paragraph starts a new page. `false` is left out of JSON, so existing documents keep their bytes and digests.
@@ -1871,6 +1872,15 @@ pub fn frame_preset(id: &str) -> Option<&'static FramePreset> { FRAME_PRESETS.it
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn paragraph_format_rejects_unknown_fields() {
+        let value = serde_json::json!({"align": "center", "space_before": 1, "space_after": 2, "line_spacing": 3, "indent": 4, "page_break_before": true, "line_spacing_percent": 120});
+        let format: ParagraphFormat = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!((format.align.as_str(), format.space_before, format.space_after, format.line_spacing, format.indent, format.page_break_before, format.line_spacing_percent), ("center", 1, 2, 3, 4, true, Some(120)));
+        let mut invalid = value;
+        invalid["unexpected"] = serde_json::json!(1);
+        assert!(serde_json::from_value::<ParagraphFormat>(invalid).is_err());
+    }
     #[test] fn unit_conversions_and_half_up_are_exact() {
         assert_eq!(pixels(EMU_PER_INCH, 300).unwrap(), 300);
         assert_eq!(pixels(EMU_PER_INCH / 2, 1).unwrap(), 1);

@@ -170,6 +170,7 @@ pub(super) enum PendingAction {
     PathAdd { artifact_id: String, d: String, view_box: String },
     Selection,
     Apply,
+    FigureProfile { artifact_id: String, profile_id: String, dpi: u32 },
     PageReorder { token: String },
     TokenChange { baseline: Option<properties::TokenChangeBaseline> },
     ApplyWithSelectionIfUnchanged { node_ids: Vec<String>, expected_selection: Selection, expected_page: u32, expected_selection_generation: u64 },

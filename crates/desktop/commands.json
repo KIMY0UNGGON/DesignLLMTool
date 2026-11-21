@@ -5208,6 +5208,38 @@
     {
       "args": {
         "properties": {
+          "profile": {
+            "enum": [
+              "single_column",
+              "one_half_column",
+              "double_column",
+              "high_res_print",
+              "presentation_16_9"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "changes.apply:set_style"
+      ],
+      "id": "figure.output_profile",
+      "intents": [
+        "design"
+      ],
+      "label": "출력 프로필 적용",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
+        "properties": {
           "review": {
             "description": "시각 검토 전체. null이면 검토를 지웁니다. 승인하면 엔진이 지금 내용을 기록합니다.",
             "oneOf": [
@@ -6149,6 +6181,11 @@
               "transparent"
             ],
             "type": "string"
+          },
+          "dpi": {
+            "maximum": 1200,
+            "minimum": 72,
+            "type": "integer"
           },
           "expected_target_hash": {
             "type": "string"

@@ -11,8 +11,15 @@ impl DesktopApp {
         match (action, payload) {
             (PendingAction::Hello, RpcPayload::Json(value)) => self.hello_answered(&value),
             (PendingAction::WorkspaceList, RpcPayload::Json(value)) => self.workspace_listed(value),
-            (PendingAction::Create | PendingAction::Open, RpcPayload::Json(value)) => self.artifact_opened(value),
-            (PendingAction::HomeCreate { prompt }, RpcPayload::Json(value)) => self.home_created(&value, prompt),
+            (PendingAction::Create, RpcPayload::Json(value)) => {
+                self.apply_created_figure_profile(ticket, &value);
+                self.artifact_opened(value);
+            }
+            (PendingAction::Open, RpcPayload::Json(value)) => self.artifact_opened(value),
+            (PendingAction::HomeCreate { prompt }, RpcPayload::Json(value)) => {
+                self.apply_created_figure_profile(ticket, &value["artifact"]);
+                self.home_created(&value, prompt);
+            }
             (PendingAction::StopForEdit, RpcPayload::Json(_)) => {}
             (PendingAction::Reservations, RpcPayload::Json(value)) => {
                 self.adopt_reservations(&value);
@@ -153,6 +160,12 @@ impl DesktopApp {
                 | PendingAction::LinkApply,
                 RpcPayload::Json(value),
             ) => self.committed(&value),
+            (PendingAction::FigureProfile { artifact_id, profile_id, dpi }, RpcPayload::Json(value)) => {
+                let view = self.editor_views.entry(artifact_id).or_default();
+                view.figure_output_profile = Some(profile_id);
+                view.figure_export_dpi = dpi;
+                self.committed(&value);
+            }
             (PendingAction::PageReorder { token }, RpcPayload::Json(value)) => {
                 if let Some(revision) = value.get("revision").and_then(Value::as_u64) {
                     self.commit_pending_page_reorder_selection(&token, revision);
@@ -193,10 +206,9 @@ impl DesktopApp {
                 self.committed(&value);
             }
             (PendingAction::FigureEvidence, RpcPayload::Json(value)) => {
-                self.pdf_evidence_committed(ticket, &value);
+                self.pdf_evidence_committed(ticket, &value, true);
                 self.figure_form = None;
                 self.pdf_path.clear();
-                self.committed_keeping_cell_draft(&value);
             }
             (PendingAction::Save { request_id, artifact_id }, RpcPayload::Json(_)) => {
                 self.save_succeeded(&request_id, &artifact_id);
@@ -311,6 +323,19 @@ impl DesktopApp {
     fn open_listed(&mut self, summary: ArtifactSummary) {
         self.call("workspace.list", json!({}), PendingAction::WorkspaceList);
         self.activate(summary);
+    }
+
+    fn apply_created_figure_profile(&mut self, ticket: u64, value: &Value) {
+        if self.pending_figure_create_profile.as_ref().is_some_and(|(pending, _, _)| *pending == ticket) {
+            let (_, profile, dpi) = self.pending_figure_create_profile.take().expect("matching ticket");
+            if let Ok(summary) = ArtifactSummary::deserialize(value) {
+                if summary.kind == ArtifactKind::Figure {
+                    let view = self.editor_views.entry(summary.id).or_default();
+                    view.figure_output_profile = profile;
+                    view.figure_export_dpi = dpi;
+                }
+            }
+        }
     }
 
     fn artifact_opened(&mut self, value: Value) {
