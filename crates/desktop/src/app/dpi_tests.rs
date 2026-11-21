@@ -12,7 +12,11 @@ use serde_json::{json, Value};
 
 use super::{
     board::{PageTexture, SETTLE},
-    test_support::{primary_button, Host, Window},
+    test_support::{preview_pixels, primary_button, screen, settle_work, Host, Window},
+};
+use crate::{
+    board,
+    rpc::{RpcPayload, RpcReply, Work},
 };
 
 /// The display scales under test.
@@ -389,8 +393,7 @@ fn dpi_dragging_a_canvas_node_commits_the_pointer_distance_in_page_emu_at_each_s
 }
 
 /// Draws the board until its zoom has settled: the zoom change is made older than `SETTLE`, so the settled render is asked for
-/// and answered here. A gesture after it sees no render arrive (a new page transform ends a memo gesture, `observe_gesture_transform`),
-/// however long the test's frames take on the wall clock.
+/// and answered here. A gesture after it sees no zoom snap or new render, however long the test's frames take on the wall clock.
 fn settled_draw(window: &mut Window, host: &mut Host, ppp: f32) {
     window.draw(host, ppp);
     let aged = std::time::Instant::now().checked_sub(SETTLE * 2).expect("the clock is older than the settle time");
@@ -429,6 +432,254 @@ fn dpi_dragging_a_board_memo_moves_it_by_the_pointer_distance_at_each_scale() {
         assert!(
             (dy - 23.0 * per_y).abs() <= per_y,
             "at {ppp}: the memo moved {dy} EMU in y; the pointer moved 23 physical px, {} EMU",
+            23.0 * per_y,
+        );
+        assert_eq!((stored.width, stored.height), (bounds.width, bounds.height), "at {ppp}: the size is kept");
+    }
+}
+
+/// Makes the board's zoom fresh (not yet settled) for one frame, so no settled render is asked for in it.
+fn unsettled_frame(window: &mut Window, host: &mut Host, ppp: f32, events: Vec<Event>) {
+    window.app.view().zoom_changed = std::time::Instant::now();
+    window.frame(host, ppp, events);
+}
+
+#[test]
+fn dpi_a_settled_render_during_a_memo_drag_keeps_the_drag_and_moves_the_memo_at_each_scale() {
+    for ppp in SCALES {
+        let mut host = Host::start();
+        let bounds = EmuRect { x: 1_000_000, y: 2_000_000, width: 3_000_000, height: 900_000 };
+        let canvas = canvas_with_board_memo(&mut host, bounds);
+        let mut window = Window::open_with_previews(&mut host, &canvas);
+        settled_draw(&mut window, &mut host, ppp);
+
+        // A zoom made just now (1.1 is not a whole dpi at these scales, so its settle also snaps the zoom), and a memo drag
+        // started while the zoom is still unsettled.
+        let board_rect = window.app.board_rect.expect("the board is laid out");
+        window.app.zoom_about(board_rect, board_rect.center(), 1.1);
+        let zoomed = window.app.view_ref().zoom;
+        let snapped = board::snapped_zoom(zoomed, ppp);
+        assert_ne!(snapped, zoomed, "at {ppp}: the settle of this zoom snaps it");
+        unsettled_frame(&mut window, &mut host, ppp, Vec::new());
+        unsettled_frame(&mut window, &mut host, ppp, Vec::new());
+        let page_rect = window.app.page_rect.expect("page 0 is drawn");
+        let grab = super::page_to_screen(bounds, page(&window).page.size, page_rect).center();
+        let moved = Vec2::new(37.0 / ppp, 23.0 / ppp);
+        unsettled_frame(&mut window, &mut host, ppp, vec![Event::PointerMoved(grab), primary_button(grab, true)]);
+        unsettled_frame(&mut window, &mut host, ppp, vec![Event::PointerMoved(grab + moved * 0.25)]);
+        unsettled_frame(&mut window, &mut host, ppp, vec![Event::PointerMoved(grab + moved * 0.5)]);
+
+        // The settle comes due while the drag goes on: the zoom is aged, and the frames ask for the settled render.
+        window.app.view().zoom_changed = std::time::Instant::now().checked_sub(SETTLE * 2).expect("the clock is older than the settle time");
+        window.frame(&mut host, ppp, vec![Event::PointerMoved(grab + moved * 0.75)]);
+        window.frame(&mut host, ppp, vec![Event::PointerMoved(grab + moved)]);
+        let old_dpi = page(&window).dpi;
+        assert_eq!(window.app.view_ref().zoom, zoomed, "at {ppp}: the drag holds the settle back");
+        window.frame(&mut host, ppp, vec![primary_button(grab + moved, false)]);
+        window.frame(&mut host, ppp, Vec::new());
+
+        // The settle the drag held back happens once it ends: the zoom snaps, and the page is rendered again at its dpi.
+        assert_eq!(window.app.view_ref().zoom, snapped, "at {ppp}: the settle snaps the zoom after the drag");
+        let new_dpi = board::dpi_for(snapped, ppp);
+        assert_ne!(new_dpi, old_dpi, "at {ppp}: the settled zoom has another dpi");
+        let (asked, _) = last_call(&window, "render.get");
+        assert_eq!(asked["profile"]["dpi"], new_dpi, "at {ppp}: the settle asks for the page at the settled dpi");
+        assert_eq!(page(&window).dpi, new_dpi, "at {ppp}: the page texture is the settled render");
+
+        let stored = stored_memo_bounds(&mut host, &canvas);
+        let (per_x, per_y) = emu_per_physical_px(&window, ppp);
+        let (dx, dy) = ((stored.x - bounds.x) as f64, (stored.y - bounds.y) as f64);
+        assert!(
+            (dx - 37.0 * per_x).abs() <= per_x,
+            "at {ppp}: the memo moved {dx} EMU in x after a settle during the drag; the pointer moved 37 physical px, {} EMU",
+            37.0 * per_x,
+        );
+        assert!(
+            (dy - 23.0 * per_y).abs() <= per_y,
+            "at {ppp}: the memo moved {dy} EMU in y after a settle during the drag; the pointer moved 23 physical px, {} EMU",
+            23.0 * per_y,
+        );
+        assert_eq!((stored.width, stored.height), (bounds.width, bounds.height), "at {ppp}: the size is kept");
+    }
+}
+
+/// A memo drag started (and moved half way) while a fresh zoom is unsettled. Returns the grab point, the pointer distance and
+/// the zoom the settle snaps to.
+fn memo_drag_after_a_zoom(window: &mut Window, host: &mut Host, ppp: f32, bounds: EmuRect) -> (Pos2, Vec2, f32) {
+    settled_draw(window, host, ppp);
+    let board_rect = window.app.board_rect.expect("the board is laid out");
+    window.app.zoom_about(board_rect, board_rect.center(), 1.1);
+    let snapped = board::snapped_zoom(window.app.view_ref().zoom, ppp);
+    unsettled_frame(window, host, ppp, Vec::new());
+    unsettled_frame(window, host, ppp, Vec::new());
+    let page_rect = window.app.page_rect.expect("page 0 is drawn");
+    let grab = super::page_to_screen(bounds, page(window).page.size, page_rect).center();
+    let moved = Vec2::new(37.0 / ppp, 23.0 / ppp);
+    unsettled_frame(window, host, ppp, vec![Event::PointerMoved(grab), primary_button(grab, true)]);
+    unsettled_frame(window, host, ppp, vec![Event::PointerMoved(grab + moved * 0.5)]);
+    assert!(window.app.board_memo_gesture.is_some(), "at {ppp}: the memo drag has started");
+    (grab, moved, snapped)
+}
+
+/// After a memo drag whose release did not reach it: the drag is gone with its message, the memo is where it was, and the
+/// settle the drag held back has happened (the zoom is snapped, the page is rendered at the settled dpi).
+fn assert_lost_drag_ended_and_settled(window: &Window, host: &mut Host, canvas: &str, ppp: f32, bounds: EmuRect, snapped: f32) {
+    assert!(window.app.board_memo_gesture.is_none(), "at {ppp}: the drag is ended");
+    assert!(
+        window.message().is_some_and(|message| message.contains("포인터 입력이 끊겨")),
+        "at {ppp}: the window says the drag was cancelled: {:?}",
+        window.message(),
+    );
+    assert_eq!(stored_memo_bounds(host, canvas), bounds, "at {ppp}: the memo keeps its place");
+    assert_eq!(window.app.view_ref().zoom, snapped, "at {ppp}: the zoom settles");
+    assert_eq!(page(window).dpi, board::dpi_for(snapped, ppp), "at {ppp}: the page is rendered at the settled dpi");
+}
+
+#[test]
+fn dpi_a_memo_drag_left_with_the_button_up_ends_and_lets_the_zoom_settle_at_each_scale() {
+    for ppp in SCALES {
+        let mut host = Host::start();
+        let bounds = EmuRect { x: 1_000_000, y: 2_000_000, width: 3_000_000, height: 900_000 };
+        let canvas = canvas_with_board_memo(&mut host, bounds);
+        let mut window = Window::open_with_previews(&mut host, &canvas);
+        let (grab, moved, snapped) = memo_drag_after_a_zoom(&mut window, &mut host, ppp, bounds);
+
+        // The release reaches egui but not the drag (it is taken out for that frame): the drag is left with the button up.
+        let gesture = window.app.board_memo_gesture.take();
+        unsettled_frame(&mut window, &mut host, ppp, vec![primary_button(grab + moved, false)]);
+        window.app.board_memo_gesture = gesture;
+
+        window.app.view().zoom_changed = std::time::Instant::now().checked_sub(SETTLE * 2).expect("the clock is older than the settle time");
+        window.frame(&mut host, ppp, Vec::new());
+        assert_lost_drag_ended_and_settled(&window, &mut host, &canvas, ppp, bounds, snapped);
+    }
+}
+
+#[test]
+fn dpi_a_memo_drag_ends_when_the_window_loses_focus_and_lets_the_zoom_settle_at_each_scale() {
+    for ppp in SCALES {
+        let mut host = Host::start();
+        let bounds = EmuRect { x: 1_000_000, y: 2_000_000, width: 3_000_000, height: 900_000 };
+        let canvas = canvas_with_board_memo(&mut host, bounds);
+        let mut window = Window::open_with_previews(&mut host, &canvas);
+        let (grab, moved, snapped) = memo_drag_after_a_zoom(&mut window, &mut host, ppp, bounds);
+
+        // The window loses focus with the button held (egui keeps it down), and the zoom's settle comes due.
+        window.app.view().zoom_changed = std::time::Instant::now().checked_sub(SETTLE * 2).expect("the clock is older than the settle time");
+        window.frame(&mut host, ppp, vec![Event::WindowFocused(false), Event::PointerMoved(grab + moved)]);
+        assert_lost_drag_ended_and_settled(&window, &mut host, &canvas, ppp, bounds, snapped);
+
+        // The release that comes later commits nothing.
+        window.frame(&mut host, ppp, vec![Event::WindowFocused(true), primary_button(grab + moved, false)]);
+        window.frame(&mut host, ppp, Vec::new());
+        assert_eq!(stored_memo_bounds(&mut host, &canvas), bounds, "at {ppp}: a late release does not move the memo");
+    }
+}
+
+/// A whole-page `render.get` the host has not answered yet: its ticket, method and params.
+type HeldRender = (u64, String, Value);
+
+/// One frame as `Window::frame` draws it, at the frame time `clock` moved on by 0.05 s, whose whole-page renders
+/// (`render.get` without a region) the host does not answer: they go to `held`, for `answer_held` to answer later, as a slow
+/// render does. The host answers everything else at once.
+fn frame_holding_page_renders(window: &mut Window, host: &mut Host, ppp: f32, clock: &mut f64, events: Vec<Event>, held: &mut Vec<HeldRender>) {
+    *clock += 0.05;
+    let mut input = screen(ppp, 1280.0, 800.0);
+    input.time = Some(*clock);
+    input.events = events;
+    eframe::App::raw_input_hook(&mut window.app, &window.ctx, &mut input);
+    let app = &mut window.app;
+    let _ = window.ctx.run(input, |ctx| {
+        app.draw_frame(ctx);
+        app.observe_board_memo_gesture(ctx);
+        app.finish_board_memo_gesture_if_released(ctx);
+    });
+    let (replies, calls) = (&window.replies, &mut window.calls);
+    settle_work(&window.work, &mut window.app, &window.ctx, |item| match item {
+        Work::Call { ticket, method, params, .. } if method == "render.get" && params["region"].is_null() => {
+            held.push((ticket, method, params));
+        }
+        Work::Call { ticket, method, params, .. } => {
+            let answer = host.call(&method, params.clone());
+            calls.push((method, params, answer.as_ref().map_or(Value::Null, Value::clone)));
+            replies.send(RpcReply { ticket, result: answer.map(RpcPayload::Json) }).expect("the window listens");
+        }
+        Work::ReadAsset { ticket, asset } => {
+            replies.send(RpcReply { ticket, result: Ok(preview_pixels(host, &asset)) }).expect("the window listens");
+        }
+        _ => {}
+    });
+}
+
+/// Answers the renders `frame_holding_page_renders` held, and the preview reads that follow them.
+fn answer_held(window: &mut Window, host: &mut Host, held: &mut Vec<HeldRender>) {
+    for (ticket, method, params) in held.drain(..) {
+        let answer = host.call(&method, params.clone());
+        window.calls.push((method, params, answer.as_ref().map_or(Value::Null, Value::clone)));
+        window.replies.send(RpcReply { ticket, result: answer.map(RpcPayload::Json) }).expect("the window listens");
+    }
+    window.app.process_replies(&window.ctx);
+    window.settle(host);
+}
+
+#[test]
+fn dpi_a_sharp_render_asked_before_a_memo_drag_and_answered_during_it_keeps_the_drag_at_each_scale() {
+    for ppp in SCALES {
+        let mut host = Host::start();
+        let bounds = EmuRect { x: 1_000_000, y: 2_000_000, width: 3_000_000, height: 900_000 };
+        let canvas = canvas_with_board_memo(&mut host, bounds);
+        let mut window = Window::open_with_previews(&mut host, &canvas);
+        settled_draw(&mut window, &mut host, ppp);
+        let (mut clock, mut held) = (1_000.0, Vec::new());
+
+        // A zoom whose settle has come due: the settle frame snaps the zoom and asks for the page at the new dpi, and that
+        // render is slow (held).
+        let board_rect = window.app.board_rect.expect("the board is laid out");
+        window.app.zoom_about(board_rect, board_rect.center(), 1.1);
+        let zoomed = window.app.view_ref().zoom;
+        let old_dpi = page(&window).dpi;
+        window.app.view().zoom_changed = std::time::Instant::now().checked_sub(SETTLE * 2).expect("the clock is older than the settle time");
+        frame_holding_page_renders(&mut window, &mut host, ppp, &mut clock, Vec::new(), &mut held);
+        let snapped = board::snapped_zoom(zoomed, ppp);
+        assert_eq!(window.app.view_ref().zoom, snapped, "at {ppp}: the settle snaps the zoom");
+        let [(_, _, asked)] = held.as_slice() else { panic!("at {ppp}: the settle asks for one page render, held {held:?}") };
+        let new_dpi = asked["profile"]["dpi"].as_u64().expect("a dpi") as u32;
+        assert_eq!(new_dpi, board::dpi_for(snapped, ppp), "at {ppp}: the render is at the settled zoom's dpi");
+        assert_ne!(new_dpi, old_dpi, "at {ppp}: the settled render changes the page's dpi");
+
+        // The memo drag starts before the render arrives; the render arrives in the middle of it.
+        let page_rect = window.app.page_rect.expect("page 0 is drawn");
+        let grab = super::page_to_screen(bounds, page(&window).page.size, page_rect).center();
+        let moved = Vec2::new(37.0 / ppp, 23.0 / ppp);
+        frame_holding_page_renders(&mut window, &mut host, ppp, &mut clock, vec![Event::PointerMoved(grab), primary_button(grab, true)], &mut held);
+        frame_holding_page_renders(&mut window, &mut host, ppp, &mut clock, vec![Event::PointerMoved(grab + moved * 0.25)], &mut held);
+        frame_holding_page_renders(&mut window, &mut host, ppp, &mut clock, vec![Event::PointerMoved(grab + moved * 0.5)], &mut held);
+        assert!(window.app.board_memo_gesture.is_some(), "at {ppp}: the memo drag has started");
+        answer_held(&mut window, &mut host, &mut held);
+        assert_eq!(page(&window).dpi, new_dpi, "at {ppp}: the page texture is the sharp render now");
+        frame_holding_page_renders(&mut window, &mut host, ppp, &mut clock, vec![Event::PointerMoved(grab + moved * 0.75)], &mut held);
+        frame_holding_page_renders(&mut window, &mut host, ppp, &mut clock, vec![Event::PointerMoved(grab + moved)], &mut held);
+        assert!(held.is_empty(), "at {ppp}: no other page render is asked for during the drag, held {held:?}");
+        frame_holding_page_renders(&mut window, &mut host, ppp, &mut clock, vec![primary_button(grab + moved, false)], &mut held);
+        frame_holding_page_renders(&mut window, &mut host, ppp, &mut clock, Vec::new(), &mut held);
+        answer_held(&mut window, &mut host, &mut held);
+
+        assert!(
+            window.message().is_none_or(|message| !message.contains("취소")),
+            "at {ppp}: the drag is not cancelled: {:?}",
+            window.message(),
+        );
+        let stored = stored_memo_bounds(&mut host, &canvas);
+        let (per_x, per_y) = emu_per_physical_px(&window, ppp);
+        let (dx, dy) = ((stored.x - bounds.x) as f64, (stored.y - bounds.y) as f64);
+        assert!(
+            (dx - 37.0 * per_x).abs() <= per_x,
+            "at {ppp}: the memo moved {dx} EMU in x with a render answered during the drag; the pointer moved 37 physical px, {} EMU",
+            37.0 * per_x,
+        );
+        assert!(
+            (dy - 23.0 * per_y).abs() <= per_y,
+            "at {ppp}: the memo moved {dy} EMU in y with a render answered during the drag; the pointer moved 23 physical px, {} EMU",
             23.0 * per_y,
         );
         assert_eq!((stored.width, stored.height), (bounds.width, bounds.height), "at {ppp}: the size is kept");

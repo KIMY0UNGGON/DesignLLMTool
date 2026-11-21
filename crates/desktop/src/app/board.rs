@@ -472,7 +472,12 @@ impl DesktopApp {
         // resolution is a whole dpi, so the page texture maps 1:1 to physical pixels and the first render is already
         // the final one. The board origin stays where it is.
         let ppp = ctx.pixels_per_point();
-        if fitting || self.view_ref().zoom_changed.elapsed() >= SETTLE {
+        // A memo drag keeps the zoom it started with: the settle (the zoom snap, the sharp render and the region) waits for the
+        // drag's end, since the snap moves the page under the drag. A drag whose release will not come is ended first, so the
+        // settle is not held back for good.
+        self.drop_lost_board_memo_gesture(ctx);
+        let settle_due = self.view_ref().zoom_changed.elapsed() >= SETTLE && self.board_memo_gesture.is_none();
+        if fitting || settle_due {
             let view = self.view();
             view.zoom = board::snapped_zoom(view.zoom, ppp);
         }
@@ -482,7 +487,7 @@ impl DesktopApp {
         let slots = board::arrange(kind, &self.page_sizes(), view.zoom);
         let wanted_dpi = board::dpi_for(view.zoom, ppp);
         self.board_dpi = wanted_dpi;
-        let settled = view.zoom_changed.elapsed() >= SETTLE;
+        let settled = settle_due;
         // While the board is being panned, no new region render is asked for (each quarter-page step of the pan would
         // ask for one) and the page transforms are not sent to the core (a hit test sends its own, `hit_test_page`).
         // A moving frame asks for the next one, so the first still frame after the pan asks for the sharp region once

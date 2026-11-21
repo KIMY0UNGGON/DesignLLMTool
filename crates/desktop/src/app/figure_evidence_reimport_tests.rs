@@ -1030,3 +1030,266 @@ fn a_record_on_the_last_page_number_is_copied_without_overflow() {
     };
     assert_eq!(held_pdf_copy_text(&held), format!("A activates B [paper.pdf {}쪽 sha256:{}]", u32::MAX, "a".repeat(64)));
 }
+
+/// Turns the window into a smoke window that reports into a fresh folder, before any reply comes, as `run_smoke` does: the
+/// window keeps the reader's codes only while it is one.
+fn smoke_report_dir(window: &mut Window, name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("designllm-pdf-report-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a test folder");
+    window.app.smoke_output = Some(dir.join("smoke.png"));
+    dir
+}
+
+/// The PDF report the smoke window writes into `dir`, which is removed afterwards.
+fn pdf_report(window: &mut Window, dir: &Path) -> Value {
+    window.app.write_pdf_report("paper.pdf");
+    let text = std::fs::read_to_string(dir.join("smoke.pdf.json")).expect("the report is written");
+    let _ = std::fs::remove_dir_all(dir);
+    serde_json::from_str(&text).expect("the report is JSON")
+}
+
+fn report_codes(report: &Value) -> Vec<&str> {
+    report["codes"].as_array().expect("codes").iter().filter_map(Value::as_str).collect()
+}
+
+/// A call the host refuses with a sentence that names no code, which takes the window's message.
+fn refused_create(window: &mut Window) {
+    window.app.call("artifact.create", json!({ "kind": "figure" }), PendingAction::Create).expect("the call is sent");
+    let requests = window.sent();
+    window.refuse(&requests, "artifact.create", DltError::new(ErrorCode::InvalidArgument, "the create was refused"));
+}
+
+/// The core's refusal of a request whose page the reader did not read safely: the page and the reader's diagnostic.
+fn page_refusal(code: &str) -> DltError {
+    let mut refusal = DltError::new(ErrorCode::UnsupportedOperation, "the PDF could not be read");
+    refusal.affected_ids = vec![PAGE.to_string()];
+    refusal.diagnostics = vec![Diagnostic {
+        code: code.into(),
+        message: "the reader stopped".into(),
+        node_id: None,
+        blocking: true,
+        params: Default::default(),
+    }];
+    refusal
+}
+
+/// The smoke report after a refused call, then the PDF request `method` refused with `refusal`, then a later refused call
+/// that takes the window's message.
+fn report_after_a_pdf_refusal_between_errors(name: &str, method: &str, params: Value, action: PendingAction, refusal: DltError) -> Value {
+    let mut window = Window::open_figure(Vec::new());
+    let dir = smoke_report_dir(&mut window, name);
+    refused_create(&mut window);
+    let pdf = window.app.call(method, params, action).expect("the PDF request is sent");
+    window.app.pdf_evidence_target = Some(pdf_target_awaiting(pdf));
+    let requests = window.sent();
+    window.refuse(&requests, method, refusal);
+    refused_create(&mut window);
+    assert!(
+        window.message().is_some_and(|(_, text)| !text.contains("PDF_")),
+        "the later error's message names no reader code: {:?}",
+        window.message()
+    );
+    pdf_report(&mut window, &dir)
+}
+
+#[test]
+fn the_pdf_report_keeps_the_codes_of_a_refused_page_read_between_other_errors() {
+    let report = report_after_a_pdf_refusal_between_errors(
+        "refused-read",
+        "source.extract_pdf",
+        json!({ "pages": [PAGE] }),
+        PendingAction::PdfEvidenceImport,
+        page_refusal("PDF_REQUEST_BUDGET"),
+    );
+    assert!(report["first_refusal"].as_str().is_some_and(|text| text.starts_with("artifact.create: ")), "the first refusal is the earlier error: {report}");
+    assert_eq!(report_codes(&report), vec!["PDF_REQUEST_BUDGET"], "the report names the reader's code: {report}");
+}
+
+#[test]
+fn the_pdf_report_keeps_the_codes_of_a_refused_pdf_import_between_other_errors() {
+    let report = report_after_a_pdf_refusal_between_errors(
+        "refused-import",
+        "asset.import",
+        json!({ "path": "paper.pdf" }),
+        PendingAction::PdfAssetImport { page_index: PAGE },
+        page_refusal("PDF_STACK_LIMIT"),
+    );
+    assert_eq!(report_codes(&report), vec!["PDF_STACK_LIMIT"], "the report names the reader's code: {report}");
+}
+
+#[test]
+fn the_pdf_report_keeps_the_reader_codes_when_a_later_error_takes_the_window_message() {
+    // An earlier refused call sets `smoke_failure`, then the reader's unsafe page is shown, then a later call fails and
+    // replaces the window's message. The report must still name the reader's code.
+    let mut window = Window::open_figure(Vec::new());
+    let dir = smoke_report_dir(&mut window, "unsafe-read");
+    refused_create(&mut window);
+    let pdf = window.app.call("source.extract_pdf", json!({ "pages": [PAGE] }), PendingAction::PdfEvidenceImport).expect("the read is sent");
+    window.app.pdf_evidence_target = Some(pdf_target_awaiting(pdf));
+    let requests = window.sent();
+    let reply = reply_with_report(PAGE, false, 0, json!([{ "code": "PDF_MEMORY_LIMIT", "message": "the reader ran out of memory" }]), Vec::new());
+    window.answer(&requests, "source.extract_pdf", reply);
+    assert!(window.message().is_some_and(|(_, text)| text.contains("PDF_MEMORY_LIMIT")), "the reader's message is shown first");
+    refused_create(&mut window);
+
+    let report = pdf_report(&mut window, &dir);
+    assert_eq!(report_codes(&report), vec!["PDF_MEMORY_LIMIT"], "the report names the reader's code: {report}");
+}
+
+#[test]
+fn the_pdf_report_names_the_reader_code_once_when_the_reading_is_the_first_error() {
+    let mut window = Window::open_figure(Vec::new());
+    let dir = smoke_report_dir(&mut window, "first");
+    let pdf = window.app.call("source.extract_pdf", json!({ "pages": [PAGE] }), PendingAction::PdfEvidenceImport).expect("the read is sent");
+    window.app.pdf_evidence_target = Some(pdf_target_awaiting(pdf));
+    let requests = window.sent();
+    window.answer(
+        &requests,
+        "source.extract_pdf",
+        reply_with_report(PAGE, false, 0, json!([{ "code": "PDF_MEMORY_LIMIT", "message": "the reader ran out of memory" }]), Vec::new()),
+    );
+    // Both the window's message and the kept codes name it.
+    assert!(window.message().is_some_and(|(_, text)| text.contains("PDF_MEMORY_LIMIT")), "the reader's message is shown");
+    assert_eq!(window.app.smoke_pdf_codes, vec!["PDF_MEMORY_LIMIT".to_owned()], "the smoke window keeps the reader's code");
+    assert_eq!(report_codes(&pdf_report(&mut window, &dir)), vec!["PDF_MEMORY_LIMIT"], "the reader's code is named once");
+}
+
+#[test]
+fn a_successful_page_read_shows_and_reports_nonblocking_diagnostics() {
+    let mut window = Window::open_figure(Vec::new());
+    let dir = smoke_report_dir(&mut window, "read-diagnostic");
+    let record = read_record("pdf-p11-l000", PAGE, "A activates B", "unreviewed");
+    window.read_page(PAGE, reply_with_report(
+        PAGE, true, 1,
+        json!([{ "code": "PDF_TYPE1_ENCODING_UNREADABLE", "message": "encoding unavailable" }]),
+        vec![record],
+    ));
+    let requests = window.sent();
+    assert_eq!(requests.iter().filter(|request| request.1 == "changes.apply").count(), 1);
+    window.answer(&requests, "changes.apply", json!({ "revision": REVISION + 1, "changed_ids": [] }));
+    assert!(window.message().is_some_and(|(severity, text)| severity == Severity::Warning
+        && text.contains("일부 내장 글꼴 인코딩") && !text.contains("PDF_TYPE1_ENCODING_UNREADABLE") && !text.contains("encoding unavailable")));
+    assert_eq!(window.app.smoke_pdf_codes, vec!["PDF_TYPE1_ENCODING_UNREADABLE".to_owned()]);
+    assert_eq!(report_codes(&pdf_report(&mut window, &dir)), vec!["PDF_TYPE1_ENCODING_UNREADABLE"]);
+}
+
+#[test]
+fn diagnostic_messages_are_not_collected_as_codes() {
+    for (name, read, count) in [("fake-read", true, 1), ("fake-empty", true, 0), ("fake-unsafe", false, 0)] {
+        let mut window = Window::open_figure(Vec::new());
+        let dir = smoke_report_dir(&mut window, name);
+        let records = if count == 1 { vec![read_record("pdf-p11-l000", PAGE, "A activates B", "unreviewed")] } else { Vec::new() };
+        window.read_page(PAGE, reply_with_report(PAGE, read, count,
+            json!([{ "code": "PDF_TYPE1_ENCODING_UNREADABLE", "message": "see PDF_FAKE_IN_MSG" }]), records));
+        assert_eq!(window.app.smoke_pdf_codes, vec!["PDF_TYPE1_ENCODING_UNREADABLE".to_owned()]);
+        assert_eq!(report_codes(&pdf_report(&mut window, &dir)), vec!["PDF_TYPE1_ENCODING_UNREADABLE"]);
+    }
+}
+
+#[test]
+fn warning_is_combined_with_an_unchanged_or_held_read() {
+    for held_for_edit in [false, true] {
+        let record = read_record("pdf-p11-l000", PAGE, "A activates B", "unreviewed");
+        let mut window = Window::open_figure(if held_for_edit { Vec::new() } else { vec![record.clone()] });
+        if held_for_edit {
+            window.app.dataset_edit = Some(DatasetCellEdit {
+                dataset_id: "dataset-1".into(), version_hash: "v1".into(), row_id: "row-1".into(),
+                column_id: "column-1".into(), original: "0.10".into(), draft: "0.25".into(),
+            });
+        }
+        window.read_page(PAGE, reply_with_report(PAGE, true, 1,
+            json!([{ "code": "PDF_XOBJECT_MISSING", "message": "missing" }]), vec![record]));
+        assert!(window.sent().iter().all(|request| request.1 != "changes.apply"));
+        let (_, text) = window.message().expect("the result is visible");
+        assert!(text.contains("일부 누락된 PDF 요소"));
+        assert!(!text.contains("PDF_XOBJECT_MISSING") && !text.contains("missing"));
+    }
+}
+
+#[test]
+fn refusal_message_is_not_collected_as_a_code() {
+    let mut window = Window::open_figure(Vec::new());
+    let dir = smoke_report_dir(&mut window, "fake-refusal");
+    let ticket = window.app.call("source.extract_pdf", json!({ "pages": [PAGE] }), PendingAction::PdfEvidenceImport).expect("the read is sent");
+    window.app.pdf_evidence_target = Some(pdf_target_awaiting(ticket));
+    let requests = window.sent();
+    let mut refusal = page_refusal("PDF_MEMORY_LIMIT");
+    refusal.diagnostics[0].message = "see PDF_FAKE_IN_MSG".into();
+    window.refuse(&requests, "source.extract_pdf", refusal);
+    assert_eq!(window.app.smoke_pdf_codes, vec!["PDF_MEMORY_LIMIT".to_owned()]);
+    assert_eq!(report_codes(&pdf_report(&mut window, &dir)), vec!["PDF_MEMORY_LIMIT"]);
+}
+
+#[test]
+fn a_successful_page_read_without_diagnostics_adds_no_warning_or_codes() {
+    let mut window = Window::open_figure(Vec::new());
+    let dir = smoke_report_dir(&mut window, "read-no-diagnostic");
+    let record = read_record("pdf-p11-l000", PAGE, "A activates B", "unreviewed");
+    window.read_page(PAGE, reply_with_report(PAGE, true, 1, json!([]), vec![record]));
+    assert_eq!(window.sent().iter().filter(|request| request.1 == "changes.apply").count(), 1);
+    assert!(window.message().is_none());
+    assert!(window.app.smoke_pdf_codes.is_empty());
+    assert!(report_codes(&pdf_report(&mut window, &dir)).is_empty());
+}
+
+#[test]
+fn a_diagnostic_on_a_conflicting_read_keeps_the_error_visible() {
+    let held = read_record("pdf-p11-l000", PAGE, "A activates B", "reviewed");
+    let read = read_record("pdf-p11-l000", PAGE, "A activates D", "unreviewed");
+    let mut window = Window::open_figure(vec![held]);
+    let dir = smoke_report_dir(&mut window, "read-conflict-diagnostic");
+    window.read_page(PAGE, reply_with_report(
+        PAGE, true, 1,
+        json!([{ "code": "PDF_TYPE1_ENCODING_UNREADABLE", "message": "encoding unavailable" }]),
+        vec![read],
+    ));
+    assert!(window.sent().iter().all(|request| request.1 != "changes.apply"));
+    let (severity, text) = window.message().expect("the conflict is visible");
+    assert_eq!(severity, Severity::Error);
+    assert!(text.contains(conflict_message(1).as_str()));
+    assert!(text.contains("일부 내장 글꼴 인코딩"));
+    assert!(!text.contains("PDF_TYPE1_ENCODING_UNREADABLE") && !text.contains("encoding unavailable"));
+    assert_eq!(report_codes(&pdf_report(&mut window, &dir)), vec!["PDF_TYPE1_ENCODING_UNREADABLE"]);
+}
+
+#[test]
+fn an_unknown_nonblocking_diagnostic_uses_a_generic_korean_warning() {
+    let mut window = Window::open_figure(Vec::new());
+    window.read_page(PAGE, reply_with_report(PAGE, true, 0,
+        json!([{ "code": "PDF_UNKNOWN_NOTE", "message": "private English text" }]), Vec::new()));
+    let (_, text) = window.message().expect("the empty page is reported");
+    assert!(text.contains("PDF 읽기 중 확인이 필요한 항목"));
+    assert!(!text.contains("PDF_UNKNOWN_NOTE") && !text.contains("private English text"));
+}
+
+#[test]
+fn an_empty_page_read_shows_and_reports_nonblocking_diagnostics() {
+    let mut window = Window::open_figure(Vec::new());
+    let dir = smoke_report_dir(&mut window, "empty-read-diagnostic");
+    window.read_page(PAGE, reply_with_report(
+        PAGE, true, 0,
+        json!([{ "code": "PDF_LINE_GAP_AMBIGUOUS", "message": "line gap unclear" }]),
+        Vec::new(),
+    ));
+    assert!(window.sent().iter().all(|request| request.1 != "changes.apply"));
+    let (severity, text) = window.message().expect("the empty page is reported");
+    assert_eq!(severity, Severity::Error);
+    assert!(text.contains("12쪽에는 글자가 없어"));
+    assert!(text.contains("일부 줄 간격이 애매해"));
+    assert!(!text.contains("PDF_LINE_GAP_AMBIGUOUS") && !text.contains("line gap unclear"));
+    assert_eq!(window.app.smoke_pdf_codes, vec!["PDF_LINE_GAP_AMBIGUOUS".to_owned()]);
+    assert_eq!(report_codes(&pdf_report(&mut window, &dir)), vec!["PDF_LINE_GAP_AMBIGUOUS"]);
+}
+
+#[test]
+fn the_pdf_report_has_no_codes_when_the_reader_gives_none() {
+    let mut window = Window::open_figure(Vec::new());
+    let dir = smoke_report_dir(&mut window, "none");
+    let pdf = window.app.call("source.extract_pdf", json!({ "pages": [PAGE] }), PendingAction::PdfEvidenceImport).expect("the read is sent");
+    window.app.pdf_evidence_target = Some(pdf_target_awaiting(pdf));
+    let requests = window.sent();
+    window.answer(&requests, "source.extract_pdf", reply_with_report(PAGE, false, 0, json!([]), Vec::new()));
+    assert!(window.app.smoke_pdf_codes.is_empty(), "a reading without diagnostics keeps no code");
+    assert!(report_codes(&pdf_report(&mut window, &dir)).is_empty(), "a reading without diagnostics adds no code");
+}

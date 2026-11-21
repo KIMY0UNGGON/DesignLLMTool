@@ -362,6 +362,12 @@ fn success_text(code: &str, params: &BTreeMap<String, Value>) -> String {
         "PDF_FORM_CLIPPED_EXCLUDED" => format!("{n}glyph(s) outside a form XObject BBox were not used as evidence"),
         "PDF_OUTSIDE_CROP_EXCLUDED" => format!("{n}glyph(s) outside the CropBox were not used as evidence"),
         "PDF_WIDTH_UNKNOWN" => format!("{n}font(s) on this page have no widths; their glyph advances are 0"),
+        "PDF_TEXT_FROM_ENCODING" => {
+            format!("{n}font(s) on this page read some text from their encoding, because ToUnicode has no entry for it")
+        }
+        "PDF_TYPE1_ENCODING_UNREADABLE" => format!(
+            "{n}embedded Type 1 font(s) on this page have a built-in encoding that is not read; some of their text is read with the standard encoding instead"
+        ),
         "PDF_LINE_GAP_AMBIGUOUS" => {
             format!("{n}gap(s) of 0.6 to 1.5 font sizes were joined; a column gap of that width is not told apart from a word space")
         }

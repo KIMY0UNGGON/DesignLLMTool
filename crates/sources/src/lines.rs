@@ -15,6 +15,12 @@
 //!
 //! Counted. A joined gap wider than 0.6 font size is counted: at that width a column gap and a word space are not told apart.
 //!
+//! Drawn again. A bold imitation draws text twice at the same place. Two glyphs of one line with the same text, origin and font
+//! size are read once, and the glyph kept has the union of the two cells (the fonts may differ). A line with the same text and box
+//! as the line just before it is read once and keeps the first line's number; the number of the other is not used. The same
+//! place is within `SAME_PLACE_FS` font size, so a position reached by another sum still matches. Limit: a second drawing
+//! shifted by more than that, or one that repeats only part of a line, is read twice.
+//!
 //! Limit. Two columns are cut only by a gap wider than 1.5 font sizes. Glyphs placed in the column gap, so that every gap
 //! between neighbours is 1.5 font sizes or less, join the two columns into one line. Gaps of 0.6 font size or less are not
 //! counted, so such a mix can come without a diagnostic. It cannot be told apart: a letter one space from each column sits
@@ -35,6 +41,8 @@ const JOIN_MAX_GAP_FS: f64 = 1.5;
 const AMBIGUOUS_GAP_FS: f64 = 0.6;
 /// A gap wider than this many font sizes, measured with the glyph after it, gets a space in the text.
 const SPACE_GAP_FS: f64 = 0.2;
+/// Two positions, sizes or boxes within this many font sizes of each other are the same place.
+const SAME_PLACE_FS: f64 = 1e-6;
 /// Code of the non-blocking diagnostic for joined gaps wider than `AMBIGUOUS_GAP_FS`.
 pub(crate) const AMBIGUOUS_GAP_CODE: &str = "PDF_LINE_GAP_AMBIGUOUS";
 
@@ -47,6 +55,8 @@ pub(crate) struct Line {
     pub index: usize,
     /// Joined gaps of this line wider than `AMBIGUOUS_GAP_FS`.
     pub ambiguous_gaps: u32,
+    /// The largest font size of the line.
+    pub size: f64,
 }
 
 /// The larger of two font sizes. A gap is judged with it: the larger size of the two glyphs around the gap.
@@ -190,6 +200,18 @@ impl Current {
         self.reference = Some(Reference { x1, size: g.font_size });
     }
 
+    /// Adds the cell of `g`, drawn again over the glyph that was added last (`same_glyph`). Its text is not added again.
+    fn add_again(&mut self, g: &RawGlyph) {
+        if is_space(g) {
+            self.pending_bbox = Some(self.pending_bbox.map_or(g.cell, |bbox| union(bbox, g.cell)));
+            return;
+        }
+        self.bbox = Some(self.bbox.map_or(g.cell, |bbox| union(bbox, g.cell)));
+        if let Some(reference) = &mut self.reference {
+            reference.x1 = reference.x1.max(g.cell[2]);
+        }
+    }
+
     /// Moves the pending spaces into the line.
     fn commit(&mut self) {
         self.text.push_str(&self.pending);
@@ -203,7 +225,13 @@ impl Current {
         if last {
             self.commit();
         }
-        Line { text: self.text, bbox: self.bbox.unwrap_or([0.0; 4]), index: 0, ambiguous_gaps: self.ambiguous_gaps }
+        Line {
+            text: self.text,
+            bbox: self.bbox.unwrap_or([0.0; 4]),
+            index: 0,
+            ambiguous_gaps: self.ambiguous_gaps,
+            size: self.main.map_or(0.0, |main| main.size),
+        }
     }
 }
 
@@ -225,14 +253,41 @@ fn cut<'a>(glyphs: &[&'a RawGlyph]) -> Vec<Vec<&'a RawGlyph>> {
     pieces
 }
 
+/// Whether `a` and `b` are within `SAME_PLACE_FS` of the font size `size`.
+fn same_place(a: f64, b: f64, size: f64) -> bool {
+    (a - b).abs() <= SAME_PLACE_FS * size
+}
+
+/// Two glyphs with the same text, origin and font size. Their cells can differ when their fonts do.
+fn same_glyph(a: &RawGlyph, b: &RawGlyph) -> bool {
+    let size = larger(a.font_size, b.font_size);
+    a.text == b.text
+        && same_place(a.origin_x, b.origin_x, size)
+        && same_place(a.origin_y, b.origin_y, size)
+        && same_place(a.font_size, b.font_size, size)
+}
+
+/// Two lines with the same text and box: the second one draws the first again.
+fn same_line(a: &Line, b: &Line) -> bool {
+    let size = a.size.max(b.size);
+    a.text == b.text && a.bbox.iter().zip(&b.bbox).all(|(p, q)| same_place(*p, *q, size))
+}
+
 /// Builds the line of one piece. Its glyphs are read in x order. The cut is already decided, so none is cut here.
 fn read_line(mut glyphs: Vec<&RawGlyph>, last: bool) -> Line {
     // Adding +0.0 turns -0.0 into +0.0, so the two positions compare equal. The sort is stable, so glyphs at the same x keep
     // the stream order of the piece.
     glyphs.sort_by(|a, b| (a.origin_x + 0.0).total_cmp(&(b.origin_x + 0.0)));
     let mut line = Current::default();
+    let mut kept: Option<&RawGlyph> = None;
     for g in glyphs {
+        // A glyph drawn again over the glyph before it is read once (see the module notes).
+        if kept.is_some_and(|k| same_glyph(k, g)) {
+            line.add_again(g);
+            continue;
+        }
         line.add(g);
+        kept = Some(g);
     }
     line.finish(last)
 }
@@ -264,6 +319,8 @@ pub(crate) fn group_lines(glyphs: &[RawGlyph]) -> Vec<Line> {
             lines.push(line);
         }
     }
+    // A line drawn again right after itself is read once, with the first number (see the module notes).
+    lines.dedup_by(|later, earlier| same_line(earlier, later));
     lines
 }
 
@@ -676,9 +733,70 @@ mod tests {
     }
 
     #[test]
+    fn a_glyph_drawn_again_within_the_tolerance_is_read_once() {
+        // The second A is 1e-12 pt off, as a position reached by another sum can be.
+        let glyphs = vec![
+            glyph("A", 0.0, 700.0, 6.0, 10.0),
+            glyph("A", 1e-12, 700.0 + 1e-12, 6.0, 10.0),
+            glyph("B", 6.0, 700.0, 6.0, 10.0),
+        ];
+        assert_eq!(texts(&group_lines(&glyphs)), ["AB"]);
+    }
+
+    #[test]
+    fn limit_a_glyph_drawn_again_slightly_off_stays() {
+        // 0.01 pt is past the tolerance: a bold imitation that shifts its second drawing is read twice.
+        let glyphs = vec![
+            glyph("A", 0.0, 700.0, 6.0, 10.0),
+            glyph("A", 0.01, 700.0, 6.0, 10.0),
+            glyph("B", 6.0, 700.0, 6.0, 10.0),
+        ];
+        assert_eq!(texts(&group_lines(&glyphs)), ["AAB"]);
+    }
+
+    #[test]
+    fn glyphs_at_one_origin_with_another_size_text_or_baseline_stay() {
+        let size = vec![glyph("A", 0.0, 700.0, 6.0, 10.0), glyph("A", 0.0, 700.0, 7.2, 12.0), glyph("B", 7.2, 700.0, 6.0, 10.0)];
+        assert_eq!(texts(&group_lines(&size)), ["AAB"]);
+        let text = vec![glyph("A", 0.0, 700.0, 6.0, 10.0), glyph("B", 0.0, 700.0, 6.0, 10.0), glyph("C", 6.0, 700.0, 6.0, 10.0)];
+        assert_eq!(texts(&group_lines(&text)), ["ABC"]);
+        let baseline = vec![glyph("A", 0.0, 700.0, 6.0, 10.0), glyph("A", 0.0, 701.0, 6.0, 10.0), glyph("B", 6.0, 700.0, 6.0, 10.0)];
+        assert_eq!(texts(&group_lines(&baseline)), ["AAB"]);
+    }
+
+    #[test]
+    fn a_glyph_drawn_again_with_a_wider_cell_keeps_both_cells() {
+        // The same text, origin and size in another font: the line keeps one glyph and the union of the two cells.
+        let glyphs = vec![glyph("A", 0.0, 0.0, 6.0, 10.0), glyph("A", 0.0, 0.0, 8.0, 10.0)];
+        let lines = group_lines(&glyphs);
+        assert_eq!(texts(&lines), ["A"]);
+        assert_eq!(lines[0].bbox, [0.0, -2.0, 8.0, 8.0]);
+    }
+
+    #[test]
+    fn a_run_drawn_again_is_one_line_and_keeps_its_number() {
+        // The second run starts a new group, because its first glyph is 2.4 font sizes before the last glyph of the first run.
+        let mut glyphs = letters("Hello", 20.0, 700.0, 10.0);
+        glyphs.extend(letters("Hello", 20.0 + 1e-12, 700.0, 10.0));
+        glyphs.extend(letters("World", 20.0, 688.0, 10.0));
+        let lines = group_lines(&glyphs);
+        let numbered: Vec<(&str, usize)> = lines.iter().map(|line| (line.text.as_str(), line.index)).collect();
+        assert_eq!(numbered, vec![("Hello", 0), ("World", 2)]);
+    }
+
+    #[test]
+    fn runs_with_the_same_text_at_other_places_all_stay() {
+        let mut glyphs = letters("Hello", 20.0, 700.0, 10.0);
+        glyphs.extend(letters("Hello", 20.0, 700.0, 12.0));
+        glyphs.extend(letters("Hello", 20.0, 699.0, 10.0));
+        glyphs.extend(letters("Hello", 20.01, 699.0, 10.0));
+        assert_eq!(texts(&group_lines(&glyphs)), ["Hello", "Hello", "Hello", "Hello"]);
+    }
+
+    #[test]
     fn diagnostic_counts_the_joined_ambiguous_gaps_of_the_page() {
         assert!(gap_diagnostic(&[]).is_none());
-        let line = |ambiguous_gaps| Line { text: String::new(), bbox: [0.0; 4], index: 0, ambiguous_gaps };
+        let line = |ambiguous_gaps| Line { text: String::new(), bbox: [0.0; 4], index: 0, ambiguous_gaps, size: 10.0 };
         let diagnostic = gap_diagnostic(&[line(2), line(0), line(1)]).expect("three gaps");
         assert_eq!(diagnostic.code, AMBIGUOUS_GAP_CODE);
         assert!(!diagnostic.blocking);

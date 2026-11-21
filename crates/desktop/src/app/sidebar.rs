@@ -13,16 +13,32 @@ use crate::{icons, theme, widgets};
 /// The AI tab's label of a job whose request this window does not know (`job_prompts`).
 pub(super) const JOB_LABEL: &str = "AI 작업";
 
-/// The name the undo row shows for the actor of an agent batch: a job or a connection by the first 8 characters of its id,
-/// the command line by its kind, anything else as it is. The row's hover text is the whole actor.
-pub(super) fn agent_actor_name(actor: &str) -> String {
+/// Whether a name has no visible text: blank, or only whitespace and zero-width characters (U+200B..=U+200D, U+FEFF).
+fn is_blank_name(name: &str) -> bool {
+    name.trim_matches(|c: char| c.is_whitespace() || matches!(c, '\u{200B}'..='\u{200D}' | '\u{FEFF}')).is_empty()
+}
+
+/// The undo row's actor name in two parts: the part that may be cut when the row is narrow, and the id suffix that stays
+/// visible. A job shows its first 8 characters of id. A connection shows its client name (`mcp:<conn>:<client>`, not
+/// blank, "agent" or "desktop") with the first 4 characters of its id, or with 8 characters of its id when it has no
+/// client name. The command line shows its kind, anything else as it is. An empty id or name is never shown as a blank
+/// gap. The row's hover text is the whole actor.
+pub(super) fn agent_actor_parts(actor: &str) -> (String, String) {
     let mut parts = actor.splitn(3, ':');
-    let short = |id: &str| id.char_indices().nth(8).map_or(id, |(end, _)| &id[..end]).to_owned();
-    match (parts.next(), parts.next()) {
-        (Some("job"), Some(id)) => format!("{JOB_LABEL} {}", short(id)),
-        (Some("mcp"), Some(id)) => format!("에이전트 {}", short(id)),
-        (Some("cli"), _) => "명령줄".into(),
-        _ => actor.to_owned(),
+    let short = |id: &str, n: usize| id.char_indices().nth(n).map_or(id, |(end, _)| &id[..end]).to_owned();
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some("job"), Some(id), _) if !id.is_empty() => (format!("{JOB_LABEL} {}", short(id, 8)), String::new()),
+        (Some("mcp"), Some(id), client) => {
+            let name = client.map(str::trim).filter(|name| !is_blank_name(name) && *name != "agent" && *name != "desktop");
+            match (name, id.is_empty()) {
+                (Some(name), false) => (format!("에이전트 {name}"), format!(" · {}", short(id, 4))),
+                (Some(name), true) => (format!("에이전트 {name}"), String::new()),
+                (None, false) => (format!("에이전트 {}", short(id, 8)), String::new()),
+                (None, true) => (actor.to_owned(), String::new()),
+            }
+        }
+        (Some("cli"), _, _) => ("명령줄".into(), String::new()),
+        _ => (actor.to_owned(), String::new()),
     }
 }
 
@@ -1325,13 +1341,20 @@ impl DesktopApp {
         for (request_id, actor) in batches {
             let mut take_back = false;
             ui.horizontal(|ui| {
-                // The undo icon keeps its place in the column; the actor's name is cut to the width left before it.
+                // The undo icon keeps its place in the column. The name is cut to the width left before it, and the id
+                // suffix after it stays whole (a label's truncation cuts its end, so the suffix is not part of it).
+                let (name, suffix) = agent_actor_parts(&actor);
+                let font = theme::display_font(false, 12.0);
                 let room = ui.available_width() - theme::ICON_BUTTON - ui.spacing().item_spacing.x;
+                let suffix_width = if suffix.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(suffix.clone(), font.clone(), palette.ink_3).size().x };
                 ui.scope(|ui| {
-                    ui.set_max_width(room.max(0.0));
-                    let name = egui::RichText::new(agent_actor_name(&actor)).font(theme::display_font(false, 12.0)).color(palette.ink_3);
-                    ui.add(egui::Label::new(name).truncate().show_tooltip_when_elided(false)).on_hover_text(&actor);
+                    ui.set_max_width((room - suffix_width).max(0.0));
+                    let text = egui::RichText::new(name).font(font.clone()).color(palette.ink_3);
+                    ui.add(egui::Label::new(text).truncate().show_tooltip_when_elided(false)).on_hover_text(&actor);
                 });
+                if !suffix.is_empty() {
+                    ui.add(egui::Label::new(egui::RichText::new(suffix).font(font).color(palette.ink_3)).extend());
+                }
                 if widgets::icon_button(ui, palette, "undo", "되돌리기", false).clicked() {
                     take_back = true;
                 }

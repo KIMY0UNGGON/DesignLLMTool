@@ -383,6 +383,7 @@ impl DesktopApp {
                     if self.smoke_output.is_some() && self.smoke_failure.is_none() {
                         self.smoke_failure = Some(smoke::smoke_failure_text(&method, &friendly, &error));
                     }
+                    self.smoke_note_pdf_refusal(&action, &method, &friendly, &error);
                     if matches!(&action, PendingAction::Export)
                         && error.code == ErrorCode::ExportLossRequired
                     {

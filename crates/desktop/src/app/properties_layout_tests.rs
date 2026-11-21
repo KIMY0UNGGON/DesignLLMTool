@@ -229,6 +229,322 @@ fn layout_breakpoint_width_edit_releases_the_row_and_drops_the_text_typed_into_i
     assert!(h.ctx.data(|data| data.get_temp::<String>(columns_id.with("draft"))).is_none(), "the old ids keep no typed text");
 }
 
+#[test]
+fn layout_breakpoint_text_typed_into_a_row_survives_an_external_width_change() {
+    // Another connection changes the focused breakpoint's width while the user is typing in it. The row's ids follow its width, so
+    // the field must move its focus and its typed text to the new ids instead of losing both.
+    let mut h = Harness::new();
+    theme::install(&h.ctx);
+    h.open_document("canvas", 1);
+    let _ = h.sent();
+    h.app.active = Some(ArtifactSummary {
+        id: "a1".into(),
+        kind: ArtifactKind::Canvas,
+        title: "문서".into(),
+        revision: 1,
+        engine_id: "engine".into(),
+        dirty: false,
+        modified_at_ms: None,
+        active_jobs: Vec::new(),
+    });
+    let spec = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    let node = grid_node(spec.clone());
+    let (width_id, _) = breakpoint_field_ids(&node.id, &spec)[0];
+    h.ctx.data_mut(|data| data.insert_temp(width_id.with("draft"), "1200".to_owned()));
+    draw_breakpoints(&mut h, &node, Some(width_id));
+
+    let changed = grid_node(grid(vec![breakpoint(800, 2), breakpoint(1024, 4)]));
+    let (new_width_id, _) = breakpoint_field_ids(&changed.id, &changed.full_layout)[0];
+    draw_breakpoints(&mut h, &changed, None);
+
+    assert_eq!(h.ctx.memory(|memory| memory.focused()), Some(new_width_id), "the field keeps the focus on the same breakpoint");
+    assert_eq!(
+        h.ctx.data(|data| data.get_temp::<String>(new_width_id.with("draft"))).as_deref(),
+        Some("1200"),
+        "the typed text stays in the field"
+    );
+    assert!(h.ctx.data(|data| data.get_temp::<String>(width_id.with("draft"))).is_none(), "the old ids keep no typed text");
+    assert!(h.app.notices.current(std::time::Instant::now()).is_none(), "moving the draft does not show a cancellation notice");
+    assert!(!h.sent().iter().any(|request| request.1 == "changes.apply"), "nothing is sent before the user confirms");
+    assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &changed), vec![vec![(1024, Some(4)), (1200, Some(2))]], "the text lands on the breakpoint it was typed for");
+}
+
+/// A harness with an open canvas artifact `artifact_id`, as the panel has when it shows a grid node.
+fn canvas_harness(artifact_id: &str) -> Harness {
+    let mut h = Harness::new();
+    theme::install(&h.ctx);
+    h.open_document("canvas", 1);
+    let _ = h.sent();
+    h.app.active = Some(canvas_summary(artifact_id));
+    h
+}
+
+fn canvas_summary(artifact_id: &str) -> ArtifactSummary {
+    ArtifactSummary {
+        id: artifact_id.into(),
+        kind: ArtifactKind::Canvas,
+        title: "문서".into(),
+        revision: 1,
+        engine_id: "engine".into(),
+        dirty: false,
+        modified_at_ms: None,
+        active_jobs: Vec::new(),
+    }
+}
+
+/// Focuses the width (or the columns) field of `before`'s first breakpoint, with `typed` in it when the user typed something,
+/// then draws `after` as another connection's change leaves it.
+fn focus_then_change(h: &mut Harness, before: &LayoutSpec, columns: bool, typed: Option<&str>, after: &NodeProperties) {
+    let node = grid_node(before.clone());
+    let (width_id, columns_id) = breakpoint_field_ids(&node.id, before)[0];
+    let focused = if columns { columns_id } else { width_id };
+    if let Some(text) = typed {
+        h.ctx.data_mut(|data| data.insert_temp(focused.with("draft"), text.to_owned()));
+    }
+    draw_breakpoints(h, &node, Some(focused));
+    draw_breakpoints(h, after, None);
+}
+
+/// Clicks outside the panel, which commits a focused field, and returns the breakpoints of every layout sent since the last call.
+fn layouts_sent_after_a_click_elsewhere(h: &mut Harness, node: &NodeProperties) -> Vec<Vec<(u32, Option<u32>)>> {
+    draw_breakpoints(h, node, Some(Id::new("somewhere-else")));
+    h.sent()
+        .iter()
+        .filter(|request| request.1 == "changes.apply")
+        .map(|request| match serde_json::from_value(request.2["operations"][0].clone()).expect("an operation") {
+            Operation::SetLayout { layout, .. } => shape(&layout),
+            _ => panic!("a breakpoint control emits SetLayout"),
+        })
+        .collect()
+}
+
+const NOTHING_SENT: Vec<Vec<(u32, Option<u32>)>> = Vec::new();
+
+/// The row at the focused field's place may hold another breakpoint after the change: neither the focus nor the text moves to it,
+/// and a click elsewhere sends nothing. Covers a re-sort (768 moved to 1100 by another connection, `[1024, 1100]`), a removal with
+/// an addition in the same frame (`[1024, 1500]`), a row at the same place with other columns (`[500 (3), 1024]`), two rows
+/// changed at once (`[800, 1100]`) and a row at the same place with the same columns and another gap (`[500 (gap 40), 1024]`).
+#[test]
+fn layout_breakpoint_focus_does_not_move_to_another_breakpoint() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    let changes = [
+        grid(vec![breakpoint(1024, 4), breakpoint(1100, 2)]),
+        grid(vec![breakpoint(1024, 4), breakpoint(1500, 2)]),
+        grid(vec![breakpoint(500, 3), breakpoint(1024, 4)]),
+        grid(vec![breakpoint(800, 2), breakpoint(1100, 4)]),
+        grid(vec![Breakpoint { gap: Some(40 * 9_525), ..breakpoint(500, 2) }, breakpoint(1024, 4)]),
+    ];
+    for after in changes {
+        for (columns, typed) in [(false, Some("1200")), (false, Some("768")), (false, None), (true, Some("6")), (true, Some("2")), (true, None)] {
+            let case = format!("{typed:?} in the {} field, then {:?}", if columns { "columns" } else { "width" }, shape(&after));
+            let mut h = canvas_harness("a1");
+            let changed = grid_node(after.clone());
+            focus_then_change(&mut h, &before, columns, typed, &changed);
+            let focused = h.ctx.memory(|memory| memory.focused());
+            let (old_width_id, old_columns_id) = breakpoint_field_ids(&changed.id, &before)[0];
+            let old_id = if columns { old_columns_id } else { old_width_id };
+            assert_ne!(focused, Some(old_id), "{case}: the old field loses focus");
+            assert!(h.ctx.data(|data| data.get_temp::<String>(old_id.with("draft"))).is_none(), "{case}: the old draft is removed");
+            let notice = h.app.notices.current(std::time::Instant::now());
+            if typed.is_some_and(|text| text != if columns { "2" } else { "768" }) {
+                assert_eq!(notice.map(|notice| notice.text.as_str()), Some("다른 변경으로 중단점 목록이 바뀌어 입력하던 값을 취소했습니다"), "{case}");
+            } else {
+                assert!(notice.is_none(), "{case}: an unchanged value needs no notice");
+            }
+            for (width_id, columns_id) in breakpoint_field_ids(&changed.id, &after) {
+                assert!(focused != Some(width_id) && focused != Some(columns_id), "{case}: the focus stays off the other breakpoints");
+                for id in [width_id, columns_id] {
+                    assert!(h.ctx.data(|data| data.get_temp::<String>(id.with("draft"))).is_none(), "{case}: no text moves to another breakpoint");
+                }
+            }
+            assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &changed), NOTHING_SENT, "{case}");
+        }
+    }
+}
+
+#[test]
+fn layout_breakpoint_cancellation_keeps_an_existing_error() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    let after = grid_node(grid(vec![breakpoint(1024, 4)]));
+    let mut h = canvas_harness("a1");
+    h.app.notices.error("기존 오류", Some("artifact.save"), std::time::Instant::now());
+    focus_then_change(&mut h, &before, false, Some("1200"), &after);
+    let old_id = breakpoint_field_ids(&after.id, &before)[0].0;
+    assert_ne!(h.ctx.memory(|memory| memory.focused()), Some(old_id));
+    assert!(h.ctx.data(|data| data.get_temp::<String>(old_id.with("draft"))).is_none());
+    let notice = h.app.notices.current(std::time::Instant::now()).expect("the error remains visible");
+    assert_eq!(notice.severity, crate::notice::Severity::Error);
+    assert_eq!(notice.text, "기존 오류");
+    assert_eq!(notice.origin(), Some("artifact.save"));
+    assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &after), NOTHING_SENT);
+}
+
+#[test]
+fn layout_breakpoint_width_change_and_lock_cancel_the_draft() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    for spec in [grid(vec![breakpoint(800, 2), breakpoint(1024, 4)]), before.clone()] {
+        let after = NodeProperties { locked: Some(true), ..grid_node(spec) };
+        for columns in [false, true] {
+            let mut h = canvas_harness("a1");
+            focus_then_change(&mut h, &before, columns, Some(if columns { "6" } else { "1200" }), &after);
+            let old_ids = breakpoint_field_ids(&after.id, &before)[0];
+            let new_ids = breakpoint_field_ids(&after.id, &after.full_layout)[0];
+            let old_id = if columns { old_ids.1 } else { old_ids.0 };
+            let new_id = if columns { new_ids.1 } else { new_ids.0 };
+            let focused = h.ctx.memory(|memory| memory.focused());
+            assert_ne!(focused, Some(old_id));
+            assert_ne!(focused, Some(new_id));
+            for id in [old_id, new_id] {
+                assert!(h.ctx.data(|data| data.get_temp::<String>(id.with("draft"))).is_none());
+            }
+            assert_eq!(h.app.notices.current(std::time::Instant::now()).map(|notice| notice.text.as_str()), Some("다른 변경으로 중단점 목록이 바뀌어 입력하던 값을 취소했습니다"));
+            assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &after), NOTHING_SENT);
+        }
+    }
+}
+
+#[test]
+fn layout_breakpoint_reused_id_or_changed_columns_cancel_the_draft() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    for spec in [grid(vec![breakpoint(768, 4)]), grid(vec![breakpoint(768, 4), breakpoint(1024, 4)])] {
+        for columns in [false, true] {
+            let after = grid_node(spec.clone());
+            let mut h = canvas_harness("a1");
+            focus_then_change(&mut h, &before, columns, Some(if columns { "6" } else { "1200" }), &after);
+            let ids = breakpoint_field_ids(&after.id, &before)[0];
+            let focused = if columns { ids.1 } else { ids.0 };
+            assert_ne!(h.ctx.memory(|memory| memory.focused()), Some(focused));
+            assert!(h.ctx.data(|data| data.get_temp::<String>(focused.with("draft"))).is_none());
+            assert_eq!(h.app.notices.current(std::time::Instant::now()).map(|notice| notice.text.as_str()), Some("다른 변경으로 중단점 목록이 바뀌어 입력하던 값을 취소했습니다"));
+            assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &after), NOTHING_SENT);
+        }
+    }
+}
+
+#[test]
+fn layout_breakpoint_numerically_unchanged_drafts_are_not_cancelled_or_moved() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    for text in ["768 ", "0768"] {
+        let mut h = canvas_harness("a1");
+        let removed = grid_node(grid(vec![breakpoint(1024, 4)]));
+        focus_then_change(&mut h, &before, false, Some(text), &removed);
+        assert!(h.app.notices.current(std::time::Instant::now()).is_none(), "{text:?}");
+        assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &removed), NOTHING_SENT);
+
+        let mut h = canvas_harness("a1");
+        let moved = grid_node(grid(vec![breakpoint(800, 2), breakpoint(1024, 4)]));
+        focus_then_change(&mut h, &before, false, Some(text), &moved);
+        let new_id = breakpoint_field_ids(&moved.id, &moved.full_layout)[0].0;
+        assert_eq!(h.ctx.memory(|memory| memory.focused()), Some(new_id));
+        assert_eq!(h.ctx.data(|data| data.get_temp::<String>(new_id.with("draft"))).as_deref(), Some("800"));
+        assert!(h.app.notices.current(std::time::Instant::now()).is_none());
+        assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &moved), NOTHING_SENT);
+    }
+    let mut h = canvas_harness("a1");
+    let removed = grid_node(grid(vec![breakpoint(1024, 4)]));
+    focus_then_change(&mut h, &before, false, Some(""), &removed);
+    assert_eq!(h.app.notices.current(std::time::Instant::now()).map(|notice| notice.text.as_str()), Some("다른 변경으로 중단점 목록이 바뀌어 입력하던 값을 취소했습니다"));
+}
+
+#[test]
+fn layout_breakpoint_columns_draft_follows_the_same_breakpoint_without_a_notice() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    let after = grid_node(grid(vec![breakpoint(800, 2), breakpoint(1024, 4)]));
+    let mut h = canvas_harness("a1");
+    focus_then_change(&mut h, &before, true, Some("6"), &after);
+    let (_, columns_id) = breakpoint_field_ids(&after.id, &after.full_layout)[0];
+    assert_eq!(h.ctx.memory(|memory| memory.focused()), Some(columns_id));
+    assert_eq!(h.ctx.data(|data| data.get_temp::<String>(columns_id.with("draft"))).as_deref(), Some("6"));
+    assert!(h.app.notices.current(std::time::Instant::now()).is_none());
+    assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &after), vec![vec![(800, Some(6)), (1024, Some(4))]]);
+}
+
+#[test]
+fn layout_breakpoint_change_without_a_draft_shows_no_notice() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    let after = grid_node(grid(vec![breakpoint(1024, 4), breakpoint(1100, 2)]));
+    for columns in [false, true] {
+        let mut h = canvas_harness("a1");
+        let (width_id, columns_id) = breakpoint_field_ids(&after.id, &before)[0];
+        let focused = if columns { columns_id } else { width_id };
+        draw_breakpoints(&mut h, &grid_node(before.clone()), Some(focused));
+        h.ctx.data_mut(|data| data.remove::<String>(focused.with("draft")));
+        draw_breakpoints(&mut h, &after, None);
+        assert_ne!(h.ctx.memory(|memory| memory.focused()), Some(focused));
+        assert!(h.app.notices.current(std::time::Instant::now()).is_none());
+    }
+}
+
+/// A focused field the user typed nothing into shows the new value after another connection changes its breakpoint's width, and a
+/// click elsewhere sends nothing: the old value is not written back over the change.
+#[test]
+fn layout_breakpoint_focus_without_typing_keeps_an_external_width_change() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    let after = grid(vec![breakpoint(800, 2), breakpoint(1024, 4)]);
+    for columns in [false, true] {
+        let mut h = canvas_harness("a1");
+        let changed = grid_node(after.clone());
+        focus_then_change(&mut h, &before, columns, None, &changed);
+        let (width_id, columns_id) = breakpoint_field_ids(&changed.id, &after)[0];
+        let (id, shown) = if columns { (columns_id, "2") } else { (width_id, "800") };
+        assert!(h.app.notices.current(std::time::Instant::now()).is_none(), "an unchanged value moved to the same breakpoint needs no notice");
+        assert_eq!(h.ctx.memory(|memory| memory.focused()), Some(id), "the focus stays on the same breakpoint");
+        assert_eq!(h.ctx.data(|data| data.get_temp::<String>(id.with("draft"))).as_deref(), Some(shown), "the field shows the new value");
+        assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &changed), NOTHING_SENT, "columns field {columns}");
+    }
+}
+
+/// A text left under the ids the focus moves to (a row not drawn for a pass keeps its field's text) is not taken up: the field
+/// shows the new value and a click elsewhere sends nothing.
+#[test]
+fn layout_breakpoint_focus_moved_to_new_ids_drops_a_text_left_there() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    let after = grid(vec![breakpoint(800, 2), breakpoint(1024, 4)]);
+    let mut h = canvas_harness("a1");
+    let changed = grid_node(after.clone());
+    let (new_width_id, _) = breakpoint_field_ids(&changed.id, &after)[0];
+    h.ctx.data_mut(|data| data.insert_temp(new_width_id.with("draft"), "1200".to_owned()));
+    focus_then_change(&mut h, &before, false, None, &changed);
+    assert_eq!(h.ctx.memory(|memory| memory.focused()), Some(new_width_id), "the focus stays on the same breakpoint");
+    assert_eq!(h.ctx.data(|data| data.get_temp::<String>(new_width_id.with("draft"))).as_deref(), Some("800"), "the field shows the new value");
+    assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &changed), NOTHING_SENT);
+}
+
+/// Only the rows of the pass just before are compared: rows drawn longer ago say nothing of the field focused now.
+#[test]
+fn layout_breakpoint_rows_from_an_older_frame_are_not_followed() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    let after = grid(vec![breakpoint(800, 2), breakpoint(1024, 4)]);
+    let mut h = canvas_harness("a1");
+    let (width_id, _) = breakpoint_field_ids("grid-frame", &before)[0];
+    h.ctx.data_mut(|data| data.insert_temp(width_id.with("draft"), "1200".to_owned()));
+    draw_breakpoints(&mut h, &grid_node(before), Some(width_id));
+    let _ = h.ctx.run(screen(1.0, 640.0, 480.0), |_| {});
+    let changed = grid_node(after.clone());
+    draw_breakpoints(&mut h, &changed, Some(width_id));
+    let (new_width_id, _) = breakpoint_field_ids(&changed.id, &after)[0];
+    assert_ne!(h.ctx.memory(|memory| memory.focused()), Some(new_width_id), "a frame without the rows breaks the match");
+    assert!(h.ctx.data(|data| data.get_temp::<String>(new_width_id.with("draft"))).is_none());
+}
+
+/// The rows drawn last frame belong to one artifact: the same node id in the artifact opened next takes no focus or text.
+#[test]
+fn layout_breakpoint_text_does_not_follow_into_another_artifact() {
+    let before = grid(vec![breakpoint(768, 2), breakpoint(1024, 4)]);
+    let after = grid(vec![breakpoint(800, 2), breakpoint(1024, 4)]);
+    let mut h = canvas_harness("a1");
+    let (width_id, _) = breakpoint_field_ids("grid-frame", &before)[0];
+    h.ctx.data_mut(|data| data.insert_temp(width_id.with("draft"), "1200".to_owned()));
+    draw_breakpoints(&mut h, &grid_node(before), Some(width_id));
+    h.app.active = Some(canvas_summary("a2"));
+    let other = grid_node(after.clone());
+    draw_breakpoints(&mut h, &other, None);
+    let (new_width_id, _) = breakpoint_field_ids(&other.id, &after)[0];
+    assert_ne!(h.ctx.memory(|memory| memory.focused()), Some(new_width_id), "the focus does not move into the other artifact");
+    assert!(h.ctx.data(|data| data.get_temp::<String>(new_width_id.with("draft"))).is_none(), "the text does not move into it");
+    assert_eq!(layouts_sent_after_a_click_elsewhere(&mut h, &other), NOTHING_SENT);
+}
+
 /// A locked node's breakpoints are shown but not edited: the same typing and Tab as above send nothing (the engine would refuse it).
 #[test]
 fn a_locked_node_s_breakpoints_send_no_edit() {

@@ -4,24 +4,32 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 /// `DESIGNLLM_SMOKE_PDF=<absolute path>`: the smoke run also imports page 1 of this PDF into a new figure through the window's
 /// own "근거 추가" path (`import_pdf_evidence`), then writes `<output>.pdf.json` with the message the window shows, the `PDF_*`
-/// codes in it, the figure's evidence count and the host's `system.hello`. A refused PDF is the expected result here, so it
-/// does not fail the smoke run.
+/// codes of that message and of every earlier reader diagnostic the window kept (a later error may have replaced the message),
+/// the figure's evidence count and the host's `system.hello`. A refused PDF is the expected result here, so it does not fail
+/// the smoke run.
 const PDF_IDLE: u8 = 0;
 const PDF_CREATE_SENT: u8 = 1;
 const PDF_IMPORT_SENT: u8 = 2;
 const PDF_DONE: u8 = 3;
 static PDF_STEP: AtomicU8 = AtomicU8::new(PDF_IDLE);
+/// The most `PDF_*` codes a smoke report keeps.
+const SMOKE_PDF_CODE_LIMIT: usize = 32;
 
 /// The PDF of the smoke run, when `DESIGNLLM_SMOKE_PDF` names one.
 fn smoke_pdf_path() -> Option<String> {
     std::env::var("DESIGNLLM_SMOKE_PDF").ok().filter(|path| !path.trim().is_empty())
 }
 
-/// The `PDF_*` codes a window message names, in order, each once.
+/// The complete PDF codes in a message, in order, each once.
+#[cfg(test)]
 fn pdf_codes(message: &str) -> Vec<String> {
     let mut codes: Vec<String> = Vec::new();
-    for token in message.split(|c: char| !(c.is_ascii_uppercase() || c == '_')) {
-        if token.starts_with("PDF_") && token.len() > 4 && !codes.iter().any(|code| code == token) {
+    for token in message.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+        let Some(suffix) = token.strip_prefix("PDF_") else { continue };
+        if !suffix.is_empty() && suffix.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_')
+            && !suffix.starts_with('_') && !suffix.ends_with('_') && !suffix.contains("__")
+            && !codes.iter().any(|code| code == token)
+        {
             codes.push(token.to_owned());
         }
     }
@@ -53,7 +61,10 @@ mod pdf_smoke_tests {
     fn codes_are_read_from_the_window_message_once_each() {
         assert_eq!(pdf_codes("1쪽을 안전하게 읽지 못해 PDF 근거를 넣지 않았습니다. 진단: PDF_MEMORY_LIMIT: 메모리; PDF_MEMORY_LIMIT: 다시"), vec!["PDF_MEMORY_LIMIT"]);
         assert_eq!(pdf_codes("PDF_STACK_LIMIT: a. PDF_REQUEST_BUDGET: b"), vec!["PDF_STACK_LIMIT", "PDF_REQUEST_BUDGET"]);
+        assert_eq!(pdf_codes("PDF_TYPE1_ENCODING_UNREADABLE: 글꼴 진단"), vec!["PDF_TYPE1_ENCODING_UNREADABLE"]);
         assert!(pdf_codes("PDF 근거를 넣지 않았습니다").is_empty());
+        assert!(pdf_codes("PDF__ abcPDF_FAKE XPDF_FAKE PDF_FOO_bar PDF_FOO_ PDF_FOO__BAR").is_empty());
+        assert_eq!(pdf_codes("(PDF_TYPE1_ENCODING_UNREADABLE)"), vec!["PDF_TYPE1_ENCODING_UNREADABLE"]);
     }
 
     #[test]
@@ -107,9 +118,31 @@ impl DesktopApp {
         }
     }
 
-    /// Writes `<output>.pdf.json`: the window's error message for the PDF and its codes, the figure's evidence count, and the
-    /// host's `system.hello` through a CLI connection to the same workspace (the window's settings path names it).
-    fn write_pdf_report(&mut self, path: &str) {
+    /// Keeps the diagnostic codes of a refused PDF request for the report.
+    pub(super) fn smoke_note_pdf_refusal(&mut self, action: &PendingAction, _method: &str, _friendly: &str, error: &DltError) {
+        if matches!(action, PendingAction::PdfAssetImport { .. } | PendingAction::PdfEvidenceImport) {
+            let codes: Vec<String> = error.diagnostics.iter().map(|diagnostic| diagnostic.code.clone()).collect();
+            self.smoke_note_pdf_code_list(&codes);
+        }
+    }
+
+    /// Keeps structured diagnostic codes in order, once each, for the smoke report.
+    pub(super) fn smoke_note_pdf_code_list(&mut self, codes: &[String]) {
+        if self.smoke_output.is_none() {
+            return;
+        }
+        for code in codes {
+            if self.smoke_pdf_codes.len() >= SMOKE_PDF_CODE_LIMIT {
+                break;
+            }
+            if !self.smoke_pdf_codes.contains(code) {
+                self.smoke_pdf_codes.push(code.clone());
+            }
+        }
+    }
+
+    /// Writes the PDF result, structured diagnostic codes, evidence count, and host connection result.
+    pub(super) fn write_pdf_report(&mut self, path: &str) {
         let Some(output) = self.smoke_output.clone() else {
             return;
         };
@@ -120,7 +153,7 @@ impl DesktopApp {
             .map(|notice| notice.text.clone());
         // The first refused call (the reader's codes) comes from `smoke_failure`; the window's sentence may be a later error's.
         let first_refusal = self.smoke_failure.clone();
-        let codes = pdf_codes(&format!("{} {}", message.as_deref().unwrap_or_default(), first_refusal.as_deref().unwrap_or_default()));
+        let codes = &self.smoke_pdf_codes;
         let evidence = match self.artifact.as_ref().map(|artifact| &artifact.body) {
             Some(ArtifactBody::Figure(figure)) => figure.evidence.len(),
             _ => 0,

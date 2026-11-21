@@ -100,6 +100,10 @@ pub(crate) struct Font {
     pub descent: f64,
     /// False when a glyph advance cannot be determined. Width 0 is then used and the page reports it.
     pub width_known: bool,
+    /// By code: the encoding gives the code its text from StandardEncoding, in place of the built-in encoding of the embedded Type 1
+    /// program, which the encoding needed and which was not read. A code that /Differences names is not one of them. Empty when no
+    /// code is.
+    standard_for_builtin: Vec<bool>,
 }
 
 /// Removes an embedded subset prefix such as `ABCDEF+` from a BaseFont name.
@@ -186,6 +190,7 @@ impl Font {
             ascent: ascent.unwrap_or(DEFAULT_ASCENT),
             descent: descent.unwrap_or(DEFAULT_DESCENT),
             width_known: true,
+            standard_for_builtin: Vec::new(),
         })
     }
 
@@ -226,7 +231,7 @@ impl Font {
             }
             None => (None, None),
         };
-        let encoding = simple_encoding(doc, dict, &base_font, symbolic, meters)?;
+        let (encoding, standard_for_builtin) = simple_encoding(doc, dict, &base_font, symbolic, meters)?;
         let width_known = widths.is_some() || standard.is_some();
         let to_unicode = read_to_unicode(doc, dict, 1, Some(ONE_BYTE_CODESPACE), meters)?;
         Ok(Font {
@@ -243,6 +248,7 @@ impl Font {
             ascent: ascent.or(std_ascent).unwrap_or(DEFAULT_ASCENT),
             descent: descent.or(std_descent).unwrap_or(DEFAULT_DESCENT),
             width_known,
+            standard_for_builtin,
         })
     }
 
@@ -353,6 +359,12 @@ impl Font {
         !in_to_unicode && self.encoded_text(code).is_some()
     }
 
+    /// Whether `text` of this code comes from StandardEncoding in place of the program's built-in encoding that was not read
+    /// (`standard_for_builtin`). The page reports this once per font (PDF_TYPE1_ENCODING_UNREADABLE).
+    pub(crate) fn text_from_standard_for_builtin(&self, code: u32) -> bool {
+        self.standard_for_builtin.get(code as usize).copied().unwrap_or(false) && self.text_from_encoding(code)
+    }
+
     /// Sequential ranges of the ToUnicode that refuse codes because they pass 0xFF. Zero when the font has no accepted CMap.
     pub(crate) fn ignored_tounicode_entries(&self) -> u32 {
         match &self.to_unicode {
@@ -412,13 +424,25 @@ fn type1_program<'a>(doc: &'a Document, dict: &'a Dictionary) -> Option<&'a Stre
 /// built-in encoding, when that can be read. In every other case the base is the one this reader has always used: StandardEncoding
 /// for a non-symbolic standard-14 font, and none for any other font. So the built-in encoding of a TrueType or CFF program is not read,
 /// and a Type 1 program whose encoding cannot be read keeps that base too.
-fn implicit_base(doc: &Document, dict: &Dictionary, base_font: &str, symbolic: bool, meters: Meters<'_>) -> PResult<Option<Base>> {
-    if let Some(stream) = type1_program(doc, dict) {
+/// The flag is true when StandardEncoding is that base in place of the built-in encoding of a Type 1 program that was not read, for
+/// any reason: the program cannot be decoded, has no `eexec` (or a string before it that is not closed), or has an encoding of a form
+/// that is not read. A font with no base has no text for those codes, so its page fails on them and the flag stays false.
+fn implicit_base(
+    doc: &Document,
+    dict: &Dictionary,
+    base_font: &str,
+    symbolic: bool,
+    meters: Meters<'_>,
+) -> PResult<(Option<Base>, bool)> {
+    let program = type1_program(doc, dict);
+    if let Some(stream) = program {
         if let Some(names) = read_type1_program(doc, stream, meters)? {
-            return Ok(Some(Base::Program(names)));
+            return Ok((Some(Base::Program(names)), false));
         }
     }
-    Ok((!symbolic && is_standard_nonsymbolic(base_font)).then_some(Base::Table(&glyph_names::STANDARD)))
+    let base = (!symbolic && is_standard_nonsymbolic(base_font)).then_some(Base::Table(&glyph_names::STANDARD));
+    let replaced = program.is_some() && base.is_some();
+    Ok((base, replaced))
 }
 
 /// The built-in encoding of an embedded Type 1 program, when it can be read. A program that cannot be decoded, or whose encoding is
@@ -442,43 +466,50 @@ fn texts_of(names: &[impl AsRef<str>]) -> Vec<Option<String>> {
 /// that name is used whatever the base is. A code that neither names has no text, so a built-in encoding that is not read is never
 /// guessed. None when there is neither a base nor a /Differences entry, or when /Differences is malformed: the codes then fail as
 /// they do without an encoding.
+/// With it, by code, whether the text comes from StandardEncoding in place of a built-in encoding that was not read (`Font`
+/// `standard_for_builtin`): every code of that base except the ones /Differences names. Empty when no code does.
 fn simple_encoding(
     doc: &Document,
     dict: &Dictionary,
     base_font: &str,
     symbolic: bool,
     meters: Meters<'_>,
-) -> PResult<Option<Vec<Option<String>>>> {
-    let (base, differences) = match dict.get(b"Encoding") {
-        Err(_) => (implicit_base(doc, dict, base_font, symbolic, meters)?, None),
+) -> PResult<(Option<Vec<Option<String>>>, Vec<bool>)> {
+    let not_used = (None, Vec::new());
+    let (base, replaced, differences) = match dict.get(b"Encoding") {
+        Err(_) => {
+            let (base, replaced) = implicit_base(doc, dict, base_font, symbolic, meters)?;
+            (base, replaced, None)
+        }
         Ok(obj) => match resolve(doc, obj)? {
-            Object::Name(name) => (named_base(name).map(Base::Table), None),
+            Object::Name(name) => (named_base(name).map(Base::Table), false, None),
             Object::Dictionary(enc) => {
-                let base = match enc.get(b"BaseEncoding") {
+                let (base, replaced) = match enc.get(b"BaseEncoding") {
                     Err(_) => implicit_base(doc, dict, base_font, symbolic, meters)?,
-                    Ok(obj) => resolve(doc, obj)?.as_name().ok().and_then(named_base).map(Base::Table),
+                    Ok(obj) => (resolve(doc, obj)?.as_name().ok().and_then(named_base).map(Base::Table), false),
                 };
                 let differences = match enc.get(b"Differences") {
                     Err(_) => None,
                     // A /Differences that is not an array is malformed, so the encoding is not used.
                     Ok(obj) => match resolve(doc, obj)?.as_array() {
                         Ok(array) => Some(array),
-                        Err(_) => return Ok(None),
+                        Err(_) => return Ok(not_used),
                     },
                 };
-                (base, differences)
+                (base, replaced, differences)
             }
-            _ => return Ok(None),
+            _ => return Ok(not_used),
         },
     };
     if base.is_none() && differences.is_none() {
-        return Ok(None);
+        return Ok(not_used);
     }
     let mut table: Vec<Option<String>> = match base {
         Some(Base::Table(names)) => texts_of(names),
         Some(Base::Program(names)) => texts_of(&names),
         None => vec![None; 256],
     };
+    let mut standard_for_builtin = if replaced { vec![true; 256] } else { Vec::new() };
     if let Some(array) = differences {
         // The entries are charged as they are read, so an array past the page or request limit is refused.
         meters.charge(Unit::Entries, array.len() as u64)?;
@@ -489,13 +520,16 @@ fn simple_encoding(
                 Object::Name(name) => {
                     let Some(c) = code else { continue };
                     table[c] = glyph_names::unicode_text(&String::from_utf8_lossy(name));
+                    if let Some(flag) = standard_for_builtin.get_mut(c) {
+                        *flag = false;
+                    }
                     code = (c + 1 < 256).then_some(c + 1);
                 }
-                _ => return Ok(None),
+                _ => return Ok(not_used),
             }
         }
     }
-    Ok(Some(table))
+    Ok((Some(table), standard_for_builtin))
 }
 
 /// One codespace range. Byte `i` of a code of `width` bytes must lie between `lo[i]` and `hi[i]`. Containment and overlap are
@@ -1242,6 +1276,7 @@ mod tests {
             ascent: DEFAULT_ASCENT,
             descent: DEFAULT_DESCENT,
             width_known: true,
+            standard_for_builtin: Vec::new(),
         }
     }
 

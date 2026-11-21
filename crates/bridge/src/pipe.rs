@@ -470,10 +470,12 @@ impl Drop for LocalGuard {
     }
 }
 
-/// Connects to the server instance for `name`. Waits up to `wait` when every instance is busy.
+/// Connects to the server instance for `name`. Waits up to `wait` in total when every instance is busy: a client that
+/// loses the race for a freed instance tries again until the deadline.
 pub fn connect_client(name: &str, wait: Duration) -> Result<Pipe, ConnectError> {
     let wname = wide(name);
-    for _ in 0..3 {
+    let deadline = Instant::now() + wait;
+    loop {
         let h = unsafe {
             CreateFileW(
                 wname.as_ptr(),
@@ -495,7 +497,13 @@ pub fn connect_client(name: &str, wait: Duration) -> Result<Pipe, ConnectError> 
         if code != ERROR_PIPE_BUSY {
             return Err(ConnectError::Other(os_error(code)));
         }
-        let ms = wait.as_millis().min(u32::MAX as u128) as u32;
+        // A zero timeout would make WaitNamedPipeW use the default wait, so the deadline is checked first. Sub-millisecond
+        // time rounds up to 1 ms, and the value stays below WAIT_FOREVER (u32::MAX).
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(ConnectError::Other(io::Error::new(io::ErrorKind::TimedOut, "pipe stayed busy")));
+        }
+        let ms = remaining.as_millis().clamp(1, u32::MAX as u128 - 1) as u32;
         if unsafe { WaitNamedPipeW(wname.as_ptr(), ms) } == 0 {
             let w = last_code();
             return Err(if w == ERROR_FILE_NOT_FOUND {
@@ -505,7 +513,6 @@ pub fn connect_client(name: &str, wait: Duration) -> Result<Pipe, ConnectError> 
             });
         }
     }
-    Err(ConnectError::Other(io::Error::new(io::ErrorKind::TimedOut, "pipe stayed busy")))
 }
 
 /// ERROR_NO_DATA is reported when a previous client is still disconnecting. The host recreates the instance.

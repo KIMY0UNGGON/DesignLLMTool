@@ -25,12 +25,14 @@ struct Bench {
     artifact: String,
     clock: f64,
     shapes: Vec<eframe::epaint::ClippedShape>,
+    /// The host's answers wait: a frame leaves what it sent queued, so a page change's `selection.set` stays on its way.
+    hold: bool,
 }
 
 impl Bench {
     fn open(mut host: Host, artifact: String) -> Self {
         let window = Window::open_with_previews(&mut host, &artifact);
-        let mut bench = Self { host, window, artifact, clock: 1.0, shapes: Vec::new() };
+        let mut bench = Self { host, window, artifact, clock: 1.0, shapes: Vec::new(), hold: false };
         for _ in 0..4 {
             bench.frame(Vec::new());
         }
@@ -56,7 +58,9 @@ impl Bench {
         let mut frame = eframe::Frame::_new_kittest();
         let output = ctx.run(input, |ctx| eframe::App::update(&mut self.window.app, ctx, &mut frame));
         self.shapes = output.shapes;
-        self.window.settle(&mut self.host);
+        if !self.hold {
+            self.window.settle(&mut self.host);
+        }
     }
 
     fn frames(&mut self, count: usize) {
@@ -893,4 +897,285 @@ fn a_memo_drop_on_another_page_that_opens_no_memo_keeps_the_page_and_the_selecti
     assert!(bench.window.app.board_memo_editor.is_none(), "no memo editor opens");
     assert!(message.is_some_and(|message| message.contains("메모")), "the board says why");
     assert_page_and_selection_kept(&bench, &selected, "a memo drop that opens no memo");
+}
+
+/// Drops the video tile on page 1 while the host holds its answers (`Bench::hold`): the page change's `selection.set` stays
+/// on its way, so the video waits.
+fn drop_video_on_page_1_held(bench: &mut Bench) {
+    bench.hold = true;
+    let target = bench.page_rect(1).intersect(bench.board()).center();
+    bench.drag_tile_to("동영상", target);
+    bench.frame(vec![Event::PointerMoved(target), primary_button(target, false)]);
+}
+
+/// Lets the host answer what the held frames sent, and draws a few frames.
+fn release_hold(bench: &mut Bench) {
+    bench.hold = false;
+    bench.window.settle(&mut bench.host);
+    bench.frames(3);
+}
+
+/// 68p 2차 MINOR 1: while a video insert runs on page 1, a video tile dropped on page 0 is refused before the page changes.
+#[test]
+fn a_video_tile_dropped_on_another_page_while_a_video_insert_runs_is_refused_before_the_page_changes() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    bench.window.app.focus_add_page(1);
+    bench.frames(2);
+    hold_video_insert_on_page_1(&mut bench);
+    let target = bench.page_rect(0).intersect(bench.board()).center();
+    let sent_before = bench.window.calls.len();
+    bench.drop_tile_at("동영상", target);
+    let sent: Vec<String> = bench.window.calls[sent_before..].iter().map(|(method, _, _)| method.clone()).collect();
+    assert!(!sent.iter().any(|method| method == "selection.set"), "the refused drop asks the host for no page change: {sent:?}");
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page of the running insert stays the current one");
+    assert!(bench.window.app.video_insert.is_some(), "the running insert is kept");
+    assert!(bench.window.message().is_some_and(|message| message.contains("진행 중")), "the refusal says why: {:?}", bench.window.message());
+}
+
+/// A video insert on page 1 that stays in its source inspection: the state the insert's own flow leaves while its worker runs.
+/// The inspection runs on a thread the test does not wait for, so the state is put in place directly.
+fn hold_video_insert_on_page_1(bench: &mut Bench) {
+    let intent = bench.window.app.video_insert_intent(None).expect("page 1 is the current page with nothing pending");
+    bench.window.app.video_insert = Some(super::state::PendingVideoInsert {
+        intent,
+        source_path: std::path::PathBuf::from("drop.mp4"),
+        stage: super::state::VideoInsertStage::InspectingSource,
+        source_info: None,
+        source_asset: None,
+        poster: None,
+        poster_asset: None,
+        poster_temp_path: None,
+        worker_cancel: None,
+        cancel_requested: false,
+        node_id: designllm_contracts::new_id(),
+        apply: None,
+        resolution_retry_sent: false,
+        message: None,
+    });
+}
+
+/// 68p 2차 MINOR 1: while a video waits for its page change, the video tile clicked on the page it waits for is refused, the
+/// file dialog does not open, and the wait stays.
+#[test]
+fn a_video_tile_clicked_while_another_video_waits_for_its_page_change_is_refused() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    drop_video_on_page_1_held(&mut bench);
+    crate::dialogs::set_test_answers(Some(std::iter::once(std::path::PathBuf::from("drop.mp4")).collect()));
+    bench.click_tile("동영상");
+    assert_eq!(crate::dialogs::set_test_answers(None), 1, "the file dialog did not open");
+    assert!(bench.window.app.video_insert.is_none(), "no video insert starts");
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page of the wait stays");
+    assert!(bench.window.message().is_some_and(|message| message.contains("기다리세요")), "the refusal says why: {:?}", bench.window.message());
+    release_hold(&mut bench);
+}
+
+/// 68p 2차 MINOR 2: a text node made on page 1, with the view back on page 0. The node is one a wait's selection can name.
+fn text_node_on_page_1(bench: &mut Bench) -> String {
+    bench.window.app.focus_add_page(1);
+    bench.frames(2);
+    bench.click_tile("텍스트");
+    bench.frames(2);
+    let id = bench.nodes(1).remove(0).id;
+    bench.window.app.focus_add_page(0);
+    bench.frames(2);
+    id
+}
+
+/// The user selects `id` (a node on the page the wait is for) while the host holds its answers.
+fn select_node_held(bench: &mut Bench, id: String) {
+    bench.window.app.set_selected_ids(vec![id.clone()]);
+    bench.window.app.set_selection(designllm_contracts::Selection { node_ids: vec![id], text_range: None });
+}
+
+/// The user opens a memo editor on page 1 (the page the wait is for) at the centre of the page.
+fn open_memo_on_page_1(bench: &mut Bench) {
+    let size = bench.page_size(1);
+    let ctx = bench.window.ctx.clone();
+    bench.window.app.begin_board_memo_centred(&ctx, 1, (size.width / 2, size.height / 2)).expect("the memo editor opens");
+}
+
+/// 68p 2차 MINOR 1 (regression): a memo editor the user opens during a video wait keeps its page when the wait ends. The page
+/// and selection are not put back under it, and no file dialog opens.
+#[test]
+fn a_memo_editor_opened_during_a_video_wait_keeps_the_page_when_the_wait_ends() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    crate::dialogs::set_test_answers(Some(std::iter::once(std::path::PathBuf::from("drop.mp4")).collect()));
+    drop_video_on_page_1_held(&mut bench);
+    open_memo_on_page_1(&mut bench);
+    release_hold(&mut bench);
+    assert_eq!(crate::dialogs::set_test_answers(None), 1, "the file dialog did not open");
+    assert!(bench.window.app.video_insert.is_none(), "no video insert starts");
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page of the memo stays the current one");
+    assert!(bench.window.app.board_memo_editor.is_some(), "the memo editor stays open");
+    assert!(bench.window.message().is_some_and(|message| message.contains("다른 입력")), "the notice says why: {:?}", bench.window.message());
+}
+
+/// 68p 2차 MINOR 1 (regression, expiry path): the same memo editor when the five seconds run out.
+#[test]
+fn a_memo_editor_opened_during_a_video_wait_keeps_the_page_when_the_wait_expires() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    crate::dialogs::set_test_answers(Some(Default::default()));
+    drop_video_on_page_1_held(&mut bench);
+    open_memo_on_page_1(&mut bench);
+    bench.clock += 6.0;
+    bench.frame(Vec::new());
+    release_hold(&mut bench);
+    assert_eq!(crate::dialogs::set_test_answers(None), 0, "no file dialog was asked for");
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page of the memo stays the current one");
+    assert!(bench.window.app.board_memo_editor.is_some(), "the memo editor stays open");
+    assert!(bench.window.message().is_some_and(|message| message.contains("페이지 전환이 끝나지 않아")), "the wait says why: {:?}", bench.window.message());
+}
+
+/// 68p 2차 MINOR 2: a node the user selects on page 1 during a video wait stays selected when the wait ends with the dialog
+/// cancelled.
+#[test]
+fn a_node_the_user_selects_while_a_video_waits_is_not_put_back() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    let id = text_node_on_page_1(&mut bench);
+    crate::dialogs::set_test_answers(Some(Default::default()));
+    drop_video_on_page_1_held(&mut bench);
+    select_node_held(&mut bench, id.clone());
+    release_hold(&mut bench);
+    assert_eq!(crate::dialogs::set_test_answers(None), 0, "the file dialog was cancelled");
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page the user is on stays");
+    let local = bench.window.app.local_selection.as_ref().map(|selection| selection.node_ids.clone());
+    assert_eq!(local, Some(vec![id]), "the node the user selected stays selected");
+}
+
+/// 68p 2차 MINOR 3, 90 B1 3차 MINOR 4: a commit during a video wait (a rectangle added on page 1 through the command run, which
+/// also answers the held page change) is not put back. The file dialog opens and takes its one answer, a file that is no video;
+/// the refusal leaves the page and the commit's selection as they are.
+#[test]
+fn a_document_change_during_a_video_wait_is_not_put_back() {
+    let (mut bench, selected) = two_pages_with_a_selection();
+    let (dir, file) = video_file("drop.txt");
+    crate::dialogs::set_test_answers(Some(std::iter::once(file).collect()));
+    drop_video_on_page_1_held(&mut bench);
+    let revision = bench.window.app.artifact.as_ref().expect("the artifact").revision;
+    bench.step("add.rect", json!({})).expect("the rectangle is added");
+    release_hold(&mut bench);
+    assert!(bench.window.app.artifact.as_ref().expect("the artifact").revision > revision, "the commit moved the revision on");
+    assert_eq!(bench.nodes(1).len(), 1, "the rectangle is on page 1");
+    assert_eq!(crate::dialogs::set_test_answers(None), 0, "the file dialog opened and took its answer");
+    assert!(bench.window.app.video_insert.is_none(), "no video insert starts");
+    assert!(bench.window.message().is_some_and(|message| message.contains("MP4")), "the refusal says why: {:?}", bench.window.message());
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page of the change stays the current one");
+    assert_ne!(bench.window.app.selected_nodes, selected, "the selection of page 0 is not put back");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// 68p 2차 MINOR 3: an inline text edit the user starts on page 1 during a video wait opens no file dialog, and the edit stays.
+#[test]
+fn an_inline_text_edit_started_during_a_video_wait_keeps_the_page() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    let id = text_node_on_page_1(&mut bench);
+    crate::dialogs::set_test_answers(Some(std::iter::once(std::path::PathBuf::from("drop.mp4")).collect()));
+    drop_video_on_page_1_held(&mut bench);
+    select_node_held(&mut bench, id);
+    bench.frame(vec![enter()]);
+    assert!(bench.window.app.inline_text_edit.is_some(), "Enter starts the inline edit during the wait");
+    release_hold(&mut bench);
+    assert_eq!(crate::dialogs::set_test_answers(None), 1, "the file dialog did not open");
+    assert!(bench.window.app.video_insert.is_none(), "no video insert starts");
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page of the edit stays the current one");
+    assert!(bench.window.app.inline_text_edit.is_some(), "the inline edit stays open");
+}
+
+/// 68p 2차 MINOR 3, 90 B1 3차 MINOR 3: a key dialog that stays open when the wait ends (the host-lost prompt holds until the
+/// host is back) opens no file dialog. It is not bound to the page, so the page and the selection go back.
+#[test]
+fn a_video_wait_that_ends_while_a_key_dialog_is_open_opens_no_file_dialog() {
+    let (mut bench, selected) = two_pages_with_a_selection();
+    crate::dialogs::set_test_answers(Some(std::iter::once(std::path::PathBuf::from("drop.mp4")).collect()));
+    drop_video_on_page_1_held(&mut bench);
+    bench.window.app.host_link.lost = true;
+    release_hold(&mut bench);
+    assert_eq!(crate::dialogs::set_test_answers(None), 1, "the file dialog did not open");
+    assert!(bench.window.app.video_insert.is_none(), "no video insert starts");
+    assert!(bench.window.app.host_link.lost, "the key dialog is still open");
+    assert!(bench.window.message().is_some_and(|message| message.contains("다른 입력")), "the notice says why: {:?}", bench.window.message());
+    assert_page_and_selection_kept(&bench, &selected, "a video wait ended under a key dialog");
+}
+
+/// 68p 2차 MINOR 3: the icon picker the user opens during a video wait opens no file dialog, and the page stays.
+#[test]
+fn an_icon_picker_opened_during_a_video_wait_keeps_the_page() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    crate::dialogs::set_test_answers(Some(std::iter::once(std::path::PathBuf::from("drop.mp4")).collect()));
+    drop_video_on_page_1_held(&mut bench);
+    bench.click_tile("아이콘");
+    assert!(bench.pending_icon().is_some(), "the icon picker waits for a pick");
+    release_hold(&mut bench);
+    assert_eq!(crate::dialogs::set_test_answers(None), 1, "the file dialog did not open");
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page of the wait stays");
+    assert!(bench.window.message().is_some_and(|message| message.contains("다른 입력")), "the notice says why: {:?}", bench.window.message());
+}
+
+/// 68p 2차 MINOR 4: a video wait that ends on the home screen says that the edit was left, and opens no file dialog.
+#[test]
+fn a_video_wait_that_ends_on_the_home_screen_says_the_edit_was_left() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    crate::dialogs::set_test_answers(Some(std::iter::once(std::path::PathBuf::from("drop.mp4")).collect()));
+    drop_video_on_page_1_held(&mut bench);
+    bench.window.app.screen = super::Screen::Home;
+    release_hold(&mut bench);
+    assert_eq!(crate::dialogs::set_test_answers(None), 1, "the file dialog did not open");
+    assert!(bench.window.app.video_insert.is_none(), "no video insert starts");
+    assert!(bench.window.message().is_some_and(|message| message.contains("편집 화면을 벗어나")), "the notice says why: {:?}", bench.window.message());
+}
+
+/// 68p 2차 MINOR 3(a): a video wait that outlasts five seconds puts the page and selection back and says why. The clock is
+/// moved on by the test driver (`Bench::clock`), which is what the wait reads.
+#[test]
+fn a_video_wait_that_outlasts_five_seconds_puts_the_page_back_with_a_notice() {
+    let (mut bench, selected) = two_pages_with_a_selection();
+    crate::dialogs::set_test_answers(Some(Default::default()));
+    drop_video_on_page_1_held(&mut bench);
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page change is made");
+    bench.clock += 6.0;
+    bench.frame(Vec::new());
+    release_hold(&mut bench);
+    assert_eq!(crate::dialogs::set_test_answers(None), 0, "no file dialog was asked for");
+    assert!(bench.window.app.video_insert.is_none(), "no video insert starts");
+    assert!(bench.window.message().is_some_and(|message| message.contains("페이지 전환이 끝나지 않아")), "the wait says why: {:?}", bench.window.message());
+    assert_page_and_selection_kept(&bench, &selected, "a video wait past five seconds");
+}
+
+/// 90 B1 3차 MAJOR 1: the draft recovery notice takes no keys and covers no work, so a video dropped on another page while it
+/// is up opens the file dialog, and the insert starts there.
+#[test]
+fn a_video_dropped_on_another_page_under_the_draft_recovery_notice_opens_the_dialog() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    let live = super::drafts::Live {
+        artifact_id: Some(bench.artifact.clone()),
+        revision: Some(1),
+        body: super::drafts::Body::Ai { prompt: "보내지 않은 요청".into(), figure_refs: Vec::new() },
+    };
+    bench.window.app.drafts.keep_recovered(live, std::time::Instant::now());
+    bench.frames(2);
+    assert!(!bench.window.app.drafts.recovered().is_empty(), "the recovery notice is up");
+    let (dir, file) = video_file("drop.mp4");
+    let unanswered = drop_video_on_page_1(&mut bench, vec![file]);
+    assert_eq!(unanswered, 0, "the drop opened the video dialog; notice: {:?}", bench.window.message());
+    let pending = bench.window.app.video_insert.as_ref().expect("the video insert starts with the chosen file");
+    assert_eq!(pending.intent.page_index, 1, "on the page of the drop");
+    assert!(!bench.window.app.drafts.recovered().is_empty(), "the recovery notice stays");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// 90 B1 3차 MINOR 2: a drag does not close an open menu (egui closes popups on a click), so a video drop on another page closes
+/// it: the zoom menu left open does not hold the file dialog back.
+#[test]
+fn a_video_dropped_on_another_page_with_a_menu_open_closes_the_menu_and_opens_the_dialog() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    eframe::egui::Popup::open_id(&bench.window.ctx, Id::new("zoom-menu"));
+    bench.frames(2);
+    assert!(eframe::egui::Popup::is_any_open(&bench.window.ctx), "the zoom menu is open");
+    let (dir, file) = video_file("drop.mp4");
+    let unanswered = drop_video_on_page_1(&mut bench, vec![file]);
+    assert_eq!(unanswered, 0, "the drop opened the video dialog; notice: {:?}", bench.window.message());
+    let pending = bench.window.app.video_insert.as_ref().expect("the video insert starts with the chosen file");
+    assert_eq!(pending.intent.page_index, 1, "on the page of the drop");
+    assert!(!eframe::egui::Popup::is_any_open(&bench.window.ctx), "the drop closed the menu");
+    let _ = std::fs::remove_dir_all(dir);
 }

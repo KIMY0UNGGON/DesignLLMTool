@@ -47,7 +47,10 @@ fn cleartext(program: &[u8]) -> Option<&[u8]> {
 
 /// The offset of the first `eexec` operator that is a token, or None when there is none, or when a string before it is not
 /// closed. Comments, literal strings, hex strings and names are skipped as tokens, so the word inside them is not the operator.
-/// Only tokens that start within the limit are read, so an operator past it is not found.
+/// Only tokens that start within the limit are read, so an operator past it is not found. A `)` or `>` of the encrypted part can
+/// close a string that the cleartext leaves open, and the scan then reads on in the encrypted bytes, where it finds the operator
+/// only if they spell it. The font that needs an encoding that is not read reports it, whatever the reason (`font.rs`,
+/// PDF_TYPE1_ENCODING_UNREADABLE).
 fn eexec_operator(program: &[u8]) -> Option<usize> {
     let mut i = 0;
     while i < program.len() && i <= MAX_CLEARTEXT_BYTES {

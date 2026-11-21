@@ -650,6 +650,21 @@ impl DesktopApp {
         self.finish_board_memo_gesture_at(position);
     }
 
+    /// Ends a memo drag whose release will not come: the primary button is up with no release in this frame, or the window
+    /// lost focus (egui keeps a held button down then, so a release made in another window never reaches the drag). The
+    /// memo keeps its place, and the settle the drag held back (`draw_board`) goes on.
+    pub(super) fn drop_lost_board_memo_gesture(&mut self, ctx: &Context) {
+        if self.board_memo_gesture.is_none() { return; }
+        let lost = ctx.input(|input| !input.pointer.button_released(egui::PointerButton::Primary) && (
+            !input.pointer.primary_down()
+                || input.events.iter().any(|event| matches!(event, egui::Event::WindowFocused(false)))
+        ));
+        if lost {
+            self.board_memo_gesture = None;
+            self.set_error("메모를 끄는 동안 포인터 입력이 끊겨 이동을 취소했습니다. 기존 메모는 유지했습니다".into());
+        }
+    }
+
     pub(super) fn observe_board_memo_gesture(&mut self, ctx: &Context) {
         let Some(gesture) = self.board_memo_gesture.as_ref() else { return };
         let page_index = gesture.page_index;
@@ -667,6 +682,16 @@ impl DesktopApp {
             egui::Event::Key { key: egui::Key::Space, .. }
         )));
         if let Some(gesture) = self.board_memo_gesture.as_mut() {
+            // The drag maps the pointer through `page_rect` and `page_size` alone (`moved_bounds`), not through the dpi. A page
+            // texture at another dpi (the sharp render a settle asked for before the drag began) gives the page a new transform
+            // id on the same rectangle, zoom and pan: that id becomes the drag's own. A new id with a moved page still ends it.
+            let placement_kept = same_target_page
+                && current_page_rect == Some(gesture.page_rect)
+                && current_view.zoom.to_bits() == gesture.zoom_at_start.to_bits()
+                && current_view.pan == gesture.pan_at_start;
+            if placement_kept && current_transform_id != gesture.transform_id_at_start {
+                gesture.transform_id_at_start = current_transform_id.clone();
+            }
             observe_gesture_transform(
                 gesture,
                 current_tool,

@@ -35,7 +35,9 @@ const READ_SLICE: Duration = Duration::from_millis(250);
 const WRITE_DEADLINE: Duration = Duration::from_secs(10);
 const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(10);
 const HEARTBEAT_DEADLINE: Duration = Duration::from_secs(10);
-const CONNECT_WAIT: Duration = Duration::from_millis(2000);
+// Total wait for a busy host (connect_client waits up to this in all). A missing host fails at once with
+// ERROR_FILE_NOT_FOUND, so this applies only while every instance is busy. 6 s matches the old worst case (3 tries x 2 s).
+const CONNECT_WAIT: Duration = Duration::from_millis(6000);
 /// The binary frames of one response (`render.pixels`) may hold at most this many bytes, as the core answers; more closes the
 /// connection.
 const MAX_ATTACHMENT_BYTES: usize = designllm_contracts::MAX_RASTER_PIXEL_BYTES;

@@ -2570,7 +2570,15 @@ impl DesktopApp {
     fn breakpoint_rows_of(&mut self, ui: &mut Ui, palette: &theme::Palette, node: &NodeProperties) {
         let spec = node.full_layout.clone();
         let base_columns = spec.grid_columns.unwrap_or(2);
-        let field_ids = breakpoint_field_ids(node.id.as_str(), &spec);
+        let rows = spec.breakpoints.iter().map(|breakpoint| BreakpointRow::of(breakpoint, base_columns)).collect();
+        let artifact_id = self.active.as_ref().map_or("", |active| active.id.as_str());
+        let (field_ids, discarded_draft) = follow_focused_breakpoint(ui, artifact_id, node.id.as_str(), rows, breakpoint_field_ids(node.id.as_str(), &spec), node.locked == Some(true));
+        if discarded_draft {
+            let now = std::time::Instant::now();
+            if !self.notices.current(now).is_some_and(|notice| notice.severity == crate::notice::Severity::Error) {
+                self.notices.info("다른 변경으로 중단점 목록이 바뀌어 입력하던 값을 취소했습니다", now);
+            }
+        }
         let mut edit: Option<Result<designllm_contracts::LayoutSpec, &'static str>> = None;
         for (index, breakpoint) in spec.breakpoints.iter().enumerate() {
             let (width_id, columns_id) = field_ids[index];
@@ -4347,13 +4355,83 @@ fn layout_operation(node_id: &str, layout: designllm_contracts::LayoutSpec) -> d
 /// breakpoint's field to the breakpoint that takes its place. The engine requires strictly increasing widths (canvas
 /// `model.rs`), so each width names one row.
 fn breakpoint_field_ids(node_id: &str, spec: &designllm_contracts::LayoutSpec) -> Vec<(Id, Id)> {
-    spec.breakpoints
-        .iter()
-        .map(|breakpoint| {
-            let width = breakpoint.min_width_css_px;
-            (Id::new(("breakpoint-width", node_id, width)), Id::new(("breakpoint-columns", node_id, width)))
-        })
-        .collect()
+    spec.breakpoints.iter().map(|breakpoint| breakpoint_row_ids(node_id, breakpoint.min_width_css_px)).collect()
+}
+
+fn breakpoint_row_ids(node_id: &str, width: u32) -> (Id, Id) {
+    (Id::new(("breakpoint-width", node_id, width)), Id::new(("breakpoint-columns", node_id, width)))
+}
+
+/// One breakpoint row as the focus follow compares it: the width, the columns it shows and every other value of the breakpoint.
+#[derive(Clone, PartialEq)]
+struct BreakpointRow {
+    width: u32,
+    columns: u32,
+    rest: (Option<String>, Option<i64>, Option<i64>, Option<String>, Option<Justify>),
+}
+
+impl BreakpointRow {
+    fn of(breakpoint: &designllm_contracts::Breakpoint, base_columns: u32) -> Self {
+        // No `..`: a field added to `Breakpoint` stops the build here until the follow compares it too.
+        let designllm_contracts::Breakpoint { min_width_css_px, mode, gap, padding, align, grid_columns, justify } = breakpoint;
+        Self { width: *min_width_css_px, columns: grid_columns.unwrap_or(base_columns), rest: (mode.clone(), *gap, *padding, align.clone(), *justify) }
+    }
+
+    fn same_but_width(&self, other: &Self) -> bool {
+        self.columns == other.columns && self.rest == other.rest
+    }
+}
+
+/// Keeps the focus and the typed text of a breakpoint field when another connection changes only its row's width. The ids follow
+/// the width, so such a change moves the row to new ids and the focused field would lose both. The rows drawn in the pass before
+/// are kept in egui's temp data under the artifact and the node. The focus moves only when that is the one row that changed, at the
+/// same place, with every value but the width the same and to ids no row had: then it is the same breakpoint (the engine keeps the
+/// list sorted). Any other change (a re-sort, a removal, an added row, another value of the row) drops the focus and the text, so
+/// nothing typed for one breakpoint is committed to another. A removal and an addition at the same place whose breakpoints differ
+/// only in width (`[768, 1024]` to `[500, 1024]`, all else equal) cannot be told from a width change and is followed.
+fn follow_focused_breakpoint(ui: &mut Ui, artifact_id: &str, node_id: &str, rows: Vec<BreakpointRow>, ids: Vec<(Id, Id)>, locked: bool) -> (Vec<(Id, Id)>, bool) {
+    let memory_id = Id::new(("breakpoint-rows-last-frame", artifact_id, node_id));
+    let pass = ui.ctx().cumulative_pass_nr();
+    let previous: Option<(u64, Vec<BreakpointRow>)> = ui.data(|data| data.get_temp(memory_id));
+    let mut discarded_draft = false;
+    if let (Some((drawn, previous)), Some(focused)) = (previous, ui.memory(|memory| memory.focused())) {
+        if drawn + 1 == pass {
+            discarded_draft = move_breakpoint_focus(ui, node_id, &previous, &rows, &ids, focused, locked);
+        }
+    }
+    ui.data_mut(|data| data.insert_temp(memory_id, (pass, rows)));
+    (ids, discarded_draft)
+}
+
+fn move_breakpoint_focus(ui: &mut Ui, node_id: &str, previous: &[BreakpointRow], rows: &[BreakpointRow], ids: &[(Id, Id)], focused: Id, locked: bool) -> bool {
+    let holds = |(width, columns): &(Id, Id)| *width == focused || *columns == focused;
+    let previous_ids: Vec<(Id, Id)> = previous.iter().map(|row| breakpoint_row_ids(node_id, row.width)).collect();
+    let Some(index) = previous_ids.iter().position(holds) else { return false };
+    let new_index = ids.iter().position(holds);
+    if !locked && new_index.is_some_and(|new_index| rows[new_index] == previous[index]) {
+        return false;
+    }
+    let on_width = previous_ids[index].0 == focused;
+    let shown = if on_width { previous[index].width } else { previous[index].columns };
+    let draft = ui.data_mut(|data| data.remove_temp::<String>(focused.with("draft")))
+        .filter(|text| *text != widgets::format_number(f64::from(shown), 0) && text.trim().parse::<u32>().ok() != Some(shown));
+    let changed: Vec<usize> = (0..rows.len()).filter(|&row| previous.get(row) != Some(&rows[row])).collect();
+    let same_breakpoint = !locked && new_index.is_none() && previous.len() == rows.len() && changed == [index] && previous[index].same_but_width(&rows[index]) && !previous_ids.contains(&ids[index]);
+    if !same_breakpoint {
+        ui.memory_mut(|memory| memory.surrender_focus(focused));
+        return draft.is_some();
+    }
+    let target = if on_width { ids[index].0 } else { ids[index].1 };
+    // Only text the user typed moves. The value the field showed does not, nor a text left under the new ids: the field shows the
+    // new value, and leaving it writes nothing back over the change.
+    ui.data_mut(|data| {
+        data.remove::<String>(target.with("draft"));
+        if let Some(text) = draft {
+            data.insert_temp(target.with("draft"), text);
+        }
+    });
+    ui.memory_mut(|memory| memory.request_focus(target));
+    false
 }
 
 /// The layout with one breakpoint added after the widest one, with the grid's columns. Refused when the list is full.

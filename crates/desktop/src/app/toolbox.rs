@@ -33,13 +33,16 @@ pub(super) struct AddFocus {
 }
 
 /// A video dropped on another page, waiting in the frame memory under `WAITING_VIDEO` for the answer to the page change
-/// (`run_waiting_toolbox_video`): the point, the artifact, what to put back, and the egui time it was dropped at.
+/// (`run_waiting_toolbox_video`): the point, the artifact, what to put back, the egui time it was dropped at, and the
+/// selection generation and revision the page change left (a change of either since then, by the user or an agent, is not put back).
 #[derive(Clone, Default)]
 struct WaitingVideo {
     at: AddAt,
     artifact_id: String,
     before: Option<AddFocus>,
     since: f64,
+    selection_generation: u64,
+    revision: u64,
 }
 
 const WAITING_VIDEO: &str = "toolbox-waiting-video";
@@ -424,6 +427,12 @@ impl DesktopApp {
     /// ahead here: refused (an error), its file dialog cancelled, or its memo editor not opened (68p 3a). A refusal that
     /// comes back from the host later is not undone here.
     fn run_tile(&mut self, ctx: &Context, tile: Tile, at: AddAt, anchor: Pos2) {
+        // A video while one is inserted or waits for its page change is refused before the page changes, so the refusal puts
+        // nothing back.
+        if tile.action == Action::Video && self.video_busy(ctx) {
+            self.set_error("진행 중인 동영상 추가가 끝날 때까지 기다리세요".into());
+            return;
+        }
         let before = self.add_focus_state(at.page_index);
         let result = match tile.action {
             Action::Command(id) => {
@@ -433,17 +442,18 @@ impl DesktopApp {
                 self.invoke(id, args).map(|()| id != "add.image" || self.pending_calls("asset.import") > imports)
             }
             Action::Memo => self.begin_board_memo_centred(ctx, at.page_index, at.center).map(|()| self.board_memo_editor.is_some()),
-            // On another page the video waits for the answer to the page change (`run_waiting_toolbox_video`).
+            // On another page the video waits for the answer to the page change (`run_waiting_toolbox_video`). A drag closes no
+            // menu or popover (egui closes them on a click), so the drop closes them.
             Action::Video if before.is_some() => {
-                if ctx.data(|data| data.get_temp::<WaitingVideo>(Id::new(WAITING_VIDEO))).is_some() {
-                    Err("진행 중인 동영상 추가가 끝날 때까지 기다리세요".into())
-                } else {
-                    self.focus_add_page(at.page_index);
-                    let artifact_id = self.active.as_ref().map(|active| active.id.clone()).unwrap_or_default();
-                    let since = ctx.input(|input| input.time);
-                    ctx.data_mut(|data| data.insert_temp(Id::new(WAITING_VIDEO), WaitingVideo { at, artifact_id, before, since }));
-                    return;
-                }
+                egui::Popup::close_all(ctx);
+                self.focus_add_page(at.page_index);
+                let artifact_id = self.active.as_ref().map(|active| active.id.clone()).unwrap_or_default();
+                let since = ctx.input(|input| input.time);
+                let selection_generation = self.selection_generation;
+                let revision = self.artifact.as_ref().map_or(0, |artifact| artifact.revision);
+                let waiting = WaitingVideo { at, artifact_id, before, since, selection_generation, revision };
+                ctx.data_mut(|data| data.insert_temp(Id::new(WAITING_VIDEO), waiting));
+                return;
             }
             // A cancelled dialog starts no video insert.
             Action::Video => self.begin_canvas_video_insert_at(Some(at)).map(|()| self.video_insert.is_some()),
@@ -469,6 +479,43 @@ impl DesktopApp {
         self.pending.values().filter(|pending| pending.method == method).count()
     }
 
+    /// Whether a video insert runs or a video waits for its page change (`WAITING_VIDEO`, read this frame).
+    fn video_busy(&self, ctx: &Context) -> bool {
+        self.video_insert.is_some() || ctx.data(|data| data.get_temp::<WaitingVideo>(Id::new(WAITING_VIDEO))).is_some()
+    }
+
+    /// Puts back the page and selection of a video wait that did not go ahead, unless the selection or the document has changed
+    /// since the page change, by the user or by another worker (an agent's commit): that change then stays.
+    fn put_back_waiting_video(&mut self, waiting: WaitingVideo) {
+        let changed = self.selection_generation != waiting.selection_generation || self.artifact.as_ref().map_or(0, |artifact| artifact.revision) != waiting.revision;
+        if !changed {
+            self.restore_add_focus(waiting.before);
+        }
+    }
+
+    /// Ends a video wait that did not go ahead with `message`. The page and selection go back unless an input bound to the page
+    /// is open (`page_input_open`): that input stays on the page it was opened on.
+    fn end_waiting_video(&mut self, ctx: &Context, waiting: WaitingVideo, message: String) {
+        if !self.page_input_open(ctx) {
+            self.put_back_waiting_video(waiting);
+        }
+        self.set_error(message);
+    }
+
+    /// Whether an input bound to the current page is open: an inline text edit, a memo editor, the icon picker, or the section
+    /// editor.
+    fn page_input_open(&self, ctx: &Context) -> bool {
+        self.inline_text_edit.is_some()
+            || self.board_memo_editor.is_some()
+            || ctx.data(|data| data.get_temp::<PendingIcon>(Id::new(PENDING_ICON))).is_some()
+            || self.page_section_editor.is_some()
+    }
+
+    /// Whether an input is open that a file dialog must not open over: one bound to the page, or a key dialog.
+    fn input_open(&self, ctx: &Context) -> bool {
+        self.page_input_open(ctx) || self.key_dialog_open()
+    }
+
     /// The video dropped on another page, once the page change's selection request is answered: the video insert checks that
     /// no selection change is on its way (`video_insert_intent`), so its dialog opens only then. The page and the selection
     /// are put back when it does not go ahead (refused, cancelled, or no answer within `VIDEO_WAIT_SECONDS`); a drop on an
@@ -481,20 +528,29 @@ impl DesktopApp {
         if self.active.as_ref().is_none_or(|active| active.id != waiting.artifact_id) || self.view_ref().page_index != waiting.at.page_index {
             return;
         }
+        // The editor was left (the home screen): there is no page to put back on, and no file dialog is opened.
+        if !self.screen_is_editor() {
+            self.set_error("편집 화면을 벗어나 동영상 추가를 취소했습니다".into());
+            return;
+        }
         if self.pending_calls("selection.set") > 0 {
             if ctx.input(|input| input.time) - waiting.since < VIDEO_WAIT_SECONDS {
                 ctx.data_mut(|data| data.insert_temp(id, waiting));
             } else {
-                self.restore_add_focus(waiting.before);
-                self.set_error("페이지 전환이 끝나지 않아 동영상을 추가하지 않았습니다".into());
+                self.end_waiting_video(ctx, waiting, "페이지 전환이 끝나지 않아 동영상을 추가하지 않았습니다".into());
             }
+            return;
+        }
+        // An input the user opened since the drop: the file dialog would open over it.
+        if self.input_open(ctx) {
+            self.end_waiting_video(ctx, waiting, "다른 입력이 열려 있어 동영상을 추가하지 않았습니다. 끝낸 뒤 다시 놓으세요".into());
             return;
         }
         match self.begin_canvas_video_insert_at(Some(waiting.at)) {
             Ok(()) if self.video_insert.is_some() => {}
-            Ok(()) => self.restore_add_focus(waiting.before),
+            Ok(()) => self.put_back_waiting_video(waiting),
             Err(message) => {
-                self.restore_add_focus(waiting.before);
+                self.put_back_waiting_video(waiting);
                 self.set_error(message);
             }
         }

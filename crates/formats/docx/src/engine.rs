@@ -797,7 +797,10 @@ impl EngineAdapter for DocxEngine {
         let links = text_link_spans(artifact, context)?;
         let mut scene = flow::layout_flow_with_links(document, &links, context)?;
         for diagnostic in &artifact.diagnostics {
-            let present = scene.diagnostics.iter().any(|d| d.code == diagnostic.code && d.node_id == diagnostic.node_id);
+            let present = scene
+                .diagnostics
+                .iter()
+                .any(|d| d.code == diagnostic.code && d.node_id == diagnostic.node_id && d.message == diagnostic.message);
             if !present {
                 scene.diagnostics.push(diagnostic.clone());
             }

@@ -628,6 +628,9 @@ struct Interp<'a> {
     counted_ignored: HashSet<usize>,
     /// Fonts whose shown text came from their encoding, already counted on this page, by address.
     counted_encoding: HashSet<usize>,
+    /// Fonts whose shown text came from StandardEncoding in place of a Type 1 built-in encoding that was not read, already counted
+    /// on this page, by address.
+    counted_type1: HashSet<usize>,
     st: GState<'a>,
     /// The graphics states that the open `q` operators saved. A form XObject has a stack of its own.
     stack: Vec<GState<'a>>,
@@ -841,6 +844,9 @@ impl<'a> Interp<'a> {
                 let text = font.text(code)?;
                 if font.text_from_encoding(code) && self.counted_encoding.insert(font_key) {
                     self.note("PDF_TEXT_FROM_ENCODING");
+                }
+                if font.text_from_standard_for_builtin(code) && self.counted_type1.insert(font_key) {
+                    self.note("PDF_TYPE1_ENCODING_UNREADABLE");
                 }
                 // Glyph space (em) to user space: scale by Tfs and Th, add Rise, then Tm and CTM.
                 let glyph_to_user = Matrix([tfs * th, 0.0, 0.0, tfs, 0.0, rise]).mul(text_to_user);
@@ -1854,6 +1860,7 @@ pub(crate) fn interpret_with_budget(doc: &Document, page_id: ObjectId, budget: B
         counted_widths: HashSet::new(),
         counted_ignored: HashSet::new(),
         counted_encoding: HashSet::new(),
+        counted_type1: HashSet::new(),
         st: GState::initial(),
         stack: Vec::new(),
         tm: Matrix::IDENTITY,

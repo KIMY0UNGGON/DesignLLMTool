@@ -69,6 +69,12 @@ fn counted_diagnostic(code: &str, count: u32) -> Diagnostic {
                  their codes past 0xFF are not read"
             )
         }
+        "PDF_TYPE1_ENCODING_UNREADABLE" => {
+            format!(
+                "{count} embedded Type 1 font(s) on this page have a built-in encoding that is not read; some of their text is \
+                 read with the standard encoding instead"
+            )
+        }
         _ => "reader diagnostic; see the code".to_string(),
     };
     Diagnostic { code: code.into(), message, node_id: None, blocking: false, params: Default::default() }.with_param("count", count)
@@ -85,7 +91,8 @@ pub struct PageReport {
     pub read: bool,
     pub printed_page_label: Option<String>,
     pub geometry: Option<PdfPageGeometry>,
-    /// Visible glyphs inside the CropBox that were used for evidence.
+    /// Visible glyphs inside the CropBox that were passed to the line reader. A glyph or line drawn again at the same place
+    /// counts each time, although the evidence reads it once.
     pub visible_glyphs: u32,
     pub excluded_invisible: u32,
     pub excluded_outside_crop: u32,

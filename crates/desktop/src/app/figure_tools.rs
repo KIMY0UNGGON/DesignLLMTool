@@ -25,8 +25,10 @@ use super::{
     HeldPdfEvidence, PdfEvidenceTarget, PendingAction, PendingRequest,
 };
 use super::pdf_coverage::{carry_pdf_coverage, coverage_is_consistent};
+use super::messages::{diagnostic_words, Words};
 use crate::{
     figure_layout::{free_diagram_node_bounds, tiled_panel_bounds},
+    notice::Severity,
     rpc::RpcPayload,
     theme,
     widgets::{self, DialogButton, DialogChoice},
@@ -502,6 +504,50 @@ pub(super) enum PageOutcome {
     Unsafe(Vec<String>),
 }
 
+fn report_diagnostic_lines(report: &serde_json::Value) -> Vec<String> {
+    report
+        .get("diagnostics")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let code = item.get("code")?.as_str()?;
+            let message = item.get("message").and_then(serde_json::Value::as_str).unwrap_or_default();
+            Some(format!("{code}: {message}"))
+        })
+        .collect()
+}
+
+fn report_diagnostic_codes(report: &serde_json::Value) -> Vec<String> {
+    report.get("diagnostics").and_then(serde_json::Value::as_array)
+        .into_iter().flatten()
+        .filter_map(|item| item.get("code").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .collect()
+}
+
+fn page_report_codes(reply: &serde_json::Value, page_index: u32) -> Vec<String> {
+    reply.get("page_reports").and_then(serde_json::Value::as_array)
+        .and_then(|reports| reports.iter().find(|report| {
+            report.get("physical_page_index").and_then(serde_json::Value::as_u64) == Some(u64::from(page_index))
+        }))
+        .map(report_diagnostic_codes)
+        .unwrap_or_default()
+}
+
+fn pdf_read_warning(codes: &[String]) -> Option<String> {
+    let mut lines = Vec::new();
+    for code in codes {
+        let line = match diagnostic_words(code) {
+            Some(Words::Warning(line)) => line,
+            _ => "PDF 읽기 중 확인이 필요한 항목이 있어 추출된 내용을 확인해 주세요",
+        };
+        if !lines.contains(&line) {
+            lines.push(line);
+        }
+    }
+    (!lines.is_empty()).then(|| lines.join(". "))
+}
+
 /// What the reply says about the requested page. `records` is the number of evidence records the reply carries.
 pub(super) fn page_outcome(reply: &serde_json::Value, page_index: u32, records: usize) -> PageOutcome {
     // A reply whose page count, read pages and page reports contradict each other or the request shows no page as read.
@@ -517,18 +563,7 @@ pub(super) fn page_outcome(reply: &serde_json::Value, page_index: u32, records: 
         return PageOutcome::Unsafe(Vec::new());
     };
     if report.get("read").and_then(serde_json::Value::as_bool) != Some(true) {
-        let lines: Vec<String> = report
-            .get("diagnostics")
-            .and_then(serde_json::Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|item| {
-                let code = item.get("code")?.as_str()?;
-                let message = item.get("message").and_then(serde_json::Value::as_str).unwrap_or_default();
-                Some(format!("{code}: {message}"))
-            })
-            .collect();
-        return PageOutcome::Unsafe(lines);
+        return PageOutcome::Unsafe(report_diagnostic_lines(report));
     }
     match report.get("evidence_count").and_then(serde_json::Value::as_u64) {
         Some(0) if records == 0 => PageOutcome::NoText,
@@ -993,16 +1028,43 @@ impl DesktopApp {
             .unwrap_or_default();
         let outcome = page_outcome(reply, target.page_index, read.len());
         self.record_pdf_reading(&target, reply, !matches!(outcome, PageOutcome::Unsafe(_)));
+        let codes = page_report_codes(reply, target.page_index);
+        self.smoke_note_pdf_code_list(&codes);
         match outcome {
-            PageOutcome::Unsafe(lines) => self.set_error(unsafe_pages_message(&target.page_index.saturating_add(1).to_string(), &lines)),
-            PageOutcome::NoText => self.set_error(no_text_message(target.page_index)),
+            PageOutcome::Unsafe(lines) => {
+                let message = unsafe_pages_message(&target.page_index.saturating_add(1).to_string(), &lines);
+                self.set_error(message);
+            }
+            PageOutcome::NoText => {
+                let mut message = no_text_message(target.page_index);
+                if let Some(warning) = pdf_read_warning(&codes) {
+                    message.push_str(&format!(". {warning}"));
+                }
+                self.set_error(message);
+            }
             PageOutcome::Legacy if read.is_empty() => self.set_error(no_text_message(target.page_index)),
-            PageOutcome::Legacy | PageOutcome::Read => self.hold_pdf_evidence(read, target),
+            PageOutcome::Legacy => { self.hold_pdf_evidence(read, target); }
+            PageOutcome::Read => {
+                let warning = pdf_read_warning(&codes);
+                let id = self.hold_pdf_evidence(read, target);
+                if let Some(warning) = warning {
+                    if let Some(held) = self.held_pdf_evidence.iter_mut().find(|held| held.id == id && held.ticket.is_some()) {
+                        held.message = warning;
+                    } else {
+                        let notice = self.notices.current(Instant::now()).map(|notice| (notice.severity, notice.text.clone()));
+                        match notice {
+                            Some((Severity::Error, text)) => self.set_error(format!("{text}. {warning}")),
+                            Some((_, text)) => self.notices.warning(format!("{text}. {warning}"), Instant::now()),
+                            None => self.notices.warning(warning, Instant::now()),
+                        }
+                    }
+                }
+            }
         }
     }
 
     /// Holds the records one page read produced, under a new id, and tries to put them into the figure they were read for.
-    fn hold_pdf_evidence(&mut self, records: Vec<Evidence>, target: PdfEvidenceTarget) {
+    fn hold_pdf_evidence(&mut self, records: Vec<Evidence>, target: PdfEvidenceTarget) -> String {
         // The import is over: the held records wait for no reply.
         let target = PdfEvidenceTarget { awaiting: None, ..target };
         let id = new_id();
@@ -1014,6 +1076,7 @@ impl DesktopApp {
             ticket: None,
         });
         self.try_put_held_pdf_evidence(&id);
+        id
     }
 
     /// Puts one held set into the figure it was read for, when nothing stands in the way. The figure is checked right before
@@ -1118,6 +1181,9 @@ impl DesktopApp {
         if let Some(held) = self.held_pdf_evidence.iter().find(|held| held.ticket == Some(ticket)) {
             let committed_revision = reply.get("revision").and_then(serde_json::Value::as_u64);
             carry_pdf_coverage(&mut self.pdf_coverage, &held.target, committed_revision);
+            if !held.message.is_empty() {
+                self.notices.warning(&held.message, Instant::now());
+            }
         }
         self.held_pdf_evidence.retain(|held| held.ticket != Some(ticket));
     }

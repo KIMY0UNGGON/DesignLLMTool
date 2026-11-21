@@ -1388,7 +1388,18 @@ pub fn check_intent(edit: &NativeEdit, before: &DocView, after: &DocView, doc_af
             Ok(())
         }
         NativeEdit::InsertTable { section, para, rows, cols } => {
-            let pa = after.sections[*section].paras.get(*para).ok_or_else(|| mismatch("Table paragraph missing"))?;
+            let (bs, as_) = (&before.sections[*section].paras, &after.sections[*section].paras);
+            // The table paragraph and the empty paragraph rhwp keeps after it (`create_table_with_options_native`) are new.
+            if as_.len() != bs.len() + 2 { return Err(mismatch("Paragraph count did not grow by the table paragraph and its trailing paragraph")); }
+            let (kept_breaks, new_break) = breaks_after_insert(bs, *para);
+            for (k, pb) in bs.iter().enumerate() {
+                let pa = &as_[if k < *para { k } else { k + 2 }];
+                if pb.text != pa.text || pb.ctrls != pa.ctrls || pb.marks != pa.marks || pb.styles != pa.styles || pb.format != pa.format || kept_breaks[k] != pa.page_break || pb.pictures != pa.pictures || pb.tables != pa.tables { return Err(mismatch(format!("Paragraph {k} changed while inserting a table"))); }
+            }
+            let trailing = as_.get(*para + 1).ok_or_else(|| mismatch("Trailing paragraph of the table missing"))?;
+            if !trailing.text.is_empty() || !trailing.ctrls.is_empty() || trailing.page_break { return Err(mismatch("The paragraph after the table is not an empty paragraph without a page break")); }
+            let pa = as_.get(*para).ok_or_else(|| mismatch("Table paragraph missing"))?;
+            if pa.page_break != new_break { return Err(mismatch("The table paragraph's page break is not the one of its place")); }
             let t = pa.tables.first().ok_or_else(|| mismatch("Inserted table missing"))?;
             if (t.rows, t.cols) != (*rows, *cols) || t.cells.len() != usize::from(*rows) * usize::from(*cols) { return Err(mismatch("Inserted table has the wrong grid")); }
             let native = match doc_after.sections[*section].paragraphs[*para].controls.first() { Some(Control::Table(t)) => t, _ => return Err(mismatch("Inserted table is not the first control")) };

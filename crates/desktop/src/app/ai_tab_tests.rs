@@ -1261,10 +1261,53 @@ fn the_undo_icon_stays_in_the_column_at_the_default_and_least_width() {
 
 #[test]
 fn the_undo_row_names_agent_actors() {
-    use super::agent_actor_name;
-    assert_eq!(agent_actor_name("job:fac9ff74-450c-44b6-bad9-1d9758840efe:agent"), "AI 작업 fac9ff74");
-    assert_eq!(agent_actor_name("job:j1:desktop"), "AI 작업 j1");
-    assert_eq!(agent_actor_name("mcp:0123456789abcdef:agent"), "에이전트 01234567");
-    assert_eq!(agent_actor_name("cli:agent"), "명령줄");
-    assert_eq!(agent_actor_name("someone"), "someone");
+    use super::agent_actor_parts;
+    let actor_name = |actor: &str| {
+        let (name, suffix) = agent_actor_parts(actor);
+        name + &suffix
+    };
+    assert_eq!(actor_name("job:fac9ff74-450c-44b6-bad9-1d9758840efe:agent"), "AI 작업 fac9ff74");
+    assert_eq!(actor_name("job:j1:desktop"), "AI 작업 j1");
+    assert_eq!(actor_name("mcp:0123456789abcdef:agent"), "에이전트 01234567");
+    assert_eq!(actor_name("cli:agent"), "명령줄");
+    assert_eq!(actor_name("someone"), "someone");
+}
+
+#[test]
+fn the_undo_row_actor_names_cover_empty_korean_and_length_edges() {
+    use super::agent_actor_parts;
+    let actor_name = |actor: &str| {
+        let (name, suffix) = agent_actor_parts(actor);
+        name + &suffix
+    };
+    // An empty id is shown as the actor itself, without a trailing gap.
+    assert_eq!(actor_name("job::agent"), "job::agent");
+    assert_eq!(actor_name("mcp::agent"), "mcp::agent");
+    // Korean ids count characters, not bytes: the first 8 characters.
+    assert_eq!(actor_name("job:가나다라마바사아자차:agent"), "AI 작업 가나다라마바사아");
+    assert_eq!(actor_name("mcp:가나다라마바사아자차:agent"), "에이전트 가나다라마바사아");
+    // Exactly 8 characters, and fewer than 8.
+    assert_eq!(actor_name("job:abcdefgh:agent"), "AI 작업 abcdefgh");
+    assert_eq!(actor_name("mcp:abcdefgh:agent"), "에이전트 abcdefgh");
+    assert_eq!(actor_name("mcp:abc:agent"), "에이전트 abc");
+    // A connection without a client name ("agent", "desktop", or nothing) keeps the id.
+    assert_eq!(actor_name("mcp:0123456789abcdef"), "에이전트 01234567");
+    assert_eq!(actor_name("mcp:0123456789abcdef:desktop"), "에이전트 01234567");
+    assert_eq!(actor_name("mcp:0123456789abcdef:"), "에이전트 01234567");
+    // A connection with a client name shows the name.
+    assert_eq!(actor_name("mcp:0123456789abcdef:ui-scenario"), "에이전트 ui-scenario · 0123");
+    assert_eq!(actor_name("mcp:0123456789abcdef:UI도구"), "에이전트 UI도구 · 0123");
+    // An empty id with a client name shows the name.
+    assert_eq!(actor_name("mcp::ui-scenario"), "에이전트 ui-scenario");
+    // The name is trimmed. Blank names (spaces, tabs, zero-width characters) count as no name and keep the id.
+    assert_eq!(actor_name("mcp:0123456789abcdef: ui-scenario "), "에이전트 ui-scenario · 0123");
+    assert_eq!(actor_name("mcp:0123456789abcdef: \t"), "에이전트 01234567");
+    assert_eq!(actor_name("mcp:0123456789abcdef:\u{200B}\u{FEFF}\u{200D}"), "에이전트 01234567");
+    assert_eq!(actor_name("mcp:abc:\u{200B}"), "에이전트 abc");
+    assert_eq!(actor_name("mcp:가나다라마바사아자차:UI도구"), "에이전트 UI도구 · 가나다라");
+    // The parts: the name (cut when narrow) and the id suffix (kept whole).
+    let (name, suffix) = agent_actor_parts("mcp:0123456789abcdef:ui-scenario");
+    assert_eq!((name.as_str(), suffix.as_str()), ("에이전트 ui-scenario", " · 0123"));
+    let (name, suffix) = agent_actor_parts("job:j1:agent");
+    assert_eq!((name.as_str(), suffix.as_str()), ("AI 작업 j1", ""));
 }
