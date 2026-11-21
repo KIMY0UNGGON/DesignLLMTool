@@ -70,10 +70,7 @@ impl AiTabHarness {
     fn draw_ai_tab(&mut self, input: RawInput) -> egui::FullOutput {
         let ctx = self.ctx.clone();
         ctx.run(input, |ctx| {
-            egui::SidePanel::left("test-ai-sidebar").exact_width(theme::SIDEBAR_WIDTH).show(ctx, |ui| {
-                let palette = theme::palette(ctx);
-                self.app.draw_ai_tab(ui, &palette);
-            });
+            draw_in_sidebar(ctx, "test-ai-sidebar", theme::SIDEBAR_WIDTH, &mut self.app);
         })
     }
 
@@ -92,6 +89,19 @@ impl AiTabHarness {
             });
         })
     }
+}
+
+/// Draws the AI tab in a left panel `width` wide as the window's sidebar does (`chrome.rs`): a panel without a margin, the
+/// zero item spacing its tab strip sets, and the tab's vertical scroll area. Returns the panel's column.
+fn draw_in_sidebar(ctx: &Context, id: &str, width: f32, app: &mut DesktopApp) -> Rect {
+    let mut column = Rect::NOTHING;
+    egui::SidePanel::left(id.to_owned()).exact_width(width).frame(egui::Frame::new()).show(ctx, |ui| {
+        let palette = theme::palette(ctx);
+        ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+        column = ui.max_rect();
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| app.draw_ai_tab(ui, &palette));
+    });
+    column
 }
 
 fn click_at(pos: Pos2) -> RawInput {
@@ -165,10 +175,7 @@ fn the_job_label_is_the_request_the_job_was_started_with_not_the_text_in_the_req
     let draw = |h: &mut Harness| {
         let ctx = h.ctx.clone();
         let output = ctx.run(screen(1.0, 1000.0, 800.0), |ctx| {
-            egui::SidePanel::left("test-ai-sidebar").exact_width(theme::SIDEBAR_WIDTH).show(ctx, |ui| {
-                let palette = theme::palette(ctx);
-                h.app.draw_ai_tab(ui, &palette);
-            });
+            draw_in_sidebar(ctx, "test-ai-sidebar", theme::SIDEBAR_WIDTH, &mut h.app);
         });
         drawn_text(&output)
     };
@@ -728,10 +735,7 @@ fn drawn_ai_tab(app: &mut DesktopApp) -> Vec<String> {
     let ctx = Context::default();
     theme::install(&ctx);
     let output = ctx.run(screen(1.0, 1000.0, 800.0), |ctx| {
-        egui::SidePanel::left("test-ai-sidebar-of-window").exact_width(theme::SIDEBAR_WIDTH).show(ctx, |ui| {
-            let palette = theme::palette(ctx);
-            app.draw_ai_tab(ui, &palette);
-        });
+        draw_in_sidebar(ctx, "test-ai-sidebar-of-window", theme::SIDEBAR_WIDTH, app);
     });
     drawn_text(&output)
 }
@@ -1143,4 +1147,124 @@ fn the_users_choice_is_dropped_when_the_window_shows_another_document() {
     window.app.publish_ui_if_due();
     assert!(window.app.ui.user_selection.is_none(), "a choice made on the first document is dropped");
     assert!(window.app.ai_target_ids().is_empty(), "the other document has no choice");
+}
+
+/// The texts the AI tab draws in one frame at sidebar width `width` with their rects (a cut text keeps its whole text and
+/// has its cut size), the panel's column, and the frame's house controls (`ui_record`).
+fn ai_tab_texts(app: &mut DesktopApp, width: f32) -> (Vec<(String, Rect)>, Rect, Vec<crate::ui_record::Control>) {
+    fn walk(shape: &Shape, found: &mut Vec<(String, Rect)>) {
+        match shape {
+            Shape::Text(text) => found.push((text.galley.text().to_owned(), Rect::from_min_size(text.pos, text.galley.size()))),
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, found)),
+            _ => {}
+        }
+    }
+    let ctx = Context::default();
+    theme::install(&ctx);
+    let mut column = Rect::NOTHING;
+    let mut controls = Vec::new();
+    let output = ctx.run(screen(1.0, 1000.0, 800.0), |ctx| {
+        crate::ui_record::begin();
+        column = draw_in_sidebar(ctx, "test-ai-tab-column", width, app);
+        controls = crate::ui_record::finish();
+    });
+    let mut found = Vec::new();
+    for clipped in &output.shapes {
+        walk(&clipped.shape, &mut found);
+    }
+    (found, column, controls)
+}
+
+fn text_rect(texts: &[(String, Rect)], text: &str) -> Rect {
+    texts.iter().find(|(drawn, _)| drawn == text).unwrap_or_else(|| panic!("{text:?} is drawn: {texts:?}")).1
+}
+
+#[test]
+fn the_ai_tab_starts_at_the_layers_tab_margin() {
+    // The first element of the tab starts `TREE_PADDING` in from the sidebar's column, as the layers tree does.
+    let mut host = Host::start();
+    let canvas = canvas_with_three_boxes(&mut host, [0, 1_000_000, 3_000_000]);
+    let mut window = Window::open(&mut host, &canvas);
+    let (texts, column, _) = ai_tab_texts(&mut window.app, theme::SIDEBAR_WIDTH);
+    let scope = text_rect(&texts, "작업물 전체");
+    assert_eq!(scope.left() - column.left(), theme::TREE_PADDING, "the AI tab's left margin");
+}
+
+/// A window whose job was started by `prompt`, with `client` as the job's runner.
+fn window_with_job(host: &mut Host, prompt: &str, client: &str) -> Window {
+    let canvas = canvas_with_three_boxes(host, [0, 1_000_000, 3_000_000]);
+    let mut window = Window::open(host, &canvas);
+    window.app.ai_model = "mock-model".into();
+    window.step(host, "ai.request", json!({ "prompt": prompt })).expect("the request is sent");
+    let mut job = window.app.job.clone().expect("the job is shown");
+    job.client_name = Some(client.into());
+    window.app.job = Some(job);
+    window
+}
+
+#[test]
+fn the_job_title_and_its_runner_name_are_drawn_apart() {
+    // The title and the runner's name are two texts with a gap between them, not one word. The sidebar draws its tab
+    // strip with zero item spacing, and the tab is drawn under it.
+    let mut host = Host::start();
+    let mut window = window_with_job(&mut host, "모바일 앱 로그인 화면", "claude-code");
+    let (texts, _, _) = ai_tab_texts(&mut window.app, theme::SIDEBAR_WIDTH);
+    let title = text_rect(&texts, "모바일 앱 로그인 화면");
+    let runner = text_rect(&texts, "claude-code");
+    let gap = runner.left() - title.right();
+    assert!(gap >= 5.0, "the gap between the title and the runner's name: {gap}");
+}
+
+#[test]
+fn a_long_job_title_is_cut_before_the_runner_name_at_the_default_and_least_width() {
+    // A long request is cut to the room the runner's name leaves; the name stays inside the tab's column.
+    let prompt = "모바일 앱 로그인 화면과 회원가입 화면, 비밀번호 찾기 화면까지 한 번에 정리해 주세요";
+    let mut host = Host::start();
+    let mut window = window_with_job(&mut host, prompt, "claude-code");
+    for width in [theme::SIDEBAR_WIDTH, theme::SIDEBAR_MIN] {
+        let (texts, column, _) = ai_tab_texts(&mut window.app, width);
+        let inner_right = column.right() - theme::TREE_PADDING;
+        let title = text_rect(&texts, prompt);
+        let runner = text_rect(&texts, "claude-code");
+        assert!(title.right() < runner.left(), "at {width}: the title ends before the runner's name, {title:?} {runner:?}");
+        assert!(runner.right() <= inner_right + 0.5, "at {width}: the runner's name {runner:?} is inside {column:?}");
+    }
+}
+
+#[test]
+fn the_undo_icon_stays_in_the_column_at_the_default_and_least_width() {
+    // The undo row names its actor (a job by the first 8 characters of its id) cut before the icon; the icon stays inside
+    // the tab's column, also for a long actor.
+    let job_actor = "job:fac9ff74-450c-44b6-bad9-1d9758840efe:agent";
+    // An actor of no known form is shown as it is, cut.
+    let long_actor = format!("outside:{}{}{}", new_id(), new_id(), new_id());
+    let mut host = Host::start();
+    let canvas = canvas_with_three_boxes(&mut host, [0, 1_000_000, 3_000_000]);
+    let mut window = Window::open(&mut host, &canvas);
+    for actor in [job_actor, long_actor.as_str()] {
+        window.app.agent_batches.push(crate::app::state::AgentBatch { request_id: new_id(), actor: actor.into() });
+    }
+    for width in [theme::SIDEBAR_WIDTH, theme::SIDEBAR_MIN] {
+        let (texts, column, controls) = ai_tab_texts(&mut window.app, width);
+        let inner_right = column.right() - theme::TREE_PADDING;
+        let icons: Vec<Rect> = controls.iter().filter(|control| control.label == "되돌리기").map(|control| control.rect).collect();
+        assert_eq!(icons.len(), 2, "at {width}: one undo icon per batch");
+        for icon in &icons {
+            assert!(icon.left() >= column.left() && icon.right() <= inner_right + 0.5, "at {width}: the undo icon {icon:?} is inside {column:?}");
+        }
+        // Newest first: the long actor's row, then the job's.
+        let name = text_rect(&texts, "AI 작업 fac9ff74");
+        assert!(name.right() <= icons[1].left(), "at {width}: the job's name {name:?} ends before its icon {:?}", icons[1]);
+        assert!(!texts.iter().any(|(text, _)| text == job_actor), "at {width}: the row does not show the raw actor");
+    }
+}
+
+#[test]
+fn the_undo_row_names_agent_actors() {
+    use super::agent_actor_name;
+    assert_eq!(agent_actor_name("job:fac9ff74-450c-44b6-bad9-1d9758840efe:agent"), "AI 작업 fac9ff74");
+    assert_eq!(agent_actor_name("job:j1:desktop"), "AI 작업 j1");
+    assert_eq!(agent_actor_name("mcp:0123456789abcdef:agent"), "에이전트 01234567");
+    assert_eq!(agent_actor_name("cli:agent"), "명령줄");
+    assert_eq!(agent_actor_name("someone"), "someone");
 }

@@ -52,6 +52,37 @@ pub const AGENT_PATH_METHODS: &[&str] = &["artifact.open", "asset.import", "arti
 /// drive), no link or reparse point (junction, symbolic link, cloud placeholder) from the drive root to the file, and a
 /// regular file. Only metadata is read. The core applies the same rules again, by handle, to the requests it serves.
 pub fn agent_file_refusal(raw: &str) -> Option<String> {
+    if let Some(reason) = local_walk_refusal(raw, false, "no such file") {
+        return Some(reason);
+    }
+    match std::fs::symlink_metadata(raw) {
+        Ok(meta) if meta.is_file() => None,
+        _ => Some(format!("{raw}: not a regular file")),
+    }
+}
+
+/// Why a save dialog's answer `raw` may not name the file to write (task 68r), by the agent path rules of
+/// [`agent_file_refusal`] except for the file itself: it need not exist yet (when it does, it must be a regular file), and
+/// the folder that holds it must exist, with no link or reparse point from the drive root down to it. Only metadata is read.
+pub fn save_target_refusal(raw: &str) -> Option<String> {
+    if let Some(reason) = local_walk_refusal(raw, true, "the folder does not exist") {
+        return Some(reason);
+    }
+    let path = Path::new(raw);
+    if path.parent().is_none_or(|folder| !std::fs::metadata(folder).is_ok_and(|meta| meta.is_dir())) {
+        return Some(format!("{raw}: the folder does not exist"));
+    }
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Ok(meta) if meta.is_file() && !is_link(&meta) => None,
+        _ => Some(format!("{raw}: not a regular file")),
+    }
+}
+
+/// The rules [`agent_file_refusal`] and [`save_target_refusal`] share: a lexically local absolute path (no `\\?\`) on a local
+/// drive, with no link or reparse point from the drive root down to the file (`to_folder`: down to the folder that holds it).
+/// A part of that walk that does not exist is refused as `missing`.
+fn local_walk_refusal(raw: &str, to_folder: bool, missing: &str) -> Option<String> {
     if raw.starts_with(r"\\?\") || !is_local_file_path(raw) {
         return Some(format!("{raw}: not an absolute path on a local drive"));
     }
@@ -59,8 +90,14 @@ pub fn agent_file_refusal(raw: &str) -> Option<String> {
     if let Some(reason) = drive_refusal(path) {
         return Some(format!("{raw}: {reason}"));
     }
+    let walk = if to_folder {
+        let Some(folder) = path.parent() else { return Some(format!("{raw}: no folder")) };
+        folder
+    } else {
+        path
+    };
     let mut current = std::path::PathBuf::new();
-    for part in path.components() {
+    for part in walk.components() {
         current.push(part.as_os_str());
         if matches!(part, std::path::Component::Prefix(_) | std::path::Component::RootDir) {
             continue;
@@ -68,13 +105,10 @@ pub fn agent_file_refusal(raw: &str) -> Option<String> {
         match std::fs::symlink_metadata(&current) {
             Ok(meta) if is_link(&meta) => return Some(format!("{raw}: the path holds a link or reparse point")),
             Ok(_) => {}
-            Err(_) => return Some(format!("{raw}: no such file")),
+            Err(_) => return Some(format!("{raw}: {missing}")),
         }
     }
-    match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_file() => None,
-        _ => Some(format!("{raw}: not a regular file")),
-    }
+    None
 }
 
 fn is_link(meta: &std::fs::Metadata) -> bool {
@@ -115,6 +149,68 @@ fn drive_refusal(_path: &Path) -> Option<&'static str> {
 #[cfg(test)]
 mod agent_file_tests {
     use super::*;
+
+    /// Task 68r: a save target may be a new file, but its folder must exist and a name must not be a folder or a device.
+    #[test]
+    fn a_save_target_is_a_new_file_in_an_existing_local_folder() {
+        let dir = std::env::temp_dir().join(format!("designllm-save-target-{}", crate::new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(save_target_refusal(&dir.join("new.png").to_string_lossy()), None, "a new file in a folder");
+        let existing = dir.join("old.png");
+        std::fs::write(&existing, b"x").unwrap();
+        assert_eq!(save_target_refusal(&existing.to_string_lossy()), None, "an existing regular file");
+        let folder = dir.join("folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut bad = vec![
+            dir.join("no-such-folder").join("a.png").to_string_lossy().into_owned(),
+            folder.to_string_lossy().into_owned(),
+            "a.png".to_owned(),
+            r"\\server\share\a.png".to_owned(),
+            format!(r"\\?\{}", dir.join("a.png").display()),
+        ];
+        if cfg!(windows) {
+            bad.push(dir.join("CON.png").to_string_lossy().into_owned());
+        }
+        for raw in bad {
+            assert!(save_target_refusal(&raw).is_some(), "{raw}");
+        }
+        #[cfg(windows)]
+        {
+            // Junctions (mklink /J needs no privilege): one as the folder of the target, one in the file's own place.
+            let real = dir.join("real");
+            std::fs::create_dir_all(&real).unwrap();
+            // A junction that cannot be made (mklink fails) is not checked, as in the agent file test below; the reason is printed.
+            let junction = |name: &str| {
+                let link = dir.join(name);
+                match std::process::Command::new("cmd").args(["/C", "mklink", "/J"]).arg(&link).arg(&real).output() {
+                    Ok(made) if made.status.success() => Some(link),
+                    made => {
+                        eprintln!("a_save_target_is_a_new_file_in_an_existing_local_folder: mklink /J {} failed, not checked: {made:?}", link.display());
+                        None
+                    }
+                }
+            };
+            assert_eq!(save_target_refusal(&real.join("new.png").to_string_lossy()), None, "the folder itself is plain");
+            if let Some(folder_link) = junction("link") {
+                let refusal = save_target_refusal(&folder_link.join("new.png").to_string_lossy());
+                assert!(refusal.as_deref().is_some_and(|reason| reason.ends_with("the path holds a link or reparse point")), "{refusal:?}");
+                std::fs::remove_dir(&folder_link).unwrap();
+            }
+            if let Some(file_link) = junction("j.png") {
+                assert!(save_target_refusal(&file_link.to_string_lossy()).is_some(), "a reparse point in the file's place");
+                std::fs::remove_dir(&file_link).unwrap();
+            }
+            // A symbolic link to a file needs the privilege to make one (developer mode); checked where it can be made.
+            let symlink = dir.join("s.png");
+            if std::os::windows::fs::symlink_file(&existing, &symlink).is_ok() {
+                assert!(save_target_refusal(&symlink.to_string_lossy()).is_some(), "a symbolic link file");
+                std::fs::remove_file(&symlink).unwrap();
+            } else {
+                eprintln!("a_save_target_is_a_new_file_in_an_existing_local_folder: no privilege for a file symlink, not checked");
+            }
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn an_agent_file_is_a_local_regular_file_without_links() {

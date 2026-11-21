@@ -434,6 +434,10 @@ impl DesktopApp {
         let palette = crate::theme::palette(ctx);
         let shown = crate::widgets::dialog_with_choices(ctx, &palette, egui::Id::new("내보내기 확인"), "내보내기 확인", crate::widgets::DialogPlace::Screen, |ui| {
                 ui.label("일부 편집 정보가 출력물에 포함되지 않습니다.");
+                // A place a UI-test run's save answer named (68r): the person accepts the losses of a write the run placed.
+                if crate::dialogs::is_test_save_answer(&confirmation.request.target_path) {
+                    ui.label(format!("시험 실행이 정한 위치: {}", confirmation.request.target_path));
+                }
                 if confirmation.diagnostics.is_empty() {
                     ui.label("허용할 손실 항목을 확인할 수 없습니다.");
                 }

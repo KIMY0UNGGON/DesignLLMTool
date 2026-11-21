@@ -20,25 +20,52 @@ thread_local! {
     /// Task 69: the paths a UI-test run queued for the open dialogs (`ui.input` `dialog_answers`, already checked by the agent
     /// path rules); None outside such a run. The window opens its dialogs on its own thread.
     static TEST_ANSWERS: std::cell::RefCell<Option<std::collections::VecDeque<PathBuf>>> = const { std::cell::RefCell::new(None) };
+    /// Task 68r: the frame being drawn carries a person's input (`ui_test_input::inject_ui_test_input`): a dialog it opens is
+    /// the person's, and takes no queued answer.
+    static PERSON_FRAME: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Task 68r: the files the save stand-in named, newest last (at most [`MAX_SAVE_ANSWERS`]). A save or an export to one of
+    /// them is the agent's choice of place whenever it leaves (after a dry run, a loss a person accepts, a later plain save).
+    static SAVE_ANSWERS: std::cell::RefCell<std::collections::VecDeque<String>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
 }
+
+const MAX_SAVE_ANSWERS: usize = 256;
 
 /// Installs (Some) or removes (None) the stand-in of a UI-test run; returns how many answers the removed queue still held.
 pub fn set_test_answers(answers: Option<std::collections::VecDeque<PathBuf>>) -> usize {
     TEST_ANSWERS.with(|queue| std::mem::replace(&mut *queue.borrow_mut(), answers)).map_or(0, |left| left.len())
 }
 
+/// Whether the frame being drawn carries a person's input; set at the start of each frame of a UI-test window.
+pub fn set_person_frame(on: bool) {
+    PERSON_FRAME.with(|frame| frame.set(on));
+}
+
+/// Whether the save stand-in named `path` (compared as the window sends it, trimmed) in this window.
+pub fn is_test_save_answer(path: &str) -> bool {
+    let path = path.trim();
+    SAVE_ANSWERS.with(|given| given.borrow().iter().any(|answer| answer == path))
+}
+
 /// The stand-in's answer while a UI-test run plays: Some(the next queued path, or None = cancelled when none is left).
-/// None when no stand-in is installed: the native dialog (or its headless refusal) answers.
-fn test_answer() -> Option<Option<PathBuf>> {
+/// None when no stand-in is installed, or the frame is a person's: the native dialog (or its headless refusal) answers. Open
+/// and save dialogs share the queue; `check` is the rule of the dialog that takes the answer.
+fn take_test_answer(check: fn(&str) -> Option<String>) -> Option<Option<PathBuf>> {
+    if PERSON_FRAME.with(std::cell::Cell::get) {
+        return None;
+    }
     let answer = TEST_ANSWERS.with(|queue| queue.borrow_mut().as_mut().map(std::collections::VecDeque::pop_front))?;
     // Checked again when the dialog would return it (the run checked it when it started): a path changed since is cancelled.
-    Some(answer.filter(|path| match designllm_contracts::local_path::agent_file_refusal(&path.to_string_lossy()) {
+    Some(answer.filter(|path| match check(&path.to_string_lossy()) {
         None => true,
         Some(reason) => {
             eprintln!("designllm-desktop: test dialog answer refused: {reason}");
             false
         }
     }))
+}
+
+fn test_answer() -> Option<Option<PathBuf>> {
+    take_test_answer(designllm_contracts::local_path::agent_file_refusal)
 }
 
 /// Whether native windows are refused now: in a headless run, and always in tests.
@@ -174,6 +201,18 @@ pub fn save_export(owner: Option<isize>, extension: &str) -> Option<PathBuf> {
 }
 
 fn show_save(owner: Option<isize>, suggested: &str, spec: &str, label: &str) -> Option<PathBuf> {
+    if let Some(answer) = take_test_answer(designllm_contracts::local_path::save_target_refusal) {
+        if let Some(path) = answer.as_ref() {
+            SAVE_ANSWERS.with(|given| {
+                let mut given = given.borrow_mut();
+                if given.len() == MAX_SAVE_ANSWERS {
+                    given.pop_front();
+                }
+                given.push_back(path.to_string_lossy().trim().to_owned());
+            });
+        }
+        return answer;
+    }
     if refused("save dialog") {
         return None;
     }
@@ -250,6 +289,41 @@ mod tests {
         set_test_answers(Some([b].into_iter().collect()));
         assert_eq!(open_image(None), None, "checked again when it is taken");
         set_test_answers(None);
+        std::fs::remove_dir_all(dir).expect("cleaned");
+    }
+
+    /// Task 68r: a save dialog takes the same queue, and its rule admits a new file in an existing folder only.
+    #[test]
+    fn the_save_stand_in_takes_a_new_file_in_an_existing_folder() {
+        let dir = std::env::temp_dir().join(format!("designllm-save-answer-{}", designllm_contracts::new_id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let out = dir.join("out.png");
+        assert_eq!(save_export(None, "png"), None, "no stand-in: the native dialog, refused in tests");
+        set_test_answers(Some([out.clone()].into_iter().collect()));
+        assert_eq!(save_export(None, "png"), Some(out.clone()), "a file that does not exist yet");
+        assert_eq!(set_test_answers(None), 0);
+        assert!(is_test_save_answer(&out.to_string_lossy()), "the place the stand-in named is remembered");
+        // A dialog a person's frame opens is the native one: the queue keeps its answer.
+        let person = dir.join("person.png");
+        set_test_answers(Some([person.clone()].into_iter().collect()));
+        set_person_frame(true);
+        assert_eq!(save_document(None, String::new()), None, "the native dialog, refused in tests");
+        set_person_frame(false);
+        assert_eq!(set_test_answers(None), 1, "the person's dialog took no answer");
+        assert!(!is_test_save_answer(&person.to_string_lossy()));
+        let missing_folder = dir.join("no-such-folder").join("out.png");
+        let directory = dir.join("a-folder");
+        std::fs::create_dir_all(&directory).expect("a folder");
+        let mut refused = vec![missing_folder, directory, PathBuf::from("out.png")];
+        if cfg!(windows) {
+            refused.push(dir.join("CON.png"));
+            refused.push(PathBuf::from(r"\\server\share\out.png"));
+        }
+        for bad in refused {
+            set_test_answers(Some([bad.clone()].into_iter().collect()));
+            assert_eq!(save_export(None, "png"), None, "{}", bad.display());
+            assert_eq!(set_test_answers(None), 0, "the save dialog did not take the answer: {}", bad.display());
+        }
         std::fs::remove_dir_all(dir).expect("cleaned");
     }
 

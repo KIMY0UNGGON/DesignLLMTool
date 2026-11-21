@@ -13,6 +13,19 @@ use crate::{icons, theme, widgets};
 /// The AI tab's label of a job whose request this window does not know (`job_prompts`).
 pub(super) const JOB_LABEL: &str = "AI 작업";
 
+/// The name the undo row shows for the actor of an agent batch: a job or a connection by the first 8 characters of its id,
+/// the command line by its kind, anything else as it is. The row's hover text is the whole actor.
+pub(super) fn agent_actor_name(actor: &str) -> String {
+    let mut parts = actor.splitn(3, ':');
+    let short = |id: &str| id.char_indices().nth(8).map_or(id, |(end, _)| &id[..end]).to_owned();
+    match (parts.next(), parts.next()) {
+        (Some("job"), Some(id)) => format!("{JOB_LABEL} {}", short(id)),
+        (Some("mcp"), Some(id)) => format!("에이전트 {}", short(id)),
+        (Some("cli"), _) => "명령줄".into(),
+        _ => actor.to_owned(),
+    }
+}
+
 /// The longest gap in seconds between the two clicks of a double click on a layer row: the system's double-click time
 /// (Windows `GetDoubleClickTime`, 500 ms unless the user changed it).
 pub(super) fn double_click_secs() -> f64 {
@@ -1312,7 +1325,13 @@ impl DesktopApp {
         for (request_id, actor) in batches {
             let mut take_back = false;
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(actor).font(theme::display_font(false, 12.0)).color(palette.ink_3));
+                // The undo icon keeps its place in the column; the actor's name is cut to the width left before it.
+                let room = ui.available_width() - theme::ICON_BUTTON - ui.spacing().item_spacing.x;
+                ui.scope(|ui| {
+                    ui.set_max_width(room.max(0.0));
+                    let name = egui::RichText::new(agent_actor_name(&actor)).font(theme::display_font(false, 12.0)).color(palette.ink_3);
+                    ui.add(egui::Label::new(name).truncate().show_tooltip_when_elided(false)).on_hover_text(&actor);
+                });
                 if widgets::icon_button(ui, palette, "undo", "되돌리기", false).clicked() {
                     take_back = true;
                 }
@@ -1323,8 +1342,18 @@ impl DesktopApp {
         }
     }
 
-    /// The AI tab: the current request with its progress, then the request box.
+    /// The AI tab: the current request with its progress, then the request box. Its margin is the layers tab's, so the
+    /// first element starts at the same x in both tabs.
     pub(super) fn draw_ai_tab(&mut self, ui: &mut Ui, palette: &theme::Palette) {
+        egui::Frame::new().inner_margin(egui::Margin::same(theme::TREE_PADDING as i8)).show(ui, |ui| {
+            // The sidebar lays out its tab strip with zero item spacing and the tab inherits it; the tab's rows use the
+            // window's spacing, so a title and its runner's name, or the request box and its scope, do not touch.
+            ui.spacing_mut().item_spacing = ui.ctx().style().spacing.item_spacing;
+            self.draw_ai_tab_contents(ui, palette);
+        });
+    }
+
+    fn draw_ai_tab_contents(&mut self, ui: &mut Ui, palette: &theme::Palette) {
         if let Some(job) = self.job.clone() {
             let state = super::chrome::job_agent_state(job.status);
             ui.horizontal(|ui| {
@@ -1332,9 +1361,23 @@ impl DesktopApp {
                 // The request the job was started with; a job this window did not start (another client's, or one started
                 // before the window opened) shows the general label, not what the request box holds now.
                 let label = self.job_prompts.get(&job.id).map_or(JOB_LABEL, String::as_str);
-                ui.label(egui::RichText::new(label).font(theme::display_font(false, 13.0)).color(palette.ink));
-                if let Some(client) = job.client_name.as_deref() {
-                    ui.label(egui::RichText::new(client).font(theme::display_font(false, 12.0)).color(palette.ink_3));
+                // The runner's name keeps its width (up to half the row) and the title is cut to what is left, so a long
+                // request neither hides the name nor runs past the column.
+                let runner_font = theme::display_font(false, 12.0);
+                let runner = job.client_name.as_deref().map(|client| {
+                    let width = ui.painter().layout_no_wrap(client.to_owned(), runner_font.clone(), palette.ink_3).size().x.ceil();
+                    (client, width.min(ui.available_width() / 2.0))
+                });
+                let title_width = ui.available_width() - runner.map_or(0.0, |(_, width)| width + ui.spacing().item_spacing.x);
+                ui.scope(|ui| {
+                    ui.set_max_width(title_width.max(0.0));
+                    ui.add(egui::Label::new(egui::RichText::new(label).font(theme::display_font(false, 13.0)).color(palette.ink)).truncate());
+                });
+                if let Some((client, width)) = runner {
+                    ui.scope(|ui| {
+                        ui.set_max_width(width);
+                        ui.add(egui::Label::new(egui::RichText::new(client).font(runner_font).color(palette.ink_3)).truncate());
+                    });
                 }
             });
             if super::chrome::job_status_running(job.status) {

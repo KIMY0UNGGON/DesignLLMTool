@@ -13,7 +13,9 @@
 //!   starts, and a synthetic event during one, or a press on a control drawn as human only, ends the run with HUMAN_ONLY
 //!   before the event reaches the window.
 //! - File pickers: a run may queue `dialog_answers`; checked by the agent path rules before any file is read, they stand in
-//!   for the native dialogs while the run plays, and the core requests that carry them are marked `agent_path`.
+//!   for the native open and save dialogs the run's own frames open while it plays (a dialog a person's frame opens is the
+//!   native one), and the core requests that carry them are marked `agent_path`; a save or export to a place a save answer
+//!   named keeps the mark whenever it leaves (68r).
 //!
 //! `ui.layout` reads where the last frame drew pages, nodes, table cells, memos, layer rows and controls.
 
@@ -226,16 +228,25 @@ impl UiTestInput {
 /// In a run's context (`pinned_actor`), a request of the window that names the `desktop` actor (a ChangeSet's `actor`, a
 /// reservation's `owner`, which the ChangeSet that follows must match) names the run's actor instead, and a request that
 /// takes a file path is marked for the agent path rules: the path came from the run (a queued dialog answer, typed text).
+/// A save or an export whose `target_path` a save dialog answer named (68r) is marked whenever it leaves: after the run and
+/// its pin ended (a late dry run reply), after a loss a person accepted, a later plain save to the same place.
 pub(super) fn pin_ui_test_request(test: Option<&UiTestInput>, method: &str, params: &mut Value) {
-    let Some(actor) = test.and_then(|test| test.pinned_actor(Instant::now())) else {
+    let Some(test) = test else {
         return;
     };
-    for key in ["actor", "owner"] {
-        if let Some(slot) = params.get_mut(key).filter(|slot| slot.as_str() == Some("desktop")) {
-            *slot = Value::String(actor.to_owned());
+    let actor = test.pinned_actor(Instant::now());
+    if let Some(actor) = actor {
+        for key in ["actor", "owner"] {
+            if let Some(slot) = params.get_mut(key).filter(|slot| slot.as_str() == Some("desktop")) {
+                *slot = Value::String(actor.to_owned());
+            }
         }
     }
-    if designllm_contracts::local_path::AGENT_PATH_METHODS.contains(&method) {
+    if !designllm_contracts::local_path::AGENT_PATH_METHODS.contains(&method) {
+        return;
+    }
+    let answered = params.get("target_path").and_then(Value::as_str).is_some_and(crate::dialogs::is_test_save_answer);
+    if actor.is_some() || answered {
         if let Some(object) = params.as_object_mut() {
             object.insert(designllm_contracts::local_path::AGENT_PATH_PARAM.into(), Value::Bool(true));
         }
@@ -246,6 +257,15 @@ pub(super) fn pin_ui_test_request(test: Option<&UiTestInput>, method: &str, para
 /// (66c, `designllm_contracts::local_path::agent_file_refusal`), checked before any file is opened.
 pub(crate) fn dialog_answer_refusal(raw: &str) -> Option<String> {
     designllm_contracts::local_path::agent_file_refusal(raw)
+}
+
+/// Why a `dialog_answers` entry is refused when the run starts (task 68r): it must pass the open rule (an existing file) or
+/// the save rule (a new file in an existing folder). The dialog that takes the answer checks its own rule again.
+pub(crate) fn dialog_answer_start_refusal(raw: &str) -> Option<String> {
+    match (dialog_answer_refusal(raw), designllm_contracts::local_path::save_target_refusal(raw)) {
+        (Some(open_reason), Some(_)) => Some(open_reason),
+        _ => None,
+    }
 }
 
 /// Whether an event is input a person gives (not a focus or window notice).
@@ -564,6 +584,8 @@ impl DesktopApp {
         test.frame += 1;
         test.rows.clear();
         test.human_frame = input.events.iter().any(is_person_input);
+        // A dialog this frame opens is the person's: it takes none of the run's answers (68r).
+        crate::dialogs::set_person_frame(test.human_frame);
         ui_record::begin();
         let Some(next) = test.plan.pop_front() else {
             return;
@@ -766,7 +788,7 @@ impl DesktopApp {
             return Err(refusal(ErrorCode::InvalidArgument, format!("dialog_answers는 {MAX_DIALOG_ANSWERS}개 이하입니다")));
         }
         // Checked before any file is opened: a refused path reaches neither the window's own readers nor the core.
-        if let Some(reason) = request.dialog_answers.iter().find_map(|raw| dialog_answer_refusal(raw)) {
+        if let Some(reason) = request.dialog_answers.iter().find_map(|raw| dialog_answer_start_refusal(raw)) {
             return Err(refusal(ErrorCode::InvalidArgument, format!("dialog_answers: {reason}")));
         }
         let frames = plan(&request).map_err(|message| refusal(ErrorCode::InvalidArgument, message))?;

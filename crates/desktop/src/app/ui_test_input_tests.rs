@@ -570,12 +570,23 @@ fn a_dialog_answer_inserts_an_image_and_a_refused_answer_changes_nothing() {
     assert_eq!(nodes(&mut bench), before + 1, "the picture is on the page");
 
     let revision = bench.revision();
-    for bad in [r"\\server\share\picture.png".to_owned(), dir.join("missing.png").to_string_lossy().into_owned()] {
+    // Neither an open file nor a save target (task 68r): a folder that does not exist, a UNC path.
+    for bad in [r"\\server\share\picture.png".to_owned(), dir.join("no-folder").join("picture.png").to_string_lossy().into_owned()] {
         let run = bench.run(UI_INPUT_COMMAND, json!({ "events": events, "dialog_answers": [bad] }), "agent_start", &all);
         assert_eq!(run["status"], "failed", "{run}");
         assert_eq!(run["error"]["code"], "INVALID_ARGUMENT", "{run}");
     }
     assert_eq!(bench.revision(), revision, "a refused answer changes nothing");
+    // A save target (a new file in an existing folder) passes the start check. The picture dialog that takes it applies the
+    // open rule again: the file does not exist, so the dialog is cancelled and nothing is imported.
+    let saved = dir.join("saved.png");
+    let imports = |bench: &mut Bench| bench.window.calls.iter().filter(|(method, _, _)| method == "asset.import").count();
+    let imported = imports(&mut bench);
+    let run = bench.run(UI_INPUT_COMMAND, json!({ "events": events, "dialog_answers": [saved.to_string_lossy()] }), "agent_start", &all);
+    assert_eq!(run["status"], "completed", "{run}");
+    assert_eq!(run["result"]["dialog_answers_left"], 0, "the picker took the answer");
+    assert_eq!(imports(&mut bench), imported, "the open dialog refuses a path that is not an existing file");
+    assert_eq!(bench.revision(), revision, "a cancelled picker changes nothing");
     // After the run the picker is the native one again (refused in tests): the shortcut inserts nothing.
     assert_eq!(crate::dialogs::set_test_answers(None), 0);
     std::fs::remove_dir_all(dir).expect("cleaned");
@@ -1136,4 +1147,185 @@ fn a_click_answered_after_the_board_zoomed_selects_what_was_clicked() {
     assert_eq!(bench.window.app.selected_nodes, clicked, "the late reply selects what the click was on");
     let hits = bench.window.calls.iter().filter(|(method, _, _)| method == "render.hit_test").count() - hits_before;
     assert_eq!(hits, 1, "the reply is not sent again with the click's old point");
+}
+
+/// Whether a `ui.input` run plays or settles in the bench's window.
+fn busy(bench: &Bench) -> bool {
+    bench.window.app.ui_test.as_ref().is_some_and(UiTestInput::busy)
+}
+
+fn save_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("designllm-ui-{name}-{}", designllm_contracts::new_id()));
+    std::fs::create_dir_all(&dir).expect("a folder");
+    dir
+}
+
+/// Task 68r: a save dialog answer marks every core request that writes to it `agent_path`, however late it leaves. Here the run
+/// ends (`settle_timeout_ms` 1) and its pin runs out before the export's dry run is answered: the write leaves after both.
+#[test]
+fn a_save_answer_keeps_the_agent_path_mark_after_the_run_and_its_pin_ended() {
+    use designllm_contracts::local_path::AGENT_PATH_PARAM;
+    let mut bench = Bench::new(true);
+    let dir = save_dir("save-late");
+    let out = dir.join("out.png");
+    // The export popover, PNG, then `내보내기…` (the scenario 68r-save-dialog-answer.json).
+    let control = |bench: &mut Bench, label: &str| {
+        let layout = bench.layout();
+        centre(layout.controls.iter().find(|control| control.label == label && control.visible).unwrap_or_else(|| panic!("{label}")).rect)
+    };
+    for label in ["내보내기", "PNG"] {
+        let [x, y] = control(&mut bench, label);
+        bench.input(json!([{ "type": "click", "x": x, "y": y, "after_frames": 4 }]));
+    }
+    let [x, y] = control(&mut bench, "내보내기…");
+    let calls = bench.window.calls.len();
+    let args = json!({
+        "events": [{ "type": "click", "x": x, "y": y, "after_frames": 1 }],
+        "settle": true, "settle_timeout_ms": 1, "dialog_answers": [out.to_string_lossy()],
+    });
+    let run_id = bench.queue(UI_INPUT_COMMAND, args, "agent_start", &["content", "design", "data"]).expect("the run is queued");
+    for _ in 0..50 {
+        if busy(&bench) {
+            break;
+        }
+        bench.frame();
+    }
+    assert!(busy(&bench), "the run plays");
+    // The host answers nothing while the run plays and settles: the dry run waits for it.
+    for _ in 0..200 {
+        if !busy(&bench) {
+            break;
+        }
+        bench.frame_with(Vec::new(), false);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(!busy(&bench), "the run ended before the dry run was answered");
+    std::thread::sleep(Duration::from_millis(20));
+    let run = bench.finish(&run_id);
+    assert_eq!(run["status"], "completed", "{run}");
+    assert_eq!(run["result"]["dialog_answers_left"], 0, "the save dialog took the answer");
+    let exports: Vec<&Value> = bench.window.calls[calls..].iter().filter(|(method, _, _)| method == "artifact.export").map(|(_, params, _)| params).collect();
+    assert_eq!(exports.len(), 2, "a dry run, then the write: {exports:?}");
+    assert_eq!(exports[0]["dry_run"], true, "{exports:?}");
+    assert!(exports[1].get("dry_run").is_none(), "the second request writes: {exports:?}");
+    for export in exports {
+        assert_eq!(export["target_path"], out.to_string_lossy().as_ref());
+        assert_eq!(export[AGENT_PATH_PARAM], true, "the agent's path keeps the agent path rules: {export}");
+    }
+    assert!(std::fs::read(&out).expect("the file is written").starts_with(b"\x89PNG"), "a PNG");
+    std::fs::remove_dir_all(dir).expect("cleaned");
+}
+
+/// Task 68r: export losses a person accepts write where the save answer said, and the write keeps the agent path mark; a Save
+/// As answer marks its save and the plain saves to the same place after it. No run plays and no pin is left here, and the
+/// window's own export elsewhere is not marked.
+#[test]
+fn a_save_answer_marks_the_write_after_a_loss_confirmation_and_later_saves() {
+    use super::test_support::{methods, Harness};
+    use designllm_contracts::local_path::AGENT_PATH_PARAM;
+    let dir = save_dir("save-losses");
+    let out = dir.join("out.pdf");
+    let mut harness = Harness::new();
+    harness.open_document("canvas", 5);
+    harness.app.ui_test = Some(UiTestInput::default());
+    harness.sent();
+    crate::dialogs::set_test_answers(Some([out.clone()].into_iter().collect()));
+    harness.app.invoke_ui("file.export", json!({ "format": "pdf" }));
+    let dry = harness.sent();
+    assert_eq!(methods(&dry), ["artifact.export"]);
+    assert_eq!(dry[0].2["dry_run"], true);
+    assert_eq!(dry[0].2[AGENT_PATH_PARAM], true, "the dry run names the agent's path");
+    let losses = json!([{ "code": "font", "message": "글꼴 대체", "node_id": null, "blocking": true }]);
+    let dry_run = json!({
+        "dry_run": true, "artifact_id": "a1", "revision": 5, "format": "pdf", "mime": "application/pdf", "bytes": 10,
+        "editability": "vector", "losses": losses, "diagnostics": [],
+    });
+    harness.answer(&dry, "artifact.export", Ok(dry_run));
+    let confirmation = harness.app.export_confirmation.as_mut().expect("the losses wait for a person");
+    assert_eq!(confirmation.request.target_path, out.to_string_lossy().as_ref());
+    // A person allows the loss and accepts it: the place is still the agent's.
+    confirmation.allowed.insert("font".into());
+    harness.app.apply_export_losses();
+    let write = harness.sent();
+    assert_eq!(methods(&write), ["artifact.export"]);
+    assert!(write[0].2.get("dry_run").is_none(), "the write");
+    assert_eq!(write[0].2["target_path"], out.to_string_lossy().as_ref());
+    assert_eq!(write[0].2[AGENT_PATH_PARAM], true, "a loss a person accepts keeps the agent path rules of the place");
+
+    let document = dir.join("doc.json");
+    crate::dialogs::set_test_answers(Some([document.clone()].into_iter().collect()));
+    harness.app.invoke_ui("file.save_as", json!({}));
+    harness.app.invoke_ui("file.save", json!({}));
+    let saves = harness.sent();
+    assert_eq!(methods(&saves), ["artifact.save", "artifact.save"], "Save As, then a plain save to the same place");
+    for save in &saves {
+        assert_eq!(save.2["target_path"], document.to_string_lossy().as_ref());
+        assert_eq!(save.2["overwrite"], false);
+        assert_eq!(save.2[AGENT_PATH_PARAM], true, "{}", save.2);
+    }
+    assert_eq!(crate::dialogs::set_test_answers(None), 0);
+
+    harness.app.export_path = dir.join("own.pdf").to_string_lossy().into_owned();
+    harness.app.export_active();
+    let own = harness.sent();
+    assert_eq!(methods(&own), ["artifact.export"]);
+    assert!(own[0].2.get(AGENT_PATH_PARAM).is_none(), "the window's own export is not marked: {}", own[0].2);
+    std::fs::remove_dir_all(dir).expect("cleaned");
+}
+
+/// Task 68r: while a run plays in a visible test window, the save dialog a person opens (their own Ctrl+Shift+S) is the native
+/// one (refused in tests): it takes none of the run's answers, and nothing is saved.
+#[test]
+fn a_save_dialog_a_person_opens_during_a_run_takes_no_queued_answer() {
+    let mut bench = Bench::new(true);
+    let dir = save_dir("save-person");
+    let target = dir.join("agent.json");
+    let args = json!({ "events": [{ "type": "wait", "frames": 30 }], "dialog_answers": [target.to_string_lossy()] });
+    let run_id = bench.queue(UI_INPUT_COMMAND, args, "agent_start", &["content", "design", "data"]).expect("the run is queued");
+    for _ in 0..50 {
+        if busy(&bench) {
+            break;
+        }
+        bench.frame();
+    }
+    assert!(busy(&bench), "the run plays");
+    let calls = bench.window.calls.len();
+    let ctrl_shift = Modifiers { ctrl: true, shift: true, command: true, ..Modifiers::NONE };
+    bench.keys(vec![key_event(Key::S, ctrl_shift, false)]);
+    let run = bench.finish(&run_id);
+    assert_eq!(run["status"], "completed", "{run}");
+    assert_eq!(run["result"]["dialog_answers_left"], 1, "the person's dialog took no answer: {run}");
+    assert!(!bench.window.calls[calls..].iter().any(|(method, _, _)| method == "artifact.save"), "nothing is saved");
+    assert!(!target.exists());
+    std::fs::remove_dir_all(dir).expect("cleaned");
+}
+
+/// Task 68r: a save answer that names a file which exists does not overwrite it: the save the window sends (overwrite false,
+/// marked `agent_path`) is refused ALREADY_EXISTS, and the file keeps its bytes.
+#[test]
+fn a_save_answer_naming_an_existing_file_is_refused_and_the_file_is_kept() {
+    use designllm_contracts::local_path::AGENT_PATH_PARAM;
+    let mut bench = Bench::new(true);
+    let dir = save_dir("save-existing");
+    let existing = dir.join("old.json");
+    std::fs::write(&existing, b"keep").expect("a file");
+    let calls = bench.window.calls.len();
+    let args = json!({
+        "events": [{ "type": "key", "key": "S", "modifiers": { "ctrl": true, "shift": true }, "after_frames": 4 }],
+        "dialog_answers": [existing.to_string_lossy()],
+    });
+    let run = bench.run(UI_INPUT_COMMAND, args, "agent_start", &["content", "design", "data"]);
+    assert_eq!(run["status"], "completed", "{run}");
+    assert_eq!(run["result"]["dialog_answers_left"], 0, "Save As took the answer");
+    let (_, save, answer) = bench.window.calls[calls..].iter().find(|(method, _, _)| method == "artifact.save").expect("Save As sends a save");
+    assert_eq!(save["target_path"], existing.to_string_lossy().as_ref());
+    assert_eq!(save["overwrite"], false);
+    assert_eq!(save[AGENT_PATH_PARAM], true, "{save}");
+    assert_eq!(*answer, Value::Null, "the host refused the save");
+    let mut again = save.clone();
+    again["request_id"] = json!(designllm_contracts::new_id());
+    let error = bench.host.call("artifact.save", again).expect_err("the same save is refused");
+    assert_eq!(error.code, ErrorCode::AlreadyExists, "{error:?}");
+    assert_eq!(std::fs::read(&existing).expect("the file"), b"keep", "the file is not overwritten");
+    std::fs::remove_dir_all(dir).expect("cleaned");
 }
