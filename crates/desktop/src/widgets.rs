@@ -618,7 +618,7 @@ pub fn number_stepper(ui: &mut Ui, palette: &Palette, id: impl std::hash::Hash, 
         }
         let id = egui::Id::new(("number-stepper", id));
         let draft_id = id.with("draft");
-        if step_button(ui, palette, false, "1 줄이기").clicked() {
+        if step_button(ui, palette, id.with("minus"), false, "1 줄이기").clicked() {
             *value = value.saturating_sub(1).max(low);
             ui.data_mut(|data| data.remove::<String>(draft_id));
         }
@@ -644,7 +644,7 @@ pub fn number_stepper(ui: &mut Ui, palette: &Palette, id: impl std::hash::Hash, 
         } else {
             ui.data_mut(|data| data.remove::<String>(draft_id));
         }
-        if step_button(ui, palette, true, "1 늘리기").clicked() {
+        if step_button(ui, palette, id.with("plus"), true, "1 늘리기").clicked() {
             *value = value.saturating_add(1).min(high);
             ui.data_mut(|data| data.remove::<String>(draft_id));
         }
@@ -661,9 +661,11 @@ fn parse_whole_number(text: &str) -> Option<u32> {
     Some(digits.parse::<u32>().unwrap_or(u32::MAX))
 }
 
-/// A 24 px outlined minus or plus button of a `number_stepper`, recorded and shown with its `tooltip`.
-fn step_button(ui: &mut Ui, palette: &Palette, plus: bool, tooltip: &str) -> Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(theme::MINI_BUTTON), Sense::click());
+/// A 24 px outlined minus or plus button of a `number_stepper`, recorded and shown with its `tooltip`. `id` is the button's own
+/// id, derived from the stepper's id: an automatic one would count the widgets drawn before it and move with them.
+fn step_button(ui: &mut Ui, palette: &Palette, id: egui::Id, plus: bool, tooltip: &str) -> Response {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(theme::MINI_BUTTON), Sense::hover());
+    let response = ui.interact(rect, id, Sense::click());
     let opacity = undo_disabled_fade(ui);
     let ink = paint_compact_frame(ui, palette, rect, &response);
     let stroke = Stroke::new(1.5, ink);
@@ -1775,8 +1777,10 @@ mod tests {
             .0
         };
         let controls = frame(&ctx, &mut first, &mut second, true, Vec::new());
-        let minus = controls.iter().filter(|control| control.label == "1 줄이기").nth(1).expect("the second stepper is drawn").rect;
-        let plus = controls.iter().filter(|control| control.label == "1 늘리기").nth(1).expect("the second stepper is drawn").rect;
+        let minus_button = controls.iter().filter(|control| control.label == "1 줄이기").nth(1).expect("the second stepper is drawn");
+        let (minus, minus_id) = (minus_button.rect, minus_button.id);
+        let plus_button = controls.iter().filter(|control| control.label == "1 늘리기").nth(1).expect("the second stepper is drawn");
+        let (plus, plus_id) = (plus_button.rect, plus_button.id);
         let field = Pos2::new((minus.right() + plus.left()) / 2.0, minus.center().y);
         for events in pointer_click(field) {
             frame(&ctx, &mut first, &mut second, true, events);
@@ -1784,8 +1788,11 @@ mod tests {
         frame(&ctx, &mut first, &mut second, true, vec![select_all.clone(), egui::Event::Text("4".into())]);
         assert_eq!(second, 4, "the second field has the focus and takes the typed number");
         // The first stepper goes: the second keeps its id, so its field keeps the focus and takes the next typed number.
-        frame(&ctx, &mut first, &mut second, false, Vec::new());
+        let after = frame(&ctx, &mut first, &mut second, false, Vec::new());
         assert!(ctx.memory(|memory| memory.has_focus(egui::Id::new(("number-stepper", "b")))), "the focus stays in the second field");
+        let (minus_after, plus_after) = (after.iter().find(|control| control.label == "1 줄이기"), after.iter().find(|control| control.label == "1 늘리기"));
+        assert_eq!(minus_after.map(|control| control.id), Some(minus_id), "the second stepper's minus button keeps its id");
+        assert_eq!(plus_after.map(|control| control.id), Some(plus_id), "the second stepper's plus button keeps its id");
         frame(&ctx, &mut first, &mut second, false, vec![select_all, egui::Event::Text("3".into())]);
         assert_eq!(second, 3, "the typed number reaches the second stepper after the first one is removed");
     }

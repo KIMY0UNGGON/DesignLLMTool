@@ -747,3 +747,207 @@ fn a_swatch_or_an_outside_press_during_a_composition_keeps_the_syllable_once() {
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0]["memos"][0]["text"], "하", "the syllable being composed is kept");
 }
+
+// 68p 1 (Esc and V on the memo and hand tools, the guards, the ui.state value) and 68o 5 (V on figure and slides boards).
+
+fn set_tool(board: &mut Board, tool: super::super::board::Tool) {
+    board.harness.app.view().tool = tool;
+}
+
+fn tool_of(board: &Board) -> super::super::board::Tool {
+    board.harness.app.view_ref().tool
+}
+
+/// Presses V, then Esc, with the tool at `tool`: neither key may change it while `why` holds. `arm` sets the state again before
+/// each key: a frame clears a dialog's flag once its own handling has run, as a dialog does when its request is gone.
+fn assert_v_and_esc_keep_the_tool(board: &mut Board, tool: super::super::board::Tool, why: &str, arm: &dyn Fn(&mut Board)) {
+    set_tool(board, tool);
+    arm(board);
+    board.press_key(Key::V);
+    assert_eq!(tool_of(board), tool, "V does nothing while {why}");
+    arm(board);
+    board.press_key(Key::Escape);
+    assert_eq!(tool_of(board), tool, "Esc does nothing while {why}");
+}
+/// The memo shortcut pass alone, with no frame drawn. Used for a board kind whose body the canvas fixture does not hold.
+fn press_memo_pass(board: &mut Board, pressed: Key) {
+    let mut input = screen(1.0, 1280.0, 800.0);
+    input.events = vec![key(pressed)];
+    let ctx = board.harness.ctx.clone();
+    let app = &mut board.harness.app;
+    let _ = ctx.run(input, |ctx| app.handle_board_memo_shortcut(ctx));
+}
+
+#[test]
+fn esc_leaves_the_memo_tool_and_keeps_the_selection_until_a_second_esc() {
+    let mut board = Board::new(Vec::new());
+    assert_eq!(board.harness.app.selected_nodes, vec!["text-1".to_owned()], "the fixture selects the text node");
+    board.press_key(Key::N);
+    assert_eq!(tool_of(&board), super::super::board::Tool::Memo, "N picks the memo tool");
+    board.press_key(Key::Escape);
+    assert_eq!(tool_of(&board), super::super::board::Tool::Select, "the first Esc leaves the memo tool");
+    assert_eq!(board.harness.app.selected_nodes, vec!["text-1".to_owned()], "and keeps the selection");
+    board.press_key(Key::Escape);
+    assert!(board.harness.app.selected_nodes.is_empty(), "the next Esc, on the select tool, clears the selection");
+}
+
+#[test]
+fn esc_and_v_leave_the_hand_tool_and_keep_the_selection() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    set_tool(&mut board, Tool::Hand);
+    board.press_key(Key::Escape);
+    assert_eq!(tool_of(&board), Tool::Select, "Esc leaves the hand tool");
+    assert_eq!(board.harness.app.selected_nodes, vec!["text-1".to_owned()], "and keeps the selection");
+    set_tool(&mut board, Tool::Hand);
+    board.press_key(Key::V);
+    assert_eq!(tool_of(&board), Tool::Select, "V leaves the hand tool");
+    assert_eq!(board.harness.app.selected_nodes, vec!["text-1".to_owned()], "and keeps the selection");
+}
+
+#[test]
+fn ui_state_reports_the_memo_tool_as_memo() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    set_tool(&mut board, Tool::Memo);
+    assert_eq!(board.harness.app.ui_state().tool.as_deref(), Some("memo"));
+    set_tool(&mut board, Tool::Hand);
+    assert_eq!(board.harness.app.ui_state().tool.as_deref(), Some("hand"));
+    set_tool(&mut board, Tool::Select);
+    assert_eq!(board.harness.app.ui_state().tool.as_deref(), Some("select"));
+}
+
+#[test]
+fn v_and_esc_do_nothing_while_the_memo_editor_is_open() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    board.open(memo(CanvasBoardMemoKind::Memo, ""), true);
+    assert!(board.harness.app.board_memo_editor.is_some(), "the memo editor is open");
+    assert_v_and_esc_keep_the_tool(&mut board, Tool::Hand, "the memo editor is open", &|_| {});
+}
+
+#[test]
+fn v_and_esc_do_nothing_while_an_inline_text_edit_is_open() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    board.press_key(Key::Enter);
+    assert!(board.harness.app.inline_text_edit.is_some(), "Enter starts the inline edit");
+    assert_v_and_esc_keep_the_tool(&mut board, Tool::Hand, "an inline text edit is open", &|_| {});
+}
+
+#[test]
+fn v_and_esc_do_nothing_while_a_page_section_editor_is_open() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    board.harness.app.page_section_editor = Some(super::super::page_sections::SectionEditor {
+        artifact_id: "a1".into(),
+        revision: 1,
+        expected: Vec::new(),
+        section: designllm_contracts::CanvasPageSection { id: "s1".into(), name: "섹션".into(), start_page_id: "page-1".into() },
+        page_index: 0,
+        is_new: true,
+        message: None,
+    });
+    assert_v_and_esc_keep_the_tool(&mut board, Tool::Hand, "a page section editor is open", &|_| {});
+}
+
+#[test]
+fn v_and_esc_do_nothing_while_a_home_confirmation_is_open() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    let arm = |board: &mut Board| {
+        let run = designllm_contracts::UiRun {
+            run_id: "run-1".into(),
+            view_id: "view-1".into(),
+            expected: None,
+            command_id: "add.paragraph".into(),
+            args: serde_json::json!({}),
+            actor: "agent".into(),
+            permission: designllm_contracts::UiPermission::Change,
+            allowed_intents: Default::default(),
+            status: designllm_contracts::UiRunStatus::Queued,
+            timeout_ms: 10_000,
+            result: None,
+            error: None,
+        };
+        board.harness.app.ui.pending_home_create = Some((run, std::time::Instant::now() + std::time::Duration::from_secs(60)));
+    };
+    assert_v_and_esc_keep_the_tool(&mut board, Tool::Hand, "a home confirmation covers the window", &arm);
+}
+#[test]
+fn v_and_esc_do_nothing_while_a_key_dialog_is_open() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    assert_v_and_esc_keep_the_tool(&mut board, Tool::Hand, "a key dialog is open", &|board| board.harness.app.close_confirmation_open = true);
+}
+
+#[test]
+fn esc_does_nothing_while_a_memo_save_is_in_flight() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    board.harness.app.board_memo_mutation = Some(super::super::state::BoardMemoMutation {
+        token: "t1".into(),
+        artifact_id: "a1".into(),
+        revision: 1,
+        page_id: "page-1".into(),
+        page_index: 0,
+        expected: Vec::new(),
+        desired: Vec::new(),
+        selected_memo_id: None,
+        editor: None,
+        message: None,
+        pending: true,
+        retry_allowed: false,
+        outcome_uncertain: false,
+        held_edit_id: None,
+    });
+    set_tool(&mut board, Tool::Memo);
+    board.press_key(Key::Escape);
+    assert_eq!(tool_of(&board), Tool::Memo, "Esc does nothing while a memo save is in flight");
+}
+
+#[test]
+fn esc_does_nothing_while_a_menu_is_open() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    set_tool(&mut board, Tool::Memo);
+    eframe::egui::Popup::open_id(&board.harness.ctx, Id::new("guard-test-menu"));
+    board.press_key(Key::Escape);
+    assert_eq!(tool_of(&board), Tool::Memo, "Esc does nothing while a menu is open");
+}
+
+#[test]
+fn v_picks_the_select_tool_on_figure_and_slides_boards() {
+    use super::super::board::Tool;
+    for kind in [ArtifactKind::Figure, ArtifactKind::Slides] {
+        let mut board = Board::new(Vec::new());
+        board.harness.app.active.as_mut().expect("the fixture is open").kind = kind;
+        set_tool(&mut board, Tool::Hand);
+        press_memo_pass(&mut board, Key::V);
+        assert_eq!(tool_of(&board), Tool::Select, "V picks the select tool on {kind:?}");
+    }
+}
+
+#[test]
+fn v_does_nothing_on_a_figure_board_while_a_text_field_has_the_keyboard() {
+    use super::super::board::Tool;
+    let mut board = Board::new(Vec::new());
+    board.harness.app.active.as_mut().expect("the fixture is open").kind = ArtifactKind::Figure;
+    set_tool(&mut board, Tool::Hand);
+    let ctx = board.harness.ctx.clone();
+    let mut text = String::new();
+    let mut field = |ctx: &eframe::egui::Context| {
+        eframe::egui::CentralPanel::default().show(ctx, |ui| {
+            ui.text_edit_singleline(&mut text).request_focus();
+        });
+    };
+    let _ = ctx.run(screen(1.0, 1280.0, 800.0), |ctx| field(ctx));
+    let mut input = screen(1.0, 1280.0, 800.0);
+    input.events = vec![key(Key::V)];
+    let app = &mut board.harness.app;
+    let _ = ctx.run(input, |ctx| {
+        field(ctx);
+        app.handle_board_memo_shortcut(ctx);
+    });
+    assert_eq!(tool_of(&board), Tool::Hand, "V is typed into the field, not taken as the tool key");
+}

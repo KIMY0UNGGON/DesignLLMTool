@@ -109,6 +109,7 @@ impl DesktopApp {
     }
 
     pub(super) fn process_inline_text_adapter_input(&mut self, ctx: &Context, input: &mut egui::RawInput) {
+        self.release_cell_composition_tabs(input);
         // A key that moves a table cell's edit to another cell ends this edit: the rest of the frame's input is not this cell's.
         if self.take_inline_cell_navigation(ctx, input) {
             input.events.retain(|event| !matches!(event,
@@ -116,6 +117,7 @@ impl DesktopApp {
             ));
             return;
         }
+        self.defer_tab_in_cell_composition(input);
         let later = self.split_after_closed_cell_composition(input);
         let first_opened = self.text_adapter.ime_generation().saturating_add(1);
         let _ = self.text_adapter.raw_input_hook(ctx, input, self.text_editor_id, &mut self.text_draft);

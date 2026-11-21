@@ -150,7 +150,7 @@ pub(super) struct UiChannel {
     pub screenshot_runs: VecDeque<String>,
     /// Set when a screenshot run needs the window captured this frame.
     pub screenshot_wanted: bool,
-    pending_home_create: Option<(UiRun, Instant)>,
+    pub(super) pending_home_create: Option<(UiRun, Instant)>,
 }
 
 impl Default for UiChannel {
@@ -396,7 +396,14 @@ impl DesktopApp {
                     width_px: Some(view.right_width.round() as u32),
                 },
             ],
-            tool: Some(if view.tool == Tool::Hand { "hand" } else { "select" }.into()),
+            tool: Some(
+                match view.tool {
+                    Tool::Select => "select",
+                    Tool::Hand => "hand",
+                    Tool::Memo => "memo",
+                }
+                .into(),
+            ),
             detail: json!({
                 "runtime": self.ai_runtime,
                 "job_status": self.job.as_ref().map(|job| format!("{:?}", job.status)),

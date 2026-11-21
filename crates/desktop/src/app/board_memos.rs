@@ -33,9 +33,14 @@ impl DesktopApp {
     }
 
     pub(super) fn handle_board_memo_shortcut(&mut self, ctx: &Context) {
-        let canvas = self.screen == super::Screen::Editor
-            && self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::Canvas);
-        if !canvas || ctx.wants_keyboard_input() || self.key_dialog_open() {
+        let kind = self.active.as_ref().map(|active| active.kind);
+        let board = self.screen == super::Screen::Editor && matches!(kind, Some(ArtifactKind::Canvas | ArtifactKind::Figure | ArtifactKind::Slides));
+        if !board || ctx.wants_keyboard_input() || self.key_dialog_open() {
+            return;
+        }
+        // Figure and slides boards have no memos: their tool bar's select and hand tools take `V` and Esc only.
+        if kind != Some(ArtifactKind::Canvas) {
+            self.handle_board_tool_keys(ctx);
             return;
         }
         // `Delete` on a selected memo removes it (no object is selected with it, `set_selected_ids`); `edit.delete` is for
@@ -63,9 +68,11 @@ impl DesktopApp {
         self.view().tool = Tool::Memo;
     }
 
-    /// `V` picks the select tool, and Esc leaves the memo tool when no memo is made (a memo made picks the select tool
+    /// `V` picks the select tool, and Esc leaves the memo or hand tool for the select tool (a memo made picks the select tool
     /// itself, `begin_board_memo_at`). Neither acts while a memo editor, an inline text edit or a page section editor owns
-    /// the keys, or a home confirmation covers the window; Esc also waits for an open menu and for a memo save in flight.
+    /// the keys, or a home confirmation covers the window; Esc also waits for an open menu, a memo save in flight, and the
+    /// toolbox's Esc (its icon picker, a tile's drag: `toolbox::takes_escape`).
+    /// An Esc that leaves a tool is consumed here, so `select.clear` (run after this) keeps the selection.
     fn handle_board_tool_keys(&mut self, ctx: &Context) {
         let keys_free = self.board_memo_editor.is_none()
             && self.inline_text_edit.is_none()
@@ -73,12 +80,16 @@ impl DesktopApp {
             && !self.has_home_confirmation()
             && !self.key_dialog_open();
         let tool = self.view_ref().tool;
-        if keys_free && tool != Tool::Select && ctx.input(|input| input.key_pressed(egui::Key::V) && input.modifiers == egui::Modifiers::NONE) {
+        if !keys_free || tool == Tool::Select {
+            return;
+        }
+        if ctx.input(|input| input.key_pressed(egui::Key::V) && input.modifiers == egui::Modifiers::NONE) {
             ctx.input_mut(|input| { input.consume_key(egui::Modifiers::NONE, egui::Key::V); });
             self.view().tool = Tool::Select;
-        } else if keys_free && tool == Tool::Memo && self.board_memo_mutation.is_none() && !egui::Popup::is_any_open(ctx)
+        } else if self.board_memo_mutation.is_none() && !egui::Popup::is_any_open(ctx) && !super::toolbox::takes_escape(ctx)
             && ctx.input(|input| input.key_pressed(egui::Key::Escape) && input.modifiers == egui::Modifiers::NONE)
         {
+            ctx.input_mut(|input| { input.consume_key(egui::Modifiers::NONE, egui::Key::Escape); });
             self.view().tool = Tool::Select;
         }
     }

@@ -51,6 +51,9 @@ pub(super) struct CellNav {
     overflowed: bool,
     /// Keys given back to the next frame's input, first.
     replay: Vec<egui::Event>,
+    /// Tabs typed while the composition of the edit with this id was open: they follow its commit
+    /// (`defer_tab_in_cell_composition`).
+    composing_tabs: Option<(u64, Vec<egui::Event>)>,
     wait: Option<CellWait>,
     /// The table and cell edited last.
     last_edited: Option<(String, String)>,
@@ -333,6 +336,68 @@ impl DesktopApp {
         self.hold_keys(keys);
         self.finish_inline_text_edit();
         true
+    }
+
+    /// A Tab in a table cell's edit while its composition is open (one frame [Preedit, Tab], 68p 2) can leave the cell only
+    /// once the composition is committed (`take_inline_cell_navigation` takes nothing while one is open), and given to the
+    /// editor it is lost (egui takes it as a focus move). It is taken out of `input` and put back after the events that
+    /// close the composition, in this frame or a later one, where `split_after_closed_cell_composition` hands it to the
+    /// cell navigation. The Tabs kept are this edit's only: another edit drops them (`release_cell_composition_tabs`).
+    pub(super) fn defer_tab_in_cell_composition(&mut self, input: &mut egui::RawInput) {
+        let Some(session) = self.inline_text_edit.as_ref().filter(|session| session.reservation_node_ids.len() > 1) else { return };
+        let session_id = session.id;
+        let mut open = session.composing || self.text_adapter.is_ime_active();
+        if !open {
+            return;
+        }
+        let mut tabs = self.cell_nav.composing_tabs.take().filter(|(id, _)| *id == session_id).map(|(_, tabs)| tabs).unwrap_or_default();
+        let is_tab = |event: &egui::Event| matches!(event, egui::Event::Key { key: egui::Key::Tab, pressed: true, modifiers, .. }
+            if !modifiers.ctrl && !modifiers.alt && !modifiers.mac_cmd);
+        let mut closed = false;
+        let mut events = Vec::with_capacity(input.events.len() + tabs.len());
+        for event in std::mem::take(&mut input.events) {
+            // The Tabs go after the commit and the `Disabled` around it, before anything else.
+            if closed && !open && !matches!(event, egui::Event::Ime(egui::ImeEvent::Commit(_) | egui::ImeEvent::Disabled)) {
+                events.append(&mut tabs);
+            }
+            match &event {
+                egui::Event::Ime(egui::ImeEvent::Enabled) => open = true,
+                egui::Event::Ime(egui::ImeEvent::Preedit(preedit)) => open |= !preedit.is_empty(),
+                egui::Event::Ime(egui::ImeEvent::Commit(_) | egui::ImeEvent::Disabled) => {
+                    open = false;
+                    closed = true;
+                }
+                _ if open && is_tab(&event) => {
+                    tabs.push(event);
+                    continue;
+                }
+                _ => {}
+            }
+            events.push(event);
+        }
+        if !open {
+            events.append(&mut tabs);
+        } else if !tabs.is_empty() {
+            self.cell_nav.composing_tabs = Some((session_id, tabs));
+        }
+        input.events = events;
+    }
+
+    /// The Tabs `defer_tab_in_cell_composition` kept, when their composition was closed without its events reaching it (the
+    /// editor's IME state reset): they go first in this frame's input of the same edit, before its cell navigation, never
+    /// into a later frame (where the edit may have ended or moved on). Another edit, or none, drops them.
+    pub(super) fn release_cell_composition_tabs(&mut self, input: &mut egui::RawInput) {
+        let Some((session_id, _)) = self.cell_nav.composing_tabs.as_ref() else { return };
+        let Some(session) = self.inline_text_edit.as_ref().filter(|session| session.id == *session_id) else {
+            self.cell_nav.composing_tabs = None;
+            return;
+        };
+        if session.composing || self.text_adapter.is_ime_active() {
+            return;
+        }
+        if let Some((_, tabs)) = self.cell_nav.composing_tabs.take() {
+            input.events.splice(0..0, tabs);
+        }
     }
 
     /// Whether `position` (screen) is on the border band of `table_id` on page `page_index` drawn at `page_rect`.

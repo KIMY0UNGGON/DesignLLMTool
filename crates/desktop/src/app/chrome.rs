@@ -580,7 +580,13 @@ impl DesktopApp {
 
 }
 
-/// A failure the screen cannot show elsewhere, as one callout at the bottom centre of the window.
+/// The memory key of the bottom bar's rectangle, stored by `float_bar` with the pass that drew it.
+const BOTTOM_BAR: &str = "bottom-tool-bar";
+/// The gap between a callout and the bottom bar it stands above.
+const CALLOUT_ABOVE_BAR: f32 = 8.0;
+
+/// A failure the screen cannot show elsewhere, as one callout at the bottom centre of the window. While a bottom bar is drawn it
+/// stands above that bar, so the two do not cover each other.
 impl DesktopApp {
     pub(super) fn draw_error_callout(&mut self, ctx: &Context) {
         let Some(notice) = self.notices.current(std::time::Instant::now()).cloned() else {
@@ -588,12 +594,17 @@ impl DesktopApp {
         };
         let palette = theme::palette(ctx);
         let screen = ctx.content_rect();
+        let pass = ctx.cumulative_pass_nr();
+        let bottom = ctx
+            .data(|data| data.get_temp::<(u64, Rect)>(egui::Id::new(BOTTOM_BAR)))
+            .filter(|(drawn_in, _)| *drawn_in == pass)
+            .map_or(screen.bottom() - 16.0, |(_, bar)| bar.top() - CALLOUT_ABOVE_BAR);
         let requires_acknowledgement = notice.requires_acknowledgement();
         let buttons = if requires_acknowledgement { &["확인"][..] } else { &[] };
         Area::new(egui::Id::new("error-callout"))
             .order(Order::Foreground)
             .pivot(egui::Align2::CENTER_BOTTOM)
-            .fixed_pos(Pos2::new(screen.center().x, screen.bottom() - 16.0))
+            .fixed_pos(Pos2::new(screen.center().x, bottom))
             .show(ctx, |ui| {
                 let clicked = widgets::callout(ui, &palette, &notice.text, buttons, notice.severity == Severity::Warning);
                 if requires_acknowledgement && clicked == Some(0) {
@@ -657,6 +668,10 @@ pub(super) fn float_bar(ctx: &Context, palette: &theme::Palette, id: &str, board
                 .rect
         });
     let rect = shown.inner;
+    if place == FloatPlace::BottomCenter {
+        let pass = ctx.cumulative_pass_nr();
+        ctx.data_mut(|data| data.insert_temp(egui::Id::new(BOTTOM_BAR), (pass, rect)));
+    }
     // A frame takes one shadow; both layers go under it on the layer below.
     let painter = ctx.layer_painter(egui::LayerId::new(Order::Middle, egui::Id::new(id).with("shadow")));
     theme::paint_shadow(&painter, rect, corner, theme::Elevation::Float);
@@ -734,6 +749,47 @@ impl DesktopApp {
         match self.job.as_ref().map(|job| job.runtime.as_str()) {
             Some(runtime) if !runtime.is_empty() => runtime.to_owned(),
             _ => self.ai_runtime.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use eframe::egui::{Id, Rect};
+
+    use crate::app::test_support::{canvas_with_page, screen, Host, Window};
+
+    /// The rectangles of the callout and of the bottom bar `bar`, as the last frame drew them.
+    fn callout_and_bar(window: &Window, bar: &str) -> (Rect, Rect) {
+        let (callout, bar) = window.ctx.memory(|memory| (memory.area_rect(Id::new("error-callout")), memory.area_rect(Id::new(bar))));
+        (callout.expect("the callout is drawn"), bar.expect("the bottom bar is drawn"))
+    }
+
+    /// A callout on a canvas and on a figure stands above the bottom bar: the two rectangles do not meet, so the bar's buttons
+    /// stay pressable while the callout shows.
+    #[test]
+    fn the_callout_stands_above_the_bottom_bar_of_a_canvas_and_of_a_figure() {
+        let mut host = Host::start();
+        let canvas = canvas_with_page(&mut host, "알림");
+        let figure = host.create_figure();
+        for (artifact, bar) in [(canvas, "tool-group"), (figure, "figure-tool-group")] {
+            let mut window = Window::open_with_previews(&mut host, &artifact);
+            window.draw(&mut host, 1.0);
+            window.app.notices.warning("이 패널의 그림은 개체 단위로 편집할 수 없습니다.", Instant::now());
+            // `App::update` draws the callout after the frame; the test runs both, twice, so the callout's area is known.
+            let app = &mut window.app;
+            for _ in 0..2 {
+                let _ = window.ctx.run(screen(1.0, 1280.0, 800.0), |ctx| {
+                    app.draw_frame(ctx);
+                    app.draw_error_callout(ctx);
+                });
+            }
+            let (callout, bar_rect) = callout_and_bar(&window, bar);
+            let shared = callout.intersect(bar_rect);
+            assert!(shared.width() <= 0.0 || shared.height() <= 0.0, "{bar}: the callout {callout:?} covers the bar {bar_rect:?}");
+            assert!(callout.bottom() <= bar_rect.top(), "{bar}: the callout {callout:?} ends above the bar {bar_rect:?}");
         }
     }
 }

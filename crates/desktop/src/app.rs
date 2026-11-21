@@ -1045,6 +1045,8 @@ impl eframe::App for DesktopApp {
         }
         // An icon waiting for its pick is dropped once its toolbox tab was not drawn (68g).
         self.forget_hidden_toolbox_icon(ctx);
+        // A video dropped on another page opens its dialog once the page change is answered (68p).
+        self.run_waiting_toolbox_video(ctx);
         self.observe_board_memo_gesture(ctx);
         self.finish_board_memo_gesture_if_released(ctx);
         self.draw_board_memo_editor(ctx);

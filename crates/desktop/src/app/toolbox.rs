@@ -21,6 +21,31 @@ pub(super) struct AddAt {
     pub center: (i64, i64),
 }
 
+/// The page, the selection and the window's copy of the context before an insert on another page, which `focus_add_page`
+/// changes (68g). Kept to put back when the insert does not go ahead (`restore_add_focus`).
+#[derive(Clone)]
+pub(super) struct AddFocus {
+    page_index: u32,
+    node_ids: Vec<String>,
+    /// The window's own selection (`local_selection`), None before the context is first read.
+    selection: Option<Selection>,
+    context: Option<(u32, Selection)>,
+}
+
+/// A video dropped on another page, waiting in the frame memory under `WAITING_VIDEO` for the answer to the page change
+/// (`run_waiting_toolbox_video`): the point, the artifact, what to put back, and the egui time it was dropped at.
+#[derive(Clone, Default)]
+struct WaitingVideo {
+    at: AddAt,
+    artifact_id: String,
+    before: Option<AddFocus>,
+    since: f64,
+}
+
+const WAITING_VIDEO: &str = "toolbox-waiting-video";
+/// The wait for the page change's answer after which a video dropped on another page is not added (seconds).
+const VIDEO_WAIT_SECONDS: f64 = 5.0;
+
 /// What a tile does with the point it is clicked or dropped at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
@@ -204,6 +229,41 @@ impl DesktopApp {
         self.select_clear();
     }
 
+    /// The page, selection and context that `focus_add_page(page_index)` would change, as they are now. Nothing when
+    /// `page_index` is the current page: an insert there changes neither.
+    pub(super) fn add_focus_state(&self, page_index: u32) -> Option<AddFocus> {
+        let current = self.view_ref().page_index;
+        (current != page_index).then(|| AddFocus {
+            page_index: current,
+            node_ids: self.selected_nodes.clone(),
+            selection: self.local_selection.clone(),
+            context: self.context.as_ref().map(|context| (context.visible_page, context.selection.clone())),
+        })
+    }
+
+    /// Puts back the page and selection `before` holds when an insert that moved to another page did not go ahead (`run_tile`):
+    /// `focus_add_page` ran before the insert, so the page changed and the selection was cleared for nothing. The page goes
+    /// back as a page click does (`focus_page`). The selection asked of the host again is the window's own, else the one the
+    /// host showed.
+    pub(super) fn restore_add_focus(&mut self, before: Option<AddFocus>) {
+        let Some(AddFocus { page_index, node_ids, selection, context }) = before else { return };
+        if self.view_ref().page_index == page_index {
+            return;
+        }
+        self.focus_page(page_index);
+        let shown = context.map(|(visible_page, shown)| {
+            if let Some(context) = self.context.as_mut() {
+                context.visible_page = visible_page;
+                context.selection.clone_from(&shown);
+            }
+            shown
+        });
+        self.set_selected_ids(node_ids);
+        if let Some(selection) = selection.or(shown) {
+            self.set_selection(selection);
+        }
+    }
+
     /// The `at` object for `at`, in document units (the form `add_at_from_args` reads).
     fn at_value(&self, at: AddAt) -> Value {
         let scale = self.toolbox_unit_emu();
@@ -241,7 +301,18 @@ impl DesktopApp {
     /// rectangle and size. Nothing unless the point is on the board and the board is the topmost layer there (the background
     /// layer: not a floating bar, a popup or the sidebar laid over the board), and nothing off the pages. The board rectangle
     /// stops at the sidebar, the panel and the window, so a page zoomed or panned under them takes no drop there.
+    /// An open inline text edit is on its own page: a drop on another page would move the page under it (68p 3b), so it is
+    /// refused (`toolbox_tile` says why). A drop on the edited page is taken, as a tile click is.
     fn toolbox_drop_target(&self, ctx: &Context, pos: Pos2) -> Option<(AddAt, Rect, Size)> {
+        self.toolbox_drop_place(ctx, pos).filter(|(at, _, _)| !self.drop_leaves_inline_edit(*at))
+    }
+
+    fn drop_leaves_inline_edit(&self, at: AddAt) -> bool {
+        self.inline_text_edit.as_ref().is_some_and(|edit| edit.page_index != at.page_index)
+    }
+
+    /// `toolbox_drop_target` before the inline text edit's refusal.
+    fn toolbox_drop_place(&self, ctx: &Context, pos: Pos2) -> Option<(AddAt, Rect, Size)> {
         let board_rect = self.board_rect?;
         if !board_rect.contains(pos) || ctx.layer_id_at(pos) != Some(LayerId::background()) {
             return None;
@@ -325,46 +396,107 @@ impl DesktopApp {
                 self.run_tile(&ctx, tile, at, Pos2::new(rect.right() + 8.0, rect.top()));
             }
         }
-        if response.drag_started() {
+        // Only the primary button's drag inserts: a secondary or middle button's drag shows no outline and inserts nothing (as
+        // its click does not).
+        if response.drag_started_by(egui::PointerButton::Primary) {
             ctx.data_mut(|data| data.insert_temp(Id::new(TOOLBOX_DRAG), response.id));
         }
         let pos = ctx.input(|input| input.pointer.latest_pos());
-        if response.dragged() {
+        if response.dragged_by(egui::PointerButton::Primary) {
             if let Some(pos) = pos {
                 self.toolbox_preview(&ctx, palette, tile.action, pos);
             }
         }
         // egui ends a drag on Esc: that stop is a cancel, and the release that follows ends no drag.
         let escaped = ctx.input(|input| input.key_pressed(Key::Escape));
-        if response.drag_stopped() && !escaped {
+        if response.drag_stopped_by(egui::PointerButton::Primary) && !escaped {
             // A pointer that left the window has no position: the drop is cancelled.
-            if let Some((at, _, _)) = pos.and_then(|pos| self.toolbox_drop_target(&ctx, pos)) {
-                self.run_tile(&ctx, tile, at, pos.unwrap_or(rect.right_top()));
+            match pos.and_then(|pos| self.toolbox_drop_place(&ctx, pos)) {
+                Some((at, _, _)) if self.drop_leaves_inline_edit(at) => self.set_error("텍스트 편집을 끝낸 뒤 다른 페이지에 놓으세요".into()),
+                Some((at, _, _)) => self.run_tile(&ctx, tile, at, pos.unwrap_or(rect.right_top())),
+                None => {}
             }
         }
     }
 
-    /// Runs a tile at `at`: the add command, the memo editor, the video dialog, or the icon picker opened at `anchor`.
+    /// Runs a tile at `at`: the add command, the memo editor, the video dialog, or the icon picker opened at `anchor`. The
+    /// page an insert on another page made current, and the selection it cleared, are put back when the insert does not go
+    /// ahead here: refused (an error), its file dialog cancelled, or its memo editor not opened (68p 3a). A refusal that
+    /// comes back from the host later is not undone here.
     fn run_tile(&mut self, ctx: &Context, tile: Tile, at: AddAt, anchor: Pos2) {
+        let before = self.add_focus_state(at.page_index);
         let result = match tile.action {
             Action::Command(id) => {
                 let args = json!({ "at": self.at_value(at) });
-                self.invoke(id, args)
+                let imports = self.pending_calls("asset.import");
+                // The picture tile's dialog, cancelled, imports nothing.
+                self.invoke(id, args).map(|()| id != "add.image" || self.pending_calls("asset.import") > imports)
             }
-            Action::Memo => self.begin_board_memo_centred(ctx, at.page_index, at.center),
-            Action::Video => {
-                self.focus_add_page(at.page_index);
-                self.begin_canvas_video_insert_at(Some(at))
+            Action::Memo => self.begin_board_memo_centred(ctx, at.page_index, at.center).map(|()| self.board_memo_editor.is_some()),
+            // On another page the video waits for the answer to the page change (`run_waiting_toolbox_video`).
+            Action::Video if before.is_some() => {
+                if ctx.data(|data| data.get_temp::<WaitingVideo>(Id::new(WAITING_VIDEO))).is_some() {
+                    Err("진행 중인 동영상 추가가 끝날 때까지 기다리세요".into())
+                } else {
+                    self.focus_add_page(at.page_index);
+                    let artifact_id = self.active.as_ref().map(|active| active.id.clone()).unwrap_or_default();
+                    let since = ctx.input(|input| input.time);
+                    ctx.data_mut(|data| data.insert_temp(Id::new(WAITING_VIDEO), WaitingVideo { at, artifact_id, before, since }));
+                    return;
+                }
             }
+            // A cancelled dialog starts no video insert.
+            Action::Video => self.begin_canvas_video_insert_at(Some(at)).map(|()| self.video_insert.is_some()),
             Action::Icon => {
                 let frame = ctx.cumulative_frame_nr();
                 let artifact_id = self.active.as_ref().map(|active| active.id.clone()).unwrap_or_default();
                 ctx.data_mut(|data| data.insert_temp(Id::new(PENDING_ICON), PendingIcon { at, artifact_id, anchor, frame, drawn: frame }));
-                Ok(())
+                Ok(true)
             }
         };
-        if let Err(message) = result {
-            self.set_error(message);
+        match result {
+            Ok(true) => {}
+            Ok(false) => self.restore_add_focus(before),
+            Err(message) => {
+                self.restore_add_focus(before);
+                self.set_error(message);
+            }
+        }
+    }
+
+    /// How many calls of `method` wait for their answer.
+    fn pending_calls(&self, method: &str) -> usize {
+        self.pending.values().filter(|pending| pending.method == method).count()
+    }
+
+    /// The video dropped on another page, once the page change's selection request is answered: the video insert checks that
+    /// no selection change is on its way (`video_insert_intent`), so its dialog opens only then. The page and the selection
+    /// are put back when it does not go ahead (refused, cancelled, or no answer within `VIDEO_WAIT_SECONDS`); a drop on an
+    /// artifact or a page no longer shown is dropped. Called once a frame (`App::update`).
+    pub(super) fn run_waiting_toolbox_video(&mut self, ctx: &Context) {
+        let id = Id::new(WAITING_VIDEO);
+        let Some(waiting) = ctx.data_mut(|data| data.remove_temp::<WaitingVideo>(id)) else {
+            return;
+        };
+        if self.active.as_ref().is_none_or(|active| active.id != waiting.artifact_id) || self.view_ref().page_index != waiting.at.page_index {
+            return;
+        }
+        if self.pending_calls("selection.set") > 0 {
+            if ctx.input(|input| input.time) - waiting.since < VIDEO_WAIT_SECONDS {
+                ctx.data_mut(|data| data.insert_temp(id, waiting));
+            } else {
+                self.restore_add_focus(waiting.before);
+                self.set_error("페이지 전환이 끝나지 않아 동영상을 추가하지 않았습니다".into());
+            }
+            return;
+        }
+        match self.begin_canvas_video_insert_at(Some(waiting.at)) {
+            Ok(()) if self.video_insert.is_some() => {}
+            Ok(()) => self.restore_add_focus(waiting.before),
+            Err(message) => {
+                self.restore_add_focus(waiting.before);
+                self.set_error(message);
+            }
         }
     }
 

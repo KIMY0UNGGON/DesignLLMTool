@@ -825,6 +825,72 @@ fn text_node_windows_korean_ime_order_commits_without_a_conflict() {
     }
 }
 
+/// 68p 2: a Tab in one frame with a preedit ([Preedit, Tab]), the composition still open after it, while the cell waits for
+/// the render of its last change (slow) or not (at once), the composition opened in an earlier frame or in that one. The
+/// Tab is not lost: once the composition is committed it moves to the next cell, once, and the syllable stays in the cell
+/// it was typed in.
+#[test]
+fn table_cell_a_tab_in_a_frame_with_a_preedit_moves_on_once_the_composition_is_committed() {
+    for slow in [true, false] {
+        for opened_before in [true, false] {
+            let case = format!("slow {slow}, composition opened before the Tab's frame {opened_before}");
+            let mut host = Host::start();
+            let (canvas, mut window, table) = new_table(&mut host);
+            let mut app = if slow { Driver::slow() } else { Driver::at_once() };
+            app.idle(&mut window, &mut host, if slow { 20 } else { 1 });
+            let cells: Vec<String> = table.rows.iter().flat_map(|row| row.cell_ids.clone()).collect();
+            let at = centre(&window, &cells[0]);
+            app.click(&mut window, &mut host, at);
+            idle_until(&mut app, &mut window, &mut host, 30, &format!("{case}: the click opens cell 0"), |window| editing(window).as_deref() == Some(cells[0].as_str()));
+            app.frame(&mut window, &mut host, vec![Event::Text("a".into())]);
+            app.idle(&mut window, &mut host, 2);
+            if opened_before {
+                app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Enabled), Event::Ime(ImeEvent::Preedit("ㅎ".into()))]);
+            }
+            let readiness = window.app.inline_text_edit.as_ref().map(|session| window.app.inline_table_cell_readiness(session));
+            let expected = if slow { super::InlineCellReadiness::WaitingForRender } else { super::InlineCellReadiness::Ready };
+            assert_eq!(readiness, Some(expected), "{case}: the cell's state before the Tab's frame");
+            play(&mut app, &mut window, &mut host, vec![vec![Event::Ime(ImeEvent::Preedit("한".into())), key(Key::Tab)]], &case);
+            assert_eq!(editing(&window).as_deref(), Some(cells[0].as_str()), "{case}: the Tab waits for the open composition");
+            let shown = window.app.text_draft.clone();
+            play(&mut app, &mut window, &mut host, vec![windows_ime::end("한")], &case);
+            idle_until(&mut app, &mut window, &mut host, 120, &format!("{case}: the Tab moves to cell 1 after the commit"), |window| editing(window).as_deref() == Some(cells[1].as_str()));
+            app.idle(&mut window, &mut host, 10);
+            assert_eq!(editing(&window).as_deref(), Some(cells[1].as_str()), "{case}: the Tab moves one cell only");
+            app.keys(&mut window, &mut host, vec![key(Key::Escape)]);
+            idle_until(&mut app, &mut window, &mut host, 200, &format!("{case}: Escape ends the edit"), |window| window.app.inline_text_edit.is_none());
+            let stored: Vec<String> = cells.iter().map(|cell| cell_text(&mut host, &canvas, cell)).collect();
+            assert_eq!(stored, ["a한", "", "", ""], "{case}: the syllable is stored once, in the cell it was typed in");
+            assert_eq!(shown, "a한", "{case}: the preedit was shown in cell 0 while the Tab waited");
+        }
+    }
+}
+
+/// 68p 8b: a Tab kept through a composition that then closes outside the frame's input (the editor's IME state reset, as a
+/// failed change or the close cleanup does) leaves the cell of its own edit in that frame: it is not handed to the next
+/// frame, where the edit may have ended and the board would take it (`select.next`).
+#[test]
+fn table_cell_a_tab_kept_through_a_composition_closed_elsewhere_moves_its_own_edit_and_reaches_nothing_else() {
+    let mut host = Host::start();
+    let (_canvas, mut window, table) = new_table(&mut host);
+    let mut app = Driver::at_once();
+    let cells: Vec<String> = table.rows.iter().flat_map(|row| row.cell_ids.clone()).collect();
+    let at = centre(&window, &cells[0]);
+    app.click(&mut window, &mut host, at);
+    idle_until(&mut app, &mut window, &mut host, 30, "the click opens cell 0", |window| editing(window).as_deref() == Some(cells[0].as_str()));
+    app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Enabled), Event::Ime(ImeEvent::Preedit("ㅎ".into()))]);
+    app.frame(&mut window, &mut host, vec![Event::Ime(ImeEvent::Preedit("한".into())), key(Key::Tab)]);
+    assert_eq!(editing(&window).as_deref(), Some(cells[0].as_str()), "the Tab waits for the open composition");
+    window.app.text_adapter = crate::grapheme::GraphemeAdapter::default();
+    if let Some(session) = window.app.inline_text_edit.as_mut() {
+        session.composing = false;
+    }
+    app.frame(&mut window, &mut host, Vec::new());
+    let leaving = window.app.inline_text_edit.as_ref().is_none_or(|session| session.finish_requested);
+    assert!(leaving, "the kept Tab ends cell 0's edit in the frame it is let go in, not in a later frame's input");
+    idle_until(&mut app, &mut window, &mut host, 60, "the kept Tab moves to cell 1", |window| editing(window).as_deref() == Some(cells[1].as_str()));
+}
+
 /// A render that never comes back: the cell shows that it waits, asks for the render again after 1.5 s, and after 5 s
 /// keeps the queued input as the draft behind the conflict notice.
 #[test]

@@ -12,7 +12,6 @@ use serde_json::{json, Value};
 
 use super::{
     board::Tool,
-    screen_to_page_emu,
     test_support::{canvas_with_page, primary_button, screen, Host, Window},
     toolbox::{PendingIcon, PENDING_ICON},
 };
@@ -150,10 +149,15 @@ impl Bench {
         }
     }
 
-    /// The page EMU of a screen point over the page `index` as it is drawn now.
+    /// The page EMU of a screen point over the page `index` as it is drawn now, worked out by hand (not by `screen_to_page_emu`,
+    /// the function under test): the page's drawn corner is the origin, a screen point is `zoom` px per CSS px, and a CSS px is
+    /// `EMU_PER_CSS_PX`. Screen points are px here (scale 1.0), and the view is at the default zoom or the one set in the test.
     fn emu_at(&mut self, index: u32, point: Pos2) -> (i64, i64) {
-        let size = self.page_size(index as usize);
-        screen_to_page_emu(point, self.page_rect(index), size).expect("the point maps onto the page")
+        let rect = self.page_rect(index);
+        let zoom = f64::from(self.window.app.view_ref().zoom);
+        let x = f64::from(point.x - rect.left()) / zoom * EMU_PER_CSS_PX as f64;
+        let y = f64::from(point.y - rect.top()) / zoom * EMU_PER_CSS_PX as f64;
+        (x.round() as i64, y.round() as i64)
     }
 
     /// The centre of the part of page `index` on the board, in page EMU.
@@ -595,4 +599,298 @@ fn a_video_dropped_on_the_page_keeps_the_drop_point() {
     assert!(near(got, want, bench.slack(0)), "the video is to be centred on {want:?}, got {got:?}");
     let intent = bench.window.app.video_insert_intent(None);
     assert!(intent.is_err(), "one video insert at a time");
+}
+
+/// Selects the text node the tile click made on page 0 (the tile itself does not select the insert).
+fn select_new_text(bench: &mut Bench) {
+    let id = bench.nodes(0).remove(0).id;
+    bench.window.app.set_selected_ids(vec![id.clone()]);
+    bench.window.app.set_selection(designllm_contracts::Selection { node_ids: vec![id], text_range: None });
+    bench.frames(2);
+}
+fn enter() -> Event {
+    Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }
+}
+
+/// 68p 3d: a drag with the right or the middle button inserts nothing; the primary button's drop does.
+#[test]
+fn a_tile_dragged_with_another_button_than_the_primary_inserts_nothing() {
+    use eframe::egui::PointerButton;
+    let mut host = Host::start();
+    let canvas = two_page_canvas(&mut host);
+    let mut bench = Bench::open(host, canvas);
+    bench.tools();
+    let target = bench.page_rect(1).intersect(bench.board()).center();
+    for button in [PointerButton::Secondary, PointerButton::Middle] {
+        let from = bench.tile("표").center();
+        let press = |pos: Pos2, pressed: bool| Event::PointerButton { pos, button, pressed, modifiers: Modifiers::NONE };
+        bench.frame(vec![Event::PointerMoved(from), press(from, true)]);
+        for step in 1..=6 {
+            let at = from + (target - from) * (step as f32 / 6.0);
+            bench.frame(vec![Event::PointerMoved(at)]);
+        }
+        assert_eq!(bench.preview(), None, "a {button:?} drag shows no outline of an insert (68p 4)");
+        bench.frame(vec![Event::PointerMoved(target), press(target, false)]);
+        bench.frames(2);
+        assert!(bench.nodes(1).is_empty(), "a {button:?} drag inserts nothing");
+        assert_eq!(bench.window.app.view_ref().page_index, 0, "and does not change the page");
+    }
+    bench.drop_tile_at("표", target);
+    bench.frames(3);
+    assert!(bench.nodes(1).iter().any(|node| node.kind == NodeKind::Group), "the primary button's drop still inserts the table");
+}
+
+/// 68p 3a: the page and selection a failed insert puts back are the ones before it (`add_focus_state`, `restore_add_focus`).
+#[test]
+fn a_failed_insert_puts_back_the_page_and_the_selection_its_page_change_cleared() {
+    let mut host = Host::start();
+    let canvas = two_page_canvas(&mut host);
+    let mut bench = Bench::open(host, canvas);
+    bench.tools();
+    bench.click_tile("텍스트");
+    bench.frames(2);
+    select_new_text(&mut bench);
+    let selected = bench.window.app.selected_nodes.clone();
+    assert!(!selected.is_empty(), "the new text is selected");
+    assert!(bench.window.app.add_focus_state(0).is_none(), "an insert on the current page has nothing to put back");
+    let before = bench.window.app.add_focus_state(1);
+    bench.window.app.focus_add_page(1);
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page change is made");
+    assert!(bench.window.app.selected_nodes.is_empty(), "and the selection is cleared");
+    bench.window.app.restore_add_focus(before);
+    assert_eq!(bench.window.app.view_ref().page_index, 0, "the failed insert puts the page back");
+    assert_eq!(bench.window.app.context.as_ref().map(|context| context.visible_page), Some(0), "the host's visible page too");
+    assert_eq!(bench.window.app.selected_nodes, selected, "and the selection");
+}
+
+/// 68p 3b: a tile dropped on another page while a text edit is open does not leave the edit on the page it was not made on.
+#[test]
+fn a_tile_dropped_on_another_page_during_an_inline_text_edit_keeps_the_edit_on_its_page() {
+    let mut host = Host::start();
+    let canvas = two_page_canvas(&mut host);
+    let mut bench = Bench::open(host, canvas);
+    bench.tools();
+    bench.click_tile("텍스트");
+    bench.frames(2);
+    select_new_text(&mut bench);
+    bench.frame(vec![enter()]);
+    bench.frames(2);
+    assert!(bench.window.app.inline_text_edit.is_some(), "Enter starts the inline edit of the new text");
+    let target = bench.page_rect(1).intersect(bench.board()).center();
+    bench.drop_tile_at("표", target);
+    bench.frames(3);
+    let view_page = bench.window.app.view_ref().page_index;
+    let edit = bench.window.app.inline_text_edit.as_ref().expect("the drop does not end the edit");
+    assert_eq!(edit.page_index, view_page, "the open edit is on the page that is current");
+    assert!(edit.conflict.is_none(), "and raises no conflict: {:?}", edit.conflict);
+    assert!(bench.nodes(1).is_empty(), "the drop onto the other page is refused while the edit is open");
+    assert!(bench.window.message().is_some_and(|message| message.contains("텍스트 편집")), "the refusal says why: {:?}", bench.window.message());
+}
+
+/// A two-page canvas whose page 0 holds a selected text node, the toolbox tab open, and the page and selection it shows.
+fn two_pages_with_a_selection() -> (Bench, Vec<String>) {
+    let mut host = Host::start();
+    let canvas = two_page_canvas(&mut host);
+    let mut bench = Bench::open(host, canvas);
+    bench.tools();
+    bench.click_tile("텍스트");
+    bench.frames(2);
+    select_new_text(&mut bench);
+    let selected = bench.window.app.selected_nodes.clone();
+    assert_eq!(selected.len(), 1, "the new text is selected");
+    assert_eq!(bench.window.app.view_ref().page_index, 0);
+    (bench, selected)
+}
+
+/// The page, the host's visible page and the selection are the ones before a tile insert that did not go ahead.
+fn assert_page_and_selection_kept(bench: &Bench, selected: &[String], what: &str) {
+    assert_eq!(bench.window.app.view_ref().page_index, 0, "{what}: the page stays the current one");
+    assert_eq!(bench.window.app.context.as_ref().map(|context| context.visible_page), Some(0), "{what}: the host's visible page too");
+    assert_eq!(bench.window.app.selected_nodes, selected, "{what}: the selection stays");
+    let local = bench.window.app.local_selection.as_ref().map(|selection| selection.node_ids.clone());
+    assert_eq!(local.as_deref(), Some(selected), "{what}: the selection asked of the host is the kept one");
+}
+
+/// Drops the video tile on page 1 with `answers` queued for its file dialog, then draws frames until a video insert starts
+/// (it is checked before its file inspection's answer, a frame later, can end it) or for ten frames; returns how many
+/// answers were left.
+fn drop_video_on_page_1(bench: &mut Bench, answers: Vec<std::path::PathBuf>) -> usize {
+    crate::dialogs::set_test_answers(Some(answers.into_iter().collect()));
+    let target = bench.page_rect(1).intersect(bench.board()).center();
+    bench.drag_tile_to("동영상", target);
+    bench.frame(vec![Event::PointerMoved(target), primary_button(target, false)]);
+    for _ in 0..10 {
+        if bench.window.app.video_insert.is_some() {
+            break;
+        }
+        bench.frame(Vec::new());
+    }
+    crate::dialogs::set_test_answers(None)
+}
+
+/// A file named `name` in a new folder of its own (the folder, the file).
+fn video_file(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("designllm-68p-video-{}", designllm_contracts::new_id()));
+    std::fs::create_dir_all(&dir).expect("a folder");
+    let file = dir.join(name);
+    std::fs::write(&file, b"not a real video").expect("a file");
+    (dir, file)
+}
+
+/// 68p 3a: a video tile dropped on another page whose insert is refused (the chosen file is no video) leaves the page and
+/// the selection as they were, through the tile's own run.
+#[test]
+fn a_refused_video_drop_on_another_page_keeps_the_page_and_the_selection() {
+    let (mut bench, selected) = two_pages_with_a_selection();
+    let (dir, file) = video_file("drop.txt");
+    let unanswered = drop_video_on_page_1(&mut bench, vec![file]);
+    let message = bench.window.message();
+    assert_eq!(unanswered, 0, "the dialog opened; notice: {message:?}");
+    assert!(bench.window.app.video_insert.is_none(), "no video insert starts");
+    assert!(message.as_deref().is_some_and(|message| message.contains("MP4")), "the refusal says why: {message:?}");
+    assert_page_and_selection_kept(&bench, &selected, "a refused video drop");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// 68p (68g): a video tile dropped on another page opens the file dialog once that page is the current one, and the video
+/// insert starts there, at the drop point.
+#[test]
+fn a_video_dropped_on_another_page_opens_the_dialog_and_starts_there() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    let (dir, file) = video_file("drop.mp4");
+    let unanswered = drop_video_on_page_1(&mut bench, vec![file]);
+    assert_eq!(unanswered, 0, "the drop opened the video dialog; notice: {:?}", bench.window.message());
+    let pending = bench.window.app.video_insert.as_ref().expect("the video insert starts with the chosen file");
+    assert_eq!(pending.intent.page_index, 1, "on the page of the drop");
+    assert!(pending.intent.center.is_some(), "at the drop point");
+    assert_eq!(bench.window.app.view_ref().page_index, 1, "the page of the drop is the current page");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// 68p 3a: a video tile dropped on another page whose file dialog is cancelled leaves the page and the selection as they
+/// were, with no notice.
+#[test]
+fn a_cancelled_video_drop_on_another_page_keeps_the_page_and_the_selection() {
+    let (mut bench, selected) = two_pages_with_a_selection();
+    drop_video_on_page_1(&mut bench, Vec::new());
+    assert!(bench.window.app.video_insert.is_none(), "no video insert starts");
+    assert_eq!(bench.window.message(), None, "a cancel says nothing");
+    assert_page_and_selection_kept(&bench, &selected, "a cancelled video drop");
+}
+
+/// 68p 1: with the hand tool, Esc closes the toolbox's icon picker in one press (the picker's Esc, not the tool's).
+#[test]
+fn esc_closes_the_icon_picker_in_one_press_on_the_hand_tool() {
+    let mut bench = Bench::canvas();
+    bench.window.app.view().tool = Tool::Hand;
+    bench.click_tile("아이콘");
+    assert!(bench.pending_icon().is_some(), "the picker waits for a pick");
+    bench.frame(vec![escape()]);
+    bench.frame(Vec::new());
+    assert!(bench.pending_icon().is_none(), "one Esc closes the picker");
+}
+
+/// 68p 1: with the hand tool, Esc and the release of a tile's drag in one frame cancel the drop.
+#[test]
+fn esc_and_the_release_in_one_frame_cancel_a_tile_drag_on_the_hand_tool() {
+    let mut bench = Bench::canvas();
+    bench.window.app.view().tool = Tool::Hand;
+    let target = bench.page_rect(0).intersect(bench.board()).center();
+    bench.drag_tile_to("표", target);
+    bench.frame(vec![escape(), Event::PointerMoved(target), primary_button(target, false)]);
+    bench.frames(2);
+    assert!(!bench.nodes(0).iter().any(|node| node.kind == NodeKind::Group), "the Esc cancels the drop");
+}
+
+/// 68p 3b: during an inline text edit a tile dropped on the edited page is inserted, as a tile click is.
+#[test]
+fn a_tile_dropped_on_the_edited_page_during_an_inline_text_edit_is_inserted() {
+    let mut host = Host::start();
+    let canvas = two_page_canvas(&mut host);
+    let mut bench = Bench::open(host, canvas);
+    bench.tools();
+    bench.click_tile("텍스트");
+    bench.frames(2);
+    select_new_text(&mut bench);
+    bench.frame(vec![enter()]);
+    bench.frames(2);
+    assert!(bench.window.app.inline_text_edit.is_some(), "Enter starts the inline edit of the new text");
+    let target = bench.page_rect(0).intersect(bench.board()).left_top() + Vec2::new(60.0, 60.0);
+    bench.drop_tile_at("표", target);
+    bench.frames(3);
+    assert!(bench.nodes(0).iter().any(|node| node.kind == NodeKind::Group), "the table is inserted on the edited page; notice: {:?}", bench.window.message());
+    assert_eq!(bench.window.app.view_ref().page_index, 0, "the page stays the current one");
+}
+
+/// 68p 5: a page put back after an insert that did not go ahead goes through `focus_page`, so a page reorder's pending
+/// selection names the page shown again at once.
+#[test]
+fn a_put_back_page_is_the_one_a_pending_page_reorder_remembers() {
+    let (mut bench, _) = two_pages_with_a_selection();
+    let revision = bench.window.app.artifact.as_ref().expect("the artifact").revision;
+    let pages = vec!["page-1".to_owned(), "page-2".to_owned()];
+    bench.window.app.pending_page_reorder_selection = Some(super::state::PendingPageReorderSelection {
+        token: "reorder-1".into(),
+        artifact_id: bench.artifact.clone(),
+        base_revision: revision,
+        base_page_ids: pages.clone(),
+        expected_page_ids: pages.into_iter().rev().collect(),
+        selected_page_id: Some("page-1".into()),
+        last_page_index: 0,
+        committed_revision: None,
+    });
+    crate::dialogs::set_test_answers(Some(Default::default()));
+    let target = bench.page_rect(1).intersect(bench.board()).center();
+    bench.drag_tile_to("이미지", target);
+    bench.frame(vec![Event::PointerMoved(target), primary_button(target, false)]);
+    crate::dialogs::set_test_answers(None);
+    assert_eq!(bench.window.app.view_ref().page_index, 0, "the cancelled picture drop puts the page back");
+    let pending = bench.window.app.pending_page_reorder_selection.as_ref().expect("the reorder still waits");
+    assert_eq!((pending.selected_page_id.as_deref(), pending.last_page_index), (Some("page-1"), 0), "it remembers the page shown again");
+}
+
+/// 68p 5: with no selection of the window's own (`local_selection` is None until the context is read), the selection asked
+/// of the host when a page is put back is the one the host showed, not an empty one.
+#[test]
+fn a_put_back_selection_without_a_local_one_is_the_one_the_host_showed() {
+    let (mut bench, selected) = two_pages_with_a_selection();
+    crate::dialogs::set_test_answers(Some(Default::default()));
+    let target = bench.page_rect(1).intersect(bench.board()).center();
+    bench.drag_tile_to("이미지", target);
+    bench.window.app.local_selection = None;
+    bench.frame(vec![Event::PointerMoved(target), primary_button(target, false)]);
+    crate::dialogs::set_test_answers(None);
+    bench.frames(2);
+    assert_page_and_selection_kept(&bench, &selected, "a cancelled picture drop with no local selection");
+}
+
+/// 68p 3a: a picture tile dropped on another page whose file dialog is cancelled inserts nothing and leaves the page and
+/// the selection as they were.
+#[test]
+fn a_cancelled_picture_drop_on_another_page_keeps_the_page_and_the_selection() {
+    let (mut bench, selected) = two_pages_with_a_selection();
+    crate::dialogs::set_test_answers(Some(Default::default()));
+    let target = bench.page_rect(1).intersect(bench.board()).center();
+    bench.drop_tile_at("이미지", target);
+    crate::dialogs::set_test_answers(None);
+    bench.frames(2);
+    assert!(bench.nodes(1).is_empty(), "nothing is inserted");
+    assert_page_and_selection_kept(&bench, &selected, "a cancelled picture drop");
+}
+
+/// 68p 3a: a memo tile dropped on another page whose drawing is not in yet opens no memo editor (the board says why) and
+/// leaves the page and the selection as they were.
+#[test]
+fn a_memo_drop_on_another_page_that_opens_no_memo_keeps_the_page_and_the_selection() {
+    let (mut bench, selected) = two_pages_with_a_selection();
+    let target = bench.page_rect(1).intersect(bench.board()).center();
+    bench.drag_tile_to("메모", target);
+    // The page's drawing is asked for again: until it is in, a memo cannot be placed on it.
+    bench.window.app.page_textures.remove(&1);
+    bench.frame(vec![Event::PointerMoved(target), primary_button(target, false)]);
+    let message = bench.window.message();
+    bench.frames(2);
+    assert!(bench.window.app.board_memo_editor.is_none(), "no memo editor opens");
+    assert!(message.is_some_and(|message| message.contains("메모")), "the board says why");
+    assert_page_and_selection_kept(&bench, &selected, "a memo drop that opens no memo");
 }

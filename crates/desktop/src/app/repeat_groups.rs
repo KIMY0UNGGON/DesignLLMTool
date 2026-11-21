@@ -260,24 +260,18 @@ impl DesktopApp {
         section_head(ui, palette, first, "반복", None);
         let key = self.draft_key("repeat-bindings", node_id);
         let stored: Vec<(String, u32)> = spec.bindings.iter().map(|binding| (binding.source_node_id.clone(), binding.column)).collect();
-        let mut draft = ui.data(|data| data.get_temp::<Draft<Vec<(String, u32)>>>(key)).unwrap_or_else(|| Draft { base: stored.clone(), value: stored.clone() });
+        let stored_rows = key.with("stored-rows");
+        let memo = ui.data(|data| data.get_temp::<StoredRows>(stored_rows));
+        let BindingDraft { mut draft, mut rows } = ui.data(|data| data.get_temp::<BindingDraft>(key)).unwrap_or_else(|| BindingDraft::starting_at(&stored, memo));
         let mut remove = None;
         // A binding row is named by its source's text (its id when it has none), cut to the label column.
         let source_name = |id: &str| candidates.iter().find(|(candidate, _)| candidate == id).map_or(id, |(_, text)| if text.is_empty() { id } else { text.as_str() }).to_owned();
-        // A row's stepper is named by the group, its source and, among the rows with that source, its place, so that no two
-        // steppers share an id, two rows with the same source included. A row above it that is removed does not move it unless
-        // both have the same source: then each later row of that source takes the place of the one before it. Bindings carry no
-        // id of their own.
-        let keys: Vec<(String, usize)> = draft
-            .value
-            .iter()
-            .enumerate()
-            .map(|(index, (source, _))| (source.clone(), draft.value[..index].iter().filter(|(other, _)| other == source).count()))
-            .collect();
-        for (index, ((source, column), key)) in draft.value.iter_mut().zip(keys).enumerate() {
+        // A row's stepper is named by the group and the row's own id (`BindingDraft::rows`), so a row removed above it moves
+        // nothing: its focus and the number it is typing stay with it.
+        for (index, ((source, column), row_id)) in draft.value.iter_mut().zip(&rows).enumerate() {
             let shown = widgets::truncate_to_width(ui, &source_name(source), theme::LABEL_COLUMN - 8.0, palette.ink_2);
             row(ui, palette, Some(shown.as_str()), |ui| {
-                widgets::number_stepper(ui, palette, (node_id, key), column, 0..=LAST_COLUMN, "열 ");
+                widgets::number_stepper(ui, palette, (node_id, row_id.as_str()), column, 0..=LAST_COLUMN, "열 ");
                 if widgets::labeled_button(ui, palette, None, "삭제", false).clicked() {
                     remove = Some(index);
                 }
@@ -285,6 +279,7 @@ impl DesktopApp {
         }
         if let Some(index) = remove {
             draft.value.remove(index);
+            rows.remove(index);
         }
         let add_key = self.draft_key("repeat-add-source", node_id);
         let mut add = ui
@@ -309,6 +304,7 @@ impl DesktopApp {
             });
             if row(ui, palette, Some(""), |ui| widgets::labeled_button(ui, palette, None, "연결 추가", false).clicked()) {
                 draft.value.push(add.clone());
+                rows.push(new_id());
             }
             ui.data_mut(|data| data.insert_temp(add_key, add.clone()));
         }
@@ -325,7 +321,7 @@ impl DesktopApp {
         // The draft stays after "연결 적용": a refusal leaves it to correct. Once the stored bindings are the draft's, the change
         // was applied and the draft ends. An edit not stored yet is kept even when another change moved the document.
         if revert {
-            ui.data_mut(|data| data.remove::<Draft<Vec<(String, u32)>>>(key));
+            ui.data_mut(|data| data.remove::<BindingDraft>(key));
         } else {
             if apply {
                 action = Some(("repeat.bind", bind_args(node_id, &draft.value)));
@@ -334,9 +330,13 @@ impl DesktopApp {
                 if stored != draft.base {
                     stale_notice(ui, palette);
                 }
-                ui.data_mut(|data| data.insert_temp(key, draft));
+                ui.data_mut(|data| data.insert_temp(key, BindingDraft { draft, rows }));
             } else {
-                ui.data_mut(|data| data.remove::<Draft<Vec<(String, u32)>>>(key));
+                // The draft ends. At the stored bindings its rows keep their names for the next frame.
+                if draft.value == stored {
+                    ui.data_mut(|data| data.insert_temp(stored_rows, StoredRows { stored: stored.clone(), rows: rows.clone() }));
+                }
+                ui.data_mut(|data| data.remove::<BindingDraft>(key));
             }
         }
         if unbind {
@@ -421,6 +421,34 @@ pub(super) enum RepeatPanel {
 pub(super) struct Draft<T> {
     pub(super) base: T,
     pub(super) value: T,
+}
+
+/// The bindings draft of a group. `rows` names each row of `draft.value` (same order), and the row's stepper is keyed by that
+/// name. A row the draft adds gets a new id; a stored row keeps the name it had (`StoredRows`) or, with none, is named by its
+/// place (`stored-N`).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct BindingDraft {
+    pub(super) draft: Draft<Vec<(String, u32)>>,
+    pub(super) rows: Vec<String>,
+}
+
+/// The row names the stored bindings had when their draft ended. The draft is dropped at that point, and this keeps the names
+/// for the next frame, so that a row keeps its stepper after the draft is gone.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct StoredRows {
+    pub(super) stored: Vec<(String, u32)>,
+    pub(super) rows: Vec<String>,
+}
+
+impl BindingDraft {
+    /// The draft that starts at the stored bindings: their row names are `memo`'s when it was made for these bindings.
+    fn starting_at(stored: &[(String, u32)], memo: Option<StoredRows>) -> Self {
+        let rows = match memo {
+            Some(memo) if memo.stored == stored => memo.rows,
+            _ => (0..stored.len()).map(|index| format!("stored-{index}")).collect(),
+        };
+        Self { draft: Draft { base: stored.to_vec(), value: stored.to_vec() }, rows }
+    }
 }
 
 /// A show condition as the panel edits it.

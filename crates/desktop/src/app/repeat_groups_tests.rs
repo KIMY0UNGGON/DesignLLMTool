@@ -8,12 +8,12 @@ use designllm_contracts::{
     Artifact, ArtifactBody, ArtifactSummary, CanvasTable, CanvasTableRow, ConditionOp, DltError, Intent, LayoutSpec, Node, NodeExt, NodeKind, Operation,
     PageRole, Rect, RepeatBinding, RepeatSpec, ShowCondition, Size, Style,
 };
-use eframe::egui::Context;
+use eframe::egui::{Context, Event};
 use serde_json::{json, Value};
 
 use super::{
-    repeat_groups::{bind_args, condition_args, create_args, create_operations, ConditionDraft, ConditionForm, Draft, RepeatPanel},
-    test_support::{canvas_with_page, change_set_arguments, content_of, drawn_text, screen, settle_work, Host, HostBackend, Mcp, Window},
+    repeat_groups::{bind_args, condition_args, create_args, create_operations, BindingDraft, ConditionDraft, ConditionForm, Draft, RepeatPanel},
+    test_support::{canvas_with_page, change_set_arguments, content_of, drawn_text, primary_button, screen, settle_work, Host, HostBackend, Mcp, Window},
     DesktopApp,
 };
 use crate::{
@@ -895,6 +895,12 @@ fn the_panel_offers_every_table_of_the_document_and_the_engine_takes_one_on_anot
     assert_eq!(group(&host.artifact(&gui)).children.len(), 2, "the engine expands the rows of a table elsewhere");
 }
 
+/// A bindings draft of `value` with no stored base; its rows are named by place.
+fn binding_draft(value: Vec<(String, u32)>) -> BindingDraft {
+    let rows = (0..value.len()).map(|index| format!("row-{index}")).collect();
+    BindingDraft { draft: Draft { base: Vec::new(), value }, rows }
+}
+
 #[test]
 fn a_refused_binding_keeps_the_draft() {
     let mut host = Host::start();
@@ -904,12 +910,12 @@ fn a_refused_binding_keeps_the_draft() {
     window.select(&mut host, GROUP);
     let key = window.app.draft_key("repeat-bindings", GROUP);
     let draft = vec![("title".to_owned(), 9)];
-    let edit = Draft { base: Vec::new(), value: draft.clone() };
+    let edit = binding_draft(draft.clone());
     window.ctx.data_mut(|data| data.insert_temp(key, edit.clone()));
 
     window.invoke(&mut host, "repeat.bind", bind_args(GROUP, &draft)).expect("the change is sent; the engine refuses it");
     assert_eq!(window.app.draft_key("repeat-bindings", GROUP), key, "nothing was stored");
-    assert_eq!(window.ctx.data(|data| data.get_temp::<Draft<Vec<(String, u32)>>>(key)), Some(edit), "the draft is there to correct");
+    assert_eq!(window.ctx.data(|data| data.get_temp::<BindingDraft>(key)), Some(edit), "the draft is there to correct");
 }
 
 #[test]
@@ -921,10 +927,10 @@ fn a_stored_binding_equal_to_the_draft_ends_the_draft() {
     window.select(&mut host, GROUP);
     let key = window.app.draft_key("repeat-bindings", GROUP);
     let applied = vec![("title".to_owned(), 0)];
-    window.ctx.data_mut(|data| data.insert_temp(key, Draft { base: Vec::new(), value: applied.clone() }));
+    window.ctx.data_mut(|data| data.insert_temp(key, binding_draft(applied.clone())));
 
     window.invoke(&mut host, "repeat.bind", bind_args(GROUP, &applied)).expect("the binding is stored");
-    assert_eq!(window.ctx.data(|data| data.get_temp::<Draft<Vec<(String, u32)>>>(key)), None, "the change was applied: the draft is gone");
+    assert_eq!(window.ctx.data(|data| data.get_temp::<BindingDraft>(key)), None, "the change was applied: the draft is gone");
 }
 
 #[test]
@@ -935,11 +941,11 @@ fn a_stored_binding_that_differs_keeps_the_draft_and_says_so() {
     let mut window = Recorded::open(&mut host, &gui);
     window.select(&mut host, GROUP);
     let key = window.app.draft_key("repeat-bindings", GROUP);
-    let edit = Draft { base: Vec::new(), value: vec![("title".to_owned(), 1)] };
+    let edit = binding_draft(vec![("title".to_owned(), 1)]);
     window.ctx.data_mut(|data| data.insert_temp(key, edit.clone()));
 
     window.invoke(&mut host, "repeat.bind", bind_args(GROUP, &[("title".to_owned(), 0)])).expect("another binding is stored");
-    assert_eq!(window.ctx.data(|data| data.get_temp::<Draft<Vec<(String, u32)>>>(key)), Some(edit), "the unapplied edit is kept");
+    assert_eq!(window.ctx.data(|data| data.get_temp::<BindingDraft>(key)), Some(edit), "the unapplied edit is kept");
     let texts = window.drawn();
     assert!(texts.iter().any(|text| text.contains("저장된 값이 바뀌었습니다")), "the panel says the stored value moved: {texts:?}");
 }
@@ -991,13 +997,13 @@ fn an_edit_of_another_node_keeps_the_bindings_draft() {
     window.select(&mut host, GROUP);
     let key = window.app.draft_key("repeat-bindings", GROUP);
     let draft = vec![("title".to_owned(), 9)];
-    window.ctx.data_mut(|data| data.insert_temp(key, Draft { base: Vec::new(), value: draft.clone() }));
+    window.ctx.data_mut(|data| data.insert_temp(key, binding_draft(draft.clone())));
     let revision = host.artifact(&gui).revision;
 
     window.invoke(&mut host, "repeat.condition_set", json!({ "node_id": "card", "column": 1, "op": "equals", "value": "개발" })).expect("the card's condition is sent");
     assert!(host.artifact(&gui).revision > revision, "the document changed");
     assert_eq!(window.app.draft_key("repeat-bindings", GROUP), key, "the draft's key does not follow the document's revision");
-    assert_eq!(window.ctx.data(|data| data.get_temp::<Draft<Vec<(String, u32)>>>(key)), Some(Draft { base: Vec::new(), value: draft }), "the unapplied binding is kept");
+    assert_eq!(window.ctx.data(|data| data.get_temp::<BindingDraft>(key)), Some(binding_draft(draft)), "the unapplied binding is kept");
 }
 
 #[test]
@@ -1083,8 +1089,8 @@ fn the_repeat_rows_stay_inside_a_narrow_panel() {
     }
 }
 
-/// Two binding rows with the same source each key their stepper by their place among that source's rows, so the two
-/// steppers' controls get different ids and neither takes the other's focus or state.
+/// Two binding rows with the same source each key their stepper by their own row id, so the two steppers' controls get
+/// different ids and neither takes the other's focus or state.
 #[test]
 fn two_binding_rows_with_the_same_source_get_steppers_of_their_own() {
     let mut host = Host::start();
@@ -1093,14 +1099,103 @@ fn two_binding_rows_with_the_same_source_get_steppers_of_their_own() {
     let mut window = Recorded::open(&mut host, &gui);
     window.select(&mut host, GROUP);
     let key = window.app.draft_key("repeat-bindings", GROUP);
-    let edit = Draft { base: Vec::new(), value: vec![("title".to_owned(), 0), ("title".to_owned(), 1)] };
+    let edit = BindingDraft {
+        draft: Draft { base: Vec::new(), value: vec![("title".to_owned(), 0), ("title".to_owned(), 1)] },
+        rows: vec!["row-a".to_owned(), "row-b".to_owned()],
+    };
     window.ctx.data_mut(|data| data.insert_temp(key, edit.clone()));
     let (panel, controls) = repeat_controls(&mut window, 1280.0);
-    assert_eq!(window.ctx.data(|data| data.get_temp::<Draft<Vec<(String, u32)>>>(key)), Some(edit), "the two rows are the draft drawn");
+    assert_eq!(window.ctx.data(|data| data.get_temp::<BindingDraft>(key)), Some(edit), "the two rows are the draft drawn");
     for label in ["1 줄이기", "1 늘리기"] {
         let ids: Vec<_> = controls.iter().filter(|control| control.label == label && control.rect.left() >= panel.left()).map(|control| control.id).collect();
         assert_eq!(ids.len(), 3, "{label}: a stepper for each of the two rows and one for the new binding: {ids:?}");
         let unique: std::collections::HashSet<_> = ids.iter().collect();
         assert_eq!(unique.len(), ids.len(), "{label}: every stepper has its own id: {ids:?}");
     }
+}
+
+/// The ids of the steppers of the bindings and of the new binding, in draw order.
+fn stepper_ids(controls: &[crate::ui_record::Control], panel: eframe::egui::Rect) -> Vec<eframe::egui::Id> {
+    controls.iter().filter(|control| control.label == "1 늘리기" && control.rect.left() >= panel.left()).map(|control| control.id).collect()
+}
+
+/// One press and one release of the primary button at `at`, each in its own frame, as the pointer makes them.
+fn click_at(window: &mut Recorded, at: eframe::egui::Pos2) {
+    for events in [vec![Event::PointerMoved(at), primary_button(at, true)], vec![primary_button(at, false)]] {
+        let app = &mut window.app;
+        let mut input = screen(1.0, 1280.0, 4000.0);
+        input.events = events;
+        let _ = window.ctx.run(input, |ctx| {
+            app.draw_frame(ctx);
+        });
+    }
+}
+
+/// The centre of the control `label` in the properties panel (the first one, in draw order, whose `below` is above it).
+fn panel_control(controls: &[crate::ui_record::Control], panel: eframe::egui::Rect, label: &str, below: f32) -> eframe::egui::Pos2 {
+    controls
+        .iter()
+        .find(|control| control.label == label && control.rect.left() >= panel.left() && control.rect.center().y >= below)
+        .unwrap_or_else(|| panic!("the panel draws {label} below {below}"))
+        .rect
+        .center()
+}
+
+/// Three rows of one source, made with the pointer from the one stored binding: "연결 추가" is pressed twice, then the first row's
+/// 삭제 is pressed. The other two rows keep their steppers' ids, so their focus and typed text stay with their rows.
+#[test]
+fn deleting_the_first_of_three_same_source_rows_with_the_pointer_keeps_the_other_steppers_ids() {
+    let mut host = Host::start();
+    let gui = canvas_with_table(&mut host, "반복");
+    create_repeat(&mut host, &gui);
+    let mut window = Recorded::open(&mut host, &gui);
+    window.select(&mut host, GROUP);
+    window.invoke(&mut host, "repeat.bind", bind_args(GROUP, &[("title".to_owned(), 0)])).expect("the one binding is stored");
+    for _ in 0..2 {
+        let (_, controls) = repeat_controls(&mut window, 1280.0);
+        let add = controls.iter().find(|control| control.label == "연결 추가").expect("the add button").rect.center();
+        click_at(&mut window, add);
+    }
+    let (panel, controls) = repeat_controls(&mut window, 1280.0);
+    let before = stepper_ids(&controls, panel);
+    assert_eq!(before.len(), 4, "three rows and the new binding: {before:?}");
+    let first_row = controls.iter().find(|control| control.label == "1 줄이기" && control.rect.left() >= panel.left()).expect("the first row").rect.center().y;
+    let delete = panel_control(&controls, panel, "삭제", first_row - 1.0);
+    click_at(&mut window, delete);
+    let (panel, controls) = repeat_controls(&mut window, 1280.0);
+    let after = stepper_ids(&controls, panel);
+    let after_first = controls.iter().find(|control| control.label == "1 줄이기" && control.rect.left() >= panel.left()).expect("the first row").rect.center().y;
+    let deletes = controls.iter().filter(|control| control.label == "삭제" && control.rect.left() >= panel.left() && control.rect.center().y >= after_first - 1.0).count();
+    assert_eq!(deletes, 2, "the two rows keep their 삭제 buttons");
+    assert_eq!(after, before[1..].to_vec(), "the second and third rows keep their steppers after the first is removed");
+}
+
+/// A draft that ends with the pointer keeps the row names it had: the row that stays is drawn with the stepper it had.
+/// Here the first of two rows is deleted, which leaves the draft equal to the stored binding (the draft ends).
+#[test]
+fn a_row_keeps_its_stepper_when_the_draft_ends_at_the_stored_bindings() {
+    let mut host = Host::start();
+    let gui = canvas_with_table(&mut host, "반복");
+    create_repeat(&mut host, &gui);
+    let mut window = Recorded::open(&mut host, &gui);
+    window.select(&mut host, GROUP);
+    let stored = vec![("title".to_owned(), 0)];
+    window.invoke(&mut host, "repeat.bind", bind_args(GROUP, &stored)).expect("the one binding is stored");
+    let key = window.app.draft_key("repeat-bindings", GROUP);
+    // A row of another column was added above the stored row: the draft differs from the stored binding.
+    let kept = BindingDraft {
+        draft: Draft { base: stored.clone(), value: vec![("title".to_owned(), 1), ("title".to_owned(), 0)] },
+        rows: vec!["row-a".to_owned(), "row-b".to_owned()],
+    };
+    window.ctx.data_mut(|data| data.insert_temp(key, kept));
+    let (panel, controls) = repeat_controls(&mut window, 1280.0);
+    let before = stepper_ids(&controls, panel);
+    assert_eq!(before.len(), 3, "two rows and the new binding: {before:?}");
+    let first_row = controls.iter().find(|control| control.label == "1 줄이기" && control.rect.left() >= panel.left()).expect("the first row").rect.center().y;
+    click_at(&mut window, panel_control(&controls, panel, "삭제", first_row - 1.0));
+    let (panel, controls) = repeat_controls(&mut window, 1280.0);
+    assert_eq!(window.ctx.data(|data| data.get_temp::<BindingDraft>(key)), None, "the draft ended at the stored binding");
+    let after = stepper_ids(&controls, panel);
+    assert_eq!(after.len(), 2, "one row and the new binding: {after:?}");
+    assert_eq!(after[0], before[1], "the remaining row keeps the stepper it had");
 }
