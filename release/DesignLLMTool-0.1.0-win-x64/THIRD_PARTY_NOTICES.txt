@@ -1,0 +1,39 @@
+DesignLLMTool portable package notices
+
+Bundled font: Pretendard 1.307
+- License: SIL Open Font License 1.1. Font files, manifest and the full OFL text are in assets\fonts\.
+
+Font built into the executable: Hack (via epaint_default_fonts 0.33.3, egui default font): MIT License with the Bitstream Vera Sans Mono copyright notice. Text: third-party-licenses\epaint_default_fonts-0.33.3\fonts\Hack-Regular.txt.
+
+Microsoft Edge WebView2 Fixed Version Runtime
+- Version: 157.0.4341.46, x64. Official source page: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+- Source CAB SHA-256: 0ac7317a08c3f3beebbb9b6d90f5b77352569f0a33a54a15ef6aaabc82899b7c
+- Runtime files in runtime\webview2\ were copied byte for byte from the source runtime. The Authenticode signature of
+  msedgewebview2.exe was Valid and signed by Microsoft Corporation when this package was built.
+- The runtime is Microsoft software distributed under Microsoft's terms and is shipped unmodified. Its third-party
+  credits are shown by the runtime itself (runtime\webview2\show_third_party_software_licenses.bat).
+- WebView2 SDK loader (Microsoft.Web.WebView2 NuGet package, statically linked via webview2-com-sys). License: BSD 3-clause, full text below.
+
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+3. Neither the name of Microsoft Corporation nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+rhwp 0.9.0 (MIT), HWP/HWPX engine linked into DesignLLMTool.exe
+- The MIT license text is in third-party-licenses\rhwp-0.9.0\.
+- rhwp embeds advance-width metrics read from URW Base35 Nimbus Roman (hmtx advances only; no font outlines or
+  font bytes). The upstream notice for that data (AGPL-3 with the font exception, as stated by URW) is included
+  unchanged as notices\rhwp\data\font-metrics\nimbus-roman\URW-FONT-NOTICE.txt. rhwp asks that distributions carry it.
+- rhwp's own list of third-party licenses and its Latin Modern Math (GUST Font License / LPPL) and SIL OFL texts are
+  included unchanged under notices\rhwp\.
+
+Rust dependencies
+- The license expression and the license text files of every Rust crate linked into DesignLLMTool.exe are listed in
+  THIRD_PARTY_LICENSES.txt and third-party-licenses.json, with the texts under third-party-licenses\.
+- Crates that ship no license text file are listed with their Cargo metadata (CRATE-METADATA.txt): 17 crate(s).
+
+The package contains no source tree, build cache, test data, Office, Hancom, Python or Node component.
