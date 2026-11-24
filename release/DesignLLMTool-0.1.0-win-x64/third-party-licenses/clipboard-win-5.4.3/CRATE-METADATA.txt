@@ -1,7 +1,0 @@
-This crate ships no license text file. Cargo metadata:
-name: clipboard-win
-version: 5.4.3
-license: BSL-1.0
-authors: Douman <douman@gmx.se>
-repository: https://github.com/DoumanAsh/clipboard-win
-source: registry+https://github.com/rust-lang/crates.io-index

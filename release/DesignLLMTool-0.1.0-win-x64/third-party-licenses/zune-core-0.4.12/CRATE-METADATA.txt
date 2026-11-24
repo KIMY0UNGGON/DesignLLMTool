@@ -1,7 +1,0 @@
-This crate ships no license text file. Cargo metadata:
-name: zune-core
-version: 0.4.12
-license: MIT OR Apache-2.0 OR Zlib
-authors: 
-repository: 
-source: registry+https://github.com/rust-lang/crates.io-index
