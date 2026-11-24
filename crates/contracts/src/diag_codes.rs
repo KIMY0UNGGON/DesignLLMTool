@@ -90,5 +90,5 @@ pub const HWPX_PREVIEW_TEXT_REGENERATED: &str = "HWPX_PREVIEW_TEXT_REGENERATED";
 pub const HWPX_UNMODELED_PRESERVED: &str = "HWPX_UNMODELED_PRESERVED";
 /// Floating objects are not laid out by the engine and are omitted from rendered output.
 pub const HWPX_FLOATING_OBJECT_NOT_RENDERED: &str = "HWPX_FLOATING_OBJECT_NOT_RENDERED";
-/// Layout is the engine's own line breaking, not Hancom's; it can differ from Hancom.
+/// Layout uses approximate line breaking.
 pub const HWPX_LAYOUT_APPROXIMATE: &str = "HWPX_LAYOUT_APPROXIMATE";

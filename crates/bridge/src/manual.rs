@@ -551,28 +551,49 @@ const CANVAS_COMPONENTS: Page = Page {
 
 const DESIGN_QUALITY: Page = Page {
     slug: "design-quality",
-    title: "Design quality: anti-slop warnings",
-    description: "The visual habits that the lint reports as SLOP_* warnings in artifact_validate for Canvas and slide documents, and how to check a page for them. Warnings only: no edit is refused.",
+    title: "Design-quality warnings",
+    description: "The visual habits that the lint reports as design-quality warnings in artifact_validate for Canvas and slide documents, and how to check a page for them. Warnings only: no edit is refused.",
     task: false,
     tools: &["artifact_validate", "artifact_inspect", "changes_validate", "changes_apply", "render_get"],
     steps: &[
         "Before you build a Canvas, Slides or Figure page, choose one visual direction and state it: one palette family, three or four text sizes, one alignment logic, and one corner radius for the cards.",
         "Use the copy the request gives and real sources. Do not invent figures, testimonials, logos or company names. When a value is unknown, leave a visible gap and say so in your reply.",
-        "The lint reports these patterns, on Canvas and slide documents, on the node they name. SLOP_EMOJI_ICON: a text node starts with an emoji or is only emoji. SLOP_PLACEHOLDER_TEXT: lorem ipsum, John Doe, Jane Doe, Acme, TechCorp, 홍길동 or OO회사 remains. SLOP_FILLER_COPY: two or more filler words on a page, or one in its title (empower, leverage, unlock, seamless, elevate, revolutionize, cutting-edge, next-generation; 혁신적인, 원활한, 차원이 다른, 새로운 차원).",
-        "SLOP_DEFAULT_GRADIENT: a rectangle or ellipse with at least a quarter of the page in its frame has a gradient whose stops are all purple or indigo (hue 230 to 300 degrees). SLOP_HEAVY_SHADOW: a shape's shadow blurs 32 px or more and is at least 0.25 opaque (its colour alpha times the node opacity).",
-        "SLOP_UNIFORM_CARDS: three or more rectangles of the same size, with a shadow at least 0.02 opaque and a corner radius of 12 to 24 px, sit in one row without overlap. SLOP_ALL_CENTERED: four or more text nodes on a page are all centred and one of them is a body paragraph (three or more lines, or 120 characters or more). SLOP_TYPE_SCALE: a page uses seven or more text node sizes, counted in whole points. The last two rules exclude text inside shapes.",
-        "SLOP_GENERIC_CLOSING (slide decks only): the text of the last slide is nothing but a closing line (Thank you, 감사합니다, Q&A or 질문).",
+        "The lint reports these patterns, on Canvas and slide documents, on the node they name. ICON_EMOJI: a text node starts with an emoji or is only emoji. TEXT_PLACEHOLDER: lorem ipsum, John Doe, Jane Doe, Acme, TechCorp, 홍길동 or OO회사 remains. TEXT_VAGUE_WORDING: two or more filler words on a page, or one in its title (empower, leverage, unlock, seamless, elevate, revolutionize, cutting-edge, next-generation; 혁신적인, 원활한, 차원이 다른, 새로운 차원).",
+        "FILL_STOCK_GRADIENT: a rectangle or ellipse with at least a quarter of the page in its frame has a gradient whose stops are all purple or indigo (hue 230 to 300 degrees). SHADOW_HEAVY: a shape's shadow blurs 32 px or more and is at least 0.25 opaque (its colour alpha times the node opacity).",
+        "BACKGROUND_CREAM: a large visible rectangle has a warm off-white fill. Avoid cream, beige and ivory backgrounds. TEXT_EXTRA_LABEL: a short, much smaller label near the title repeats title words or is a generic category above it. Keep auxiliary labels minimal; use grouping, alignment, spacing and size to show structure. TITLE_LINE_BREAKS: a short title has an explicit line break and is estimated to fit on one line. Keep titles on one line where width allows, widening the box if needed.",
+        "LAYOUT_REPEATED_CARDS: three or more rectangles of the same size, with a shadow at least 0.02 opaque and a corner radius of 12 to 24 px, sit in one row without overlap. LAYOUT_ALL_CENTERED: four or more text nodes on a page are all centred and one of them is a body paragraph (three or more lines, or 120 characters or more). TEXT_SIZE_SPREAD: a page uses seven or more text node sizes, counted in whole points. The last two rules exclude text inside shapes.",
+        "SLIDE_PLAIN_CLOSING (slide decks only): the text of the last slide is nothing but a closing line (Thank you, 감사합니다, Q&A or 질문).",
         "The warnings do not refuse an edit. Fix them where the request allows, and keep a choice that the request asks for.",
-        "Check the result: after the last change, call artifact_validate on the Canvas artifact or the deck. Its diagnostics list each SLOP_* warning with its node_id. Keep choices explicitly requested by the user and fix the other warnings with changes_validate and changes_apply, then call artifact_validate again. Look at the page with render_get.",
+        "Check the result: after the last change, call artifact_validate on the Canvas artifact or the deck. Its diagnostics list each design-quality warning with its node_id. Keep choices explicitly requested by the user and fix the other warnings with changes_validate and changes_apply, then call artifact_validate again. Look at the page with render_get.",
         "A Canvas gets the warnings only when it uses v1.2 values (a shadow, gradient, corner radius, opacity or another v1.2 field); a Canvas with v1.1 values only gets none. A deck gets them whatever its values. Figure gets none yet, so check its look with render_get.",
     ],
     examples: &[("artifact_validate", r#"{"artifact_id":"<artifact_id>"}"#)],
 };
 
+const DESIGN_THEME: Page = Page {
+    slug: "design-theme",
+    title: "Choose a design theme",
+    description: "Find and apply a theme that matches the requested look.",
+    task: false,
+    tools: &["design_themes_search", "design_themes_record", "design_themes_apply", "artifact_inspect", "changes_validate", "changes_apply", "proposal_create", "artifact_validate"],
+    steps: &[
+        "When a request names or implies a theme or look, call design_themes_search with words from the request. If a returned entry fits, apply it.",
+        "Otherwise, if you can reach https://getdesign.md, browse the catalog and https://getdesign.md/designs/<category>, choose the entry whose one-line description best matches the request, and read its DESIGN.md at https://getdesign.md/<slug>/design-md. Follow its colors, typography, rounded, spacing, components, do's and don'ts.",
+        "For a catalog entry, call design_themes_record with its slug as id and tags and a one-line summary in your own words, plus colors, fonts, type scale, radius and spacing. Set recorded_at to the current Unix time in milliseconds.",
+        "Inspect the artifact with artifact_inspect. For Canvas or Slides, call design_themes_apply with the saved theme id and the current revision; read its notes. After applying a Canvas theme, use its stored type scale, spacing and radius tokens for new elements. For proposal jobs set dry_run to true and pass the returned change_set, including its operations, to proposal_create. For other kinds, follow the saved design direction when building nodes.",
+        "If neither a fitting saved entry nor the site is available, choose your own direction. Explicit user choices take priority.",
+        "Never put the brand's name, logo, imagery or marketing copy in the artifact. Describe the chosen look in your own words in progress text. After building a Canvas or deck, call artifact_validate and follow the design-quality page: preserve explicit user choices and fix the other design-quality warnings.",
+    ],
+    examples: &[
+        ("design_themes_search", r#"{"query":"cool blue minimal","limit":10}"#),
+        ("design_themes_record", r##"{"entry":{"id":"example-slug","tags":["cool","minimal"],"summary":"A crisp blue theme with restrained contrast.","colors":{"primary":"#2457A7","canvas":"#FFFFFF","ink":"#172033"},"fonts":{"heading":"Arial","body":"Arial"},"type_scale_px":[14,18,32],"radius_px":[4,8],"spacing_px":[8,16,24],"recorded_at":1732400000000}}"##),
+        ("design_themes_apply", r#"{"request_id":"00000000-0000-4000-8000-000000000001","actor":"agent","workspace_id":"workspace","artifact_id":"artifact","base_revision":0,"allowed_intents":["design"],"theme_id":"example-slug"}"#),
+    ],
+};
 /// Every manual page, in listing order.
 pub const PAGES: &[Page] = &[
     INDEX, REFUSALS, INTENTS, DESIGN_SYSTEM, PRESETS, AI_JOBS, COLLABORATION, TEMPLATES, MOBILE_SCREEN, LANDING_PAGE, SOCIAL_POST, POSTER, SLIDES, DOCUMENT_EDIT,
-    PAPER_FIGURE, WEB_CODE, CANVAS_COMPONENTS, DESIGN_QUALITY, GUI,
+    PAPER_FIGURE, WEB_CODE, CANVAS_COMPONENTS, DESIGN_QUALITY, DESIGN_THEME, GUI,
 ];
 
 /// The prompt name of a task page: its slug with `_` for `-`.
@@ -768,15 +789,18 @@ mod tests {
     }
 
     #[test]
-    fn the_design_quality_page_names_every_slop_code_and_is_a_reference_page() {
+    fn the_design_quality_page_names_every_quality_code_and_is_a_reference_page() {
         let body = page_body(&DESIGN_QUALITY);
         for code in [
-            "SLOP_EMOJI_ICON", "SLOP_PLACEHOLDER_TEXT", "SLOP_FILLER_COPY", "SLOP_DEFAULT_GRADIENT", "SLOP_HEAVY_SHADOW", "SLOP_UNIFORM_CARDS",
-            "SLOP_ALL_CENTERED", "SLOP_TYPE_SCALE", "SLOP_GENERIC_CLOSING",
+            "ICON_EMOJI", "TEXT_PLACEHOLDER", "TEXT_VAGUE_WORDING", "FILL_STOCK_GRADIENT", "SHADOW_HEAVY", "LAYOUT_REPEATED_CARDS",
+            "LAYOUT_ALL_CENTERED", "TEXT_SIZE_SPREAD", "SLIDE_PLAIN_CLOSING", "BACKGROUND_CREAM", "TEXT_EXTRA_LABEL", "TITLE_LINE_BREAKS",
         ] {
             assert!(body.contains(code), "the design-quality page omits {code}");
         }
         assert!(body.contains("changes_apply") && body.contains("v1.2"), "the check procedure and the version gate are stated");
+        for fragment in ["warm off-white fill", "repeats title words", "explicit line break", "cream, beige and ivory backgrounds", "grouping, alignment, spacing and size", "one line where width allows"] {
+            assert!(body.contains(fragment), "the design-quality page omits {fragment}");
+        }
         assert!(body.contains("Keep choices explicitly requested by the user and fix the other warnings"));
         assert!(!body.contains("Fix them with changes_validate"));
         assert!(!DESIGN_QUALITY.task, "a reference page: the task pages stay eight prompts");

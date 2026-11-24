@@ -13,6 +13,7 @@ use schemars::JsonSchema;
 use serde_json::{json, Map, Value};
 
 use crate::protocol::JOB_SCOPE_METHODS;
+use designllm_contracts::design_themes::{DesignThemesApplyRequest, DesignThemesRecordRequest, DesignThemesSearchRequest};
 
 /// Tool behavior hints. Every field is always sent, so the MCP defaults never apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +105,17 @@ fn opaque_object() -> Value {
 
 fn schema_workspace_list() -> Value {
     object(json!({}), &[], false)
+}
+fn schema_design_themes_search() -> Value { schema_of::<DesignThemesSearchRequest>() }
+fn schema_design_themes_apply() -> Value { schema_of::<DesignThemesApplyRequest>() }
+fn schema_design_themes_record() -> Value {
+    let mut schema = schema_of::<DesignThemesRecordRequest>();
+    let colors = &mut schema["definitions"]["DesignThemeEntry"]["properties"]["colors"];
+    colors["maxProperties"] = json!(32);
+    colors["propertyNames"] = json!({"type":"string", "minLength":1, "maxLength":128});
+    colors["additionalProperties"] = json!({"type":"string", "pattern":"^#[0-9A-Fa-f]{6}$"});
+    schema["definitions"]["DesignThemeEntry"]["properties"]["recorded_at"]["maximum"] = json!(i64::MAX);
+    schema
 }
 fn schema_create() -> Value {
     let mut schema = schema_of::<CreateArtifactRequest>();
@@ -542,6 +554,9 @@ pub fn catalog() -> Vec<ToolSpec> {
         t("changes_validate", "changes.validate", "Validate change set", "Checks a ChangeSet against the current revision, its intents, and the format rules. Does not change the artifact. Support depends on the engine; artifact_validate reports the live capability_extensions and feature-specific support. Unsupported values are refused with UNSUPPORTED_OPERATION.", READ, Post::None, schema_change_set),
         t("changes_apply", "changes.apply", "Apply change set", "Applies a ChangeSet atomically as one undoable transaction. Repeating the same request_id returns the stored receipt. Support depends on the engine; unsupported values are refused with UNSUPPORTED_OPERATION and the revision does not change. On Canvas, set_interactions replaces the node's complete interaction list in supplied order; an empty list clears it. The existing set_interaction operation still replaces the list with one action. A token definition update on a published design system synchronizes its consumers in one atomic group and returns optional group details. Read artifact_validate's capability report first, and do not retry a refused value unchanged.", CHANGE, Post::None, schema_change_set),
         t("design_system_list", "design_system.list", "List design systems", "Lists published Canvas design systems by artifact_id, title, and current revision. It returns no token values and is workspace-scoped; job-bound connections cannot enumerate workspace systems.", READ, Post::None, schema_no_params),
+        t("design_themes_search", "design_themes.search", "Search design themes", "Ranks themes by the count of distinct query words found in tags or summary, then newest recorded_at and id. An empty query lists recent entries.", READ, Post::None, schema_design_themes_search),
+        t("design_themes_record", "design_themes.record", "Record design theme", "Stores or updates one workspace design theme. The oldest entries are removed when the limit is reached.", CHANGE, Post::None, schema_design_themes_record),
+        t("design_themes_apply", "design_themes.apply", "Apply design theme", "Applies a saved theme to a Canvas or Slides artifact as one validated change. Set dry_run to true to return operations and a change_set without applying them. The result includes structured notes.", CHANGE, Post::None, schema_design_themes_apply),
         t("design_system_publish", "design_system.publish", "Publish design system", "Marks a Canvas artifact as a shared design-system publisher or unpublishes it. Requires design intent and the current expected_revision. A publisher cannot consume another system; unpublishing is refused while any consumer still references it. Define or change token values with changes_apply. Other engines refuse shared design tokens.", CHANGE, Post::None, schema_design_system_publish),
         t("design_system_set", "design_system.set", "Set design system", "Links a Canvas, WebCode, DOCX or HWPX consumer to a published Canvas artifact, or detaches it with design_system null. Requires design intent and the current consumer expected_revision; a WebCode link also needs content intent, since it adds the stylesheet link to the entry file. Pass optional expected_system_revision from design_system_list to reject a publisher changed since selection; Core checks it again at commit. Canvas resolves shared bindings for the consumer's Light/Dark mode; detaching keeps their concrete values. WebCode writes design-tokens.css, and detaching keeps its values and removes only the link. DOCX and HWPX apply each published token named `<style name>.color`, `.font_family` or `.font_size` to that named style (light value) and need direct_formatting: keep leaves direct formatting as it is, clear removes it from the text using those styles (DOCX only; HWPX refuses clear). A spacing or radius token, any other name, or a value the style cannot take (color not #RRGGBB, empty font family, size outside 0-1000 pt) refuses the whole link; a style the document lacks is reported and skipped, and on a publisher update the report names the consumer in params.artifact_id. Publisher updates reach linked documents with keep. Canvas and WebCode need no direct_formatting (keep is accepted, clear is refused); a detach takes none. Other engines refuse shared design tokens.", CHANGE, Post::None, schema_design_system_set),
         t("history_undo", "history.undo", "Undo", "Reverts the last committed transaction of the artifact.", CHANGE_NOT_IDEMPOTENT, Post::None, schema_history),
@@ -650,6 +665,31 @@ mod tests {
     use super::*;
     use crate::protocol::CORE_METHODS;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn design_theme_tools_are_available_to_job_agents() {
+        let tools = tools_for(Scope::JobBound);
+        let search = find(&tools, "design_themes_search").unwrap();
+        let record = find(&tools, "design_themes_record").unwrap();
+        let apply = find(&tools, "design_themes_apply").unwrap();
+        let schema = (search.schema)();
+        assert_eq!(schema["properties"]["limit"]["maximum"].as_f64(), Some(20.0));
+        assert!(validate_arguments(&schema, &json!({"query": "blue", "limit": 10})).is_ok());
+        assert!(validate_arguments(&schema, &json!({"query": "blue", "limit": 10, "extra": true})).is_err());
+        assert!(validate_arguments(&(record.schema)(), &json!({})).is_err());
+        assert_eq!((record.schema)()["definitions"]["DesignThemeEntry"]["properties"]["colors"]["maxProperties"], 32);
+        assert!(!record.hints.read_only);
+        assert!(!apply.hints.read_only);
+        let args = json!({"request_id":"00000000-0000-4000-8000-000000000000", "actor":"agent", "workspace_id":"w", "artifact_id":"a", "base_revision":0, "allowed_intents":["design"], "theme_id":"theme"});
+        assert!(validate_arguments(&(apply.schema)(), &args).is_ok());
+        let mut preview = args.clone();
+        preview["dry_run"] = json!(true);
+        assert!(validate_arguments(&(apply.schema)(), &preview).is_ok());
+        let mut extra = args;
+        extra["extra"] = json!(true);
+        assert!(validate_arguments(&(apply.schema)(), &extra).is_err());
+        assert!(search.hints.read_only);
+    }
 
     #[test]
     fn names_are_unique_and_use_the_model_safe_alphabet() {
@@ -883,7 +923,7 @@ mod tests {
             [
                 "workspace_list", "artifact_create", "artifact_open", "artifact_inspect", "artifact_validate",
                 "artifact_save_state", "artifact_save", "artifact_export", "changes_validate", "changes_apply",
-                "design_system_list", "design_system_publish", "design_system_set",
+                "design_system_list", "design_themes_search", "design_themes_record", "design_themes_apply", "design_system_publish", "design_system_set",
                 "history_undo", "history_redo", "history_undo_change", "render_get", "render_hit_test", "render_caret_rect",
                 "render_selection_rects", "asset_import", "asset_read", "asset_lookup", "selection_set",
                 "targets_reserve", "targets_release", "targets_list", "clients_list", "templates_list", "templates_preview", "flow_styles", "view_transform_set", "context_read", "figure_render_link",

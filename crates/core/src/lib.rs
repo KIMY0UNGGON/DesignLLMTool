@@ -7,6 +7,7 @@
 mod b64;
 pub mod caller;
 mod dataset;
+mod design_themes;
 mod blobs;
 mod errors;
 mod files;
@@ -52,7 +53,7 @@ use std::sync::{Arc, Mutex};
 
 /// RPC methods routed by [`Workspace::dispatch`].
 pub const METHODS: &[&str] = &[
-    "system.hello", "workspace.list", "design_system.list", "artifact.create", "artifact.open", "artifact.inspect",
+    "system.hello", "workspace.list", "design_system.list", "design_themes.search", "design_themes.record", "design_themes.apply", "artifact.create", "artifact.open", "artifact.inspect",
     "artifact.validate", "artifact.save", "artifact.save_state", "artifact.export", "changes.validate",
     "changes.apply", "history.undo", "history.redo", "render.get", "render.hit_test",
     "render.caret_rect", "render.selection_rects", "asset.import", "asset.read", "asset.lookup",
@@ -72,7 +73,7 @@ pub const METHODS: &[&str] = &[
 pub const CLIENT_METHODS: &[&str] = &["ui.state.publish", "ui.command.complete", "job.set_client", "render.pixels"];
 /// Methods a job-bound connection may call. Artifact access stays in the job artifact; Figure rendering has an exact `figure_refs` scope.
 pub const BOUND_JOB_METHODS: &[&str] = &[
-    "system.hello", "workspace.list", "artifact.inspect", "artifact.validate", "artifact.save_state",
+    "system.hello", "workspace.list", "design_themes.search", "design_themes.record", "design_themes.apply", "artifact.inspect", "artifact.validate", "artifact.save_state",
     "changes.validate", "changes.apply", "history.undo", "history.redo", "render.get", "render.hit_test",
     "render.caret_rect", "render.selection_rects", "asset.read", "asset.lookup", "context.read",
     "figure.render_link",
@@ -714,6 +715,9 @@ impl Workspace {
             })),
             "workspace.list" => self.list(job),
             "design_system.list" => { let _: home::NoParams = parse(params)?; self.design_system_list() }
+            "design_themes.search" => design_themes::search(&self.conn, parse(params)?),
+            "design_themes.record" => design_themes::record(&mut self.conn, parse(params)?),
+            "design_themes.apply" => self.apply_design_theme(params, job),
             "artifact.create" => self.create_artifact(parse(params)?),
             "artifact.open" => self.open_artifact(parse(params)?),
             "artifact.inspect" => self.inspect(parse(params)?),
@@ -787,6 +791,11 @@ impl Workspace {
             }
         };
         match method {
+            "design_themes.record" => {
+                if row.current_attempt != job.attempt_id || store::attempt_state(&self.conn, &job.job_id, &job.attempt_id)?.as_deref() != Some("active") {
+                    return Err(err(ErrorCode::JobNotActive, "the job attempt is not active"));
+                }
+            }
             "proposal.create" => scoped(params.get("change_set").and_then(|c| c.get("artifact_id")).and_then(Value::as_str))?,
             "job.get" => {
                 if params.get("job_id").and_then(Value::as_str) != Some(job.job_id.as_str()) { return Err(invalid("a job-bound connection may only read its own job")); }

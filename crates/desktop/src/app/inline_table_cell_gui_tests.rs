@@ -1607,7 +1607,7 @@ fn table_row_grows_with_its_text_past_its_minimum_and_a_merged_anchor_keeps_both
     let (first, second) = (ids[1][0].clone(), ids[1][1].clone());
     let minimum = frame_height(&window, &first);
 
-    // Two lines in one cell make its row taller than the minimum (PowerPoint: the row follows its text).
+    // Two lines in one cell make its row taller than the minimum.
     set_cell_text(&mut host, &mut window, &canvas, &first, "가\n나");
     app.idle(&mut window, &mut host, 2);
     let two_lines = frame_height(&window, &first);

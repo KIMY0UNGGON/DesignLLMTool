@@ -1,8 +1,7 @@
 //! Icon rasterizer for the GUI icon cache (GUI_DESIGN §6.5, §17.5). It draws the SVG subset that
 //! `design/icons` uses: the root `<svg>` with presentation attributes, `<path>`, and `<defs>` holding
 //! `<linearGradient>` with `<stop>`. Strokes use the renderer's stroke model ([`crate::effects`]):
-//! the stroke outline is filled, so a stroke of one device pixel keeps its joins (tiny-skia and resvg
-//! draw such strokes as hairlines without joins, as Chromium does) and a closed subpath no larger
+//! the stroke outline is filled, so a stroke of one device pixel keeps its joins and a closed subpath no larger
 //! than the stroke width is a filled dot. Anything outside the subset is refused by name
 //! (UNSUPPORTED_OPERATION) instead of being skipped.
 use crate::effects;

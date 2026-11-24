@@ -4,7 +4,7 @@
 //!
 //! The grammar is a TeX subset:
 //! - plain characters: ASCII letters and digits, Hangul syllables, and the punctuation in [`MATH_PUNCTUATION`];
-//!   spaces separate tokens and are not drawn (as in TeX math), `\,` is a thin space
+//!   spaces separate tokens and are not drawn, `\,` is a thin space
 //! - `^` and `_` with a braced argument or a single character or symbol (`x^2`, `x_{i+1}`, `x^\alpha`); a base may
 //!   carry one of each (`x_i^2`)
 //! - `{…}` groups, `\frac{…}{…}`, `\sqrt{…}`

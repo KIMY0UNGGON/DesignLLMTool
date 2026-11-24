@@ -1663,6 +1663,7 @@ impl DesktopApp {
                 .or_else(|| self.dispatch_operation_commands(spec, args))
                 .or_else(|| self.dispatch_repeat_groups(spec, args))
                 .or_else(|| self.dispatch_slides_theme(spec, args))
+                .or_else(|| self.dispatch_design_theme(spec, args))
                 .or_else(|| self.dispatch_web_mapping(spec, args))
                 .unwrap_or_else(|| Err(format!("{}: 아직 연결되지 않았습니다", spec.label))),
         }

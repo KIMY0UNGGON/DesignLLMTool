@@ -1505,11 +1505,11 @@ mod tests {
         use designllm_contracts::{ArtifactKind, Diagnostic, DltError, ErrorCode};
         let diagnostic = |code: &str, blocking: bool| Diagnostic { code: code.into(), message: String::from("english only"), node_id: None, blocking, params: Default::default() };
         let mut error = DltError::new(ErrorCode::InvalidArgument, "change refused");
-        error.diagnostics = vec![diagnostic("SLOP_EMOJI_ICON", false), diagnostic("CLIPPED", true)];
+        error.diagnostics = vec![diagnostic("ICON_EMOJI", false), diagnostic("CLIPPED", true)];
         let clipped = crate::strings::lint_label("CLIPPED").unwrap();
         assert_eq!(refusal_text(&error, "변경이 거부되었습니다"), clipped, "the blocking rule words the refusal");
         assert_eq!(refusal_for(&error, "변경이 거부되었습니다", ArtifactKind::Canvas, None).0, clipped);
-        error.diagnostics = vec![diagnostic("SLOP_EMOJI_ICON", false)];
+        error.diagnostics = vec![diagnostic("ICON_EMOJI", false)];
         assert_eq!(refusal_text(&error, "변경이 거부되었습니다"), "변경이 거부되었습니다", "a warning alone does not word a refusal");
         assert_eq!(refusal_for(&error, "변경이 거부되었습니다", ArtifactKind::Canvas, None).0, "변경이 거부되었습니다");
     }

@@ -697,6 +697,7 @@ impl DesktopApp {
             egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 12, top: 0, bottom: 12 }).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 let mut first = true;
+                self.design_theme_section(ui, palette, &mut first);
                 if let Some(editor) = self.image_crop_editor.as_ref().filter(|editor| {
                     !self.active.as_ref().is_some_and(|active| active.id == editor.intent.artifact_id)
                         || node.as_ref().is_none_or(|node| node.id != editor.intent.node_id)

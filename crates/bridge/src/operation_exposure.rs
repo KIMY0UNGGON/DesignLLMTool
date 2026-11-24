@@ -181,6 +181,10 @@ pub fn refusal(method: &str, arguments: &Value) -> Option<DltError> {
 
 /// [`refusal`] with the hidden tags told by `hidden` (the host's tests pass their own; everyone else passes [`is_hidden`]).
 pub fn refusal_with(method: &str, arguments: &Value, hidden: fn(&str) -> bool) -> Option<DltError> {
+    if method == "design_themes.apply" {
+        let operations = serde_json::json!({"operations":[{"op":"put_token"},{"op":"bind_token"},{"op":"set_theme"}]});
+        return change_set_refusal_with(&operations, hidden);
+    }
     let change_set = match method {
         "changes.validate" | "changes.apply" => arguments,
         "proposal.create" => arguments.get("change_set")?,
@@ -225,6 +229,14 @@ mod tests {
     use serde_json::json;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn theme_apply_cannot_bypass_hidden_operations() {
+        for tag in ["put_token", "bind_token", "set_theme"] {
+            let _hide = Hide::new(&[tag]);
+            assert!(refusal("design_themes.apply", &json!({})).is_some(), "{tag}");
+        }
+    }
 
     /// Hides `tags` on this thread until the guard drops.
     struct Hide;

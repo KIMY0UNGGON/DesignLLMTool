@@ -271,7 +271,7 @@ fn feature(read: Support, render: Support, edit: Support, preserve: Support, wri
 
 /// Diagnostics that describe content the preview or export does not draw. No page of the scene shows that content, so a
 /// page selection cannot tell where it belongs: headers and footers, page borders and the page background are on every
-/// page, and a floating object is placed on the page Word gives its anchor, which this layout does not reproduce. A page
+/// page, and the page of a floating object is not determined by this layout. A page
 /// selection keeps them all.
 const UNRENDERED_LOSSES: [&str; 4] = [
     diag::HEADER_FOOTER_NOT_RENDERED,
@@ -602,15 +602,15 @@ impl EngineAdapter for DocxEngine {
         }
         report.insert(
             Feature::RenderSvg,
-            feature(Support::Unsupported, Support::Approximate, Support::Unsupported, Support::Unsupported, Support::Unsupported, "SVG of the shared layout; text positions follow the shared layout, not Word"),
+            feature(Support::Unsupported, Support::Approximate, Support::Unsupported, Support::Unsupported, Support::Unsupported, "SVG of the shared layout; text positions follow the shared approximate layout"),
         );
         report.insert(
             Feature::RenderPdf,
-            feature(Support::Unsupported, Support::Approximate, Support::Unsupported, Support::Unsupported, Support::Unsupported, "PDF of the shared layout; text positions follow the shared layout, not Word"),
+            feature(Support::Unsupported, Support::Approximate, Support::Unsupported, Support::Unsupported, Support::Unsupported, "PDF of the shared layout; text positions follow the shared approximate layout"),
         );
         report.insert(
             Feature::RenderPng,
-            feature(Support::Unsupported, Support::Approximate, Support::Unsupported, Support::Unsupported, Support::Unsupported, "PNG of the shared layout; text positions follow the shared layout, not Word"),
+            feature(Support::Unsupported, Support::Approximate, Support::Unsupported, Support::Unsupported, Support::Unsupported, "PNG of the shared layout; text positions follow the shared approximate layout"),
         );
         report.insert(
             Feature::HitTest,

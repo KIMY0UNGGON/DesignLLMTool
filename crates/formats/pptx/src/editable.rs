@@ -77,7 +77,7 @@ fn colour_xml(colour: &str, node_id: &str) -> DltResult<String> {
 }
 
 /// `a:effectLst` with the one outer shadow of a shape, or nothing when it has none. A blur is written as `blurRad`, which
-/// PowerPoint blurs differently from CSS, so a blur above 0 adds a loss entry. The guard has checked the shadow already; a
+/// A blur above 0 adds a loss entry because its appearance may change. The guard has checked the shadow already; a
 /// shadow outside the editable form is refused here as well.
 pub(crate) fn effect_list_xml(shadows: &[Shadow], node_id: &str, losses: &mut Vec<Diagnostic>) -> DltResult<String> {
     let Some(shadow) = shadows.first() else { return Ok(String::new()) };
@@ -94,7 +94,7 @@ pub(crate) fn effect_list_xml(shadows: &[Shadow], node_id: &str, losses: &mut Ve
         _ => return Err(DltError::unsupported(format!("{node_id}: a diagonal shadow offset cannot be written exactly"))),
     };
     if shadow.blur > 0 {
-        losses.push(v12::loss(node_id, "shadows", "the blur is written as blurRad, which PowerPoint blurs differently from CSS"));
+        losses.push(v12::loss(node_id, "shadows", "the blur is written as blurRad; its appearance may change"));
     }
     let colour = colour_xml(&shadow.color, node_id)?;
     Ok(format!(

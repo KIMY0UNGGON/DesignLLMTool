@@ -4,9 +4,8 @@
 //! deflates new entries, so this is the one place the engine writes a ZIP directly. Edits and saves
 //! go through the shared package and keep the stored `mimetype` byte for byte.
 //!
-//! The XML skeleton carries the element set and the order that Hancom Office writes in its own
-//! documents: the header ends with `hh:compatibleDocument` (with its layout child), `hh:docOption`, and
-//! `hh:trackchageConfig`; the page section properties of the first run are complete; and the container
+//! The XML skeleton carries the required elements in order: the header ends with `hh:compatibleDocument`
+//! (with its layout child), `hh:docOption`, and `hh:trackchageConfig`; the page section properties of the first run are complete; and the container
 //! lists `META-INF/container.rdf`. `tests/l_created_package_structure.rs` checks these items.
 use std::io::{Cursor, Write};
 
@@ -20,7 +19,7 @@ use crate::package::{CONTAINER, CONTAINER_RDF, CONTENT_HPF, HEADER, MIMETYPE, PR
 /// Font used by new documents. The renderer records the substitution when it is not installed.
 pub const DEFAULT_FONT: &str = "Pretendard";
 
-/// Default A4 page size in HWPUNIT, matching the page of Hancom's default blank document.
+/// Default A4 page size in HWPUNIT.
 pub const A4_WIDTH_HU: i64 = 59528;
 pub const A4_HEIGHT_HU: i64 = 84186;
 /// Default margins in HWPUNIT: left, right, top, bottom.
@@ -39,7 +38,7 @@ const SETTINGS_XML: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="y
 
 const CONTENT_HPF_XML: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><opf:package xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf/" version="" unique-identifier="" id=""><opf:metadata><opf:title/><opf:language>ko</opf:language></opf:metadata><opf:manifest><opf:item id="header" href="Contents/header.xml" media-type="application/xml"/><opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/><opf:item id="settings" href="settings.xml" media-type="application/xml"/></opf:manifest><opf:spine><opf:itemref idref="header" linear="yes"/><opf:itemref idref="section0" linear="yes"/></opf:spine></opf:package>"#;
 
-/// Footnote and endnote settings of the section properties, as Hancom Office writes them.
+/// Footnote and endnote settings of the section properties.
 const FOOT_NOTE: &str = r##"<hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="EACH_COLUMN" beneathText="0"/>"##;
 const END_NOTE: &str = r##"<hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="14692344" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="0" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="END_OF_DOCUMENT" beneathText="0"/>"##;
 
@@ -48,8 +47,8 @@ fn font_face(lang: &str) -> String {
     format!(r##"<hh:fontface lang="{lang}" fontCnt="1"><hh:font id="0" face="{DEFAULT_FONT}" type="TTF" isEmbedded="0">{type_info}</hh:font></hh:fontface>"##)
 }
 
-/// Border fill 1 has no fill. Border fill 2 has no visible fill either, and it carries a fill brush record as Hancom
-/// Office writes it. The character and paragraph properties refer to border fill 2, the page borders to border fill 1.
+/// Border fill 1 has no fill. Border fill 2 has no visible fill either, and it carries a fill brush record.
+/// The character and paragraph properties refer to border fill 2, the page borders to border fill 1.
 fn border_fill(id: u32, fill_brush: bool) -> String {
     let side = |tag: &str| format!(r##"<hh:{tag} type="NONE" width="0.1 mm" color="#000000"/>"##);
     let brush = if fill_brush {
@@ -71,7 +70,7 @@ fn char_pr() -> String {
 }
 
 /// A paragraph property. Its margin and line spacing are written in the `hp:case` and `hp:default` branches of the
-/// markup-compatibility switch, as Hancom Office writes them.
+/// markup-compatibility switch.
 fn para_pr(id: u32, align: &str) -> String {
     let margin = r##"<hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin><hh:lineSpacing type="PERCENT" value="160" unit="HWPUNIT"/>"##;
     format!(
@@ -79,7 +78,7 @@ fn para_pr(id: u32, align: &str) -> String {
     )
 }
 
-/// Outline numbering with ten levels, in the formats Hancom Office uses for outline numbering. Levels 9 and 10 carry no
+/// Outline numbering with ten levels. Levels 9 and 10 carry no
 /// text.
 fn numbering() -> String {
     const LEVELS: [(&str, &str, u8); 10] = [
@@ -121,7 +120,7 @@ fn header_xml() -> String {
     )
 }
 
-/// A page border fill of the section. Hancom Office writes one each for both, even, and odd pages.
+/// A page border fill of the section. The package has one each for both, even, and odd pages.
 fn page_border_fill(kind: &str) -> String {
     format!(
         r##"<hp:pageBorderFill type="{kind}" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER"><hp:offset left="1417" right="1417" top="1417" bottom="1417"/></hp:pageBorderFill>"##

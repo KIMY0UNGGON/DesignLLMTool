@@ -102,7 +102,7 @@ pub(crate) fn shape(book: &FontBook, text: &str, style: &Style) -> DltResult<Sha
         buffer.push_str(&text[seg.start..seg.end]);
         buffer.set_direction(rustybuzz::Direction::LeftToRight);
         buffer.guess_segment_properties();
-        // CSS Text 3: no optional ligatures when letter spacing is not zero (as Chromium: liga, clig off).
+        // Disable optional ligatures when letter spacing is not zero.
         let out = rustybuzz::shape(&face.hb, if spaced { &NO_LIGATURES[..] } else { &[] }, buffer);
         let mut pen_units = 0i64;
         let first = glyphs.len();

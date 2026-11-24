@@ -587,7 +587,7 @@ fn round_rect(c: &mut Content, x: f32, y: f32, w: f32, h: f32) {
 
 // ---------------------------------------------------------------- contract v1.2 drawing (P1)
 
-/// Shadow raster resolution in PDF (DESIGN_PARITY §4a #3: shadows only, as an SMask image).
+/// Shadow raster resolution in PDF (shadows only, as an SMask image).
 pub const PDF_SHADOW_DPI: u32 = 144;
 
 /// Per-page state of the v1.2 drawing: graphics states (fill alpha, stroke alpha), shadings and
@@ -623,7 +623,7 @@ impl Fx<'_> {
         c.set_line_width(pt(width));
         c.set_line_cap(match style.stroke_cap { Some(StrokeCap::Round) => LineCapStyle::RoundCap, Some(StrokeCap::Square) => LineCapStyle::ProjectingSquareCap, _ => LineCapStyle::ButtCap });
         c.set_line_join(match style.stroke_join { Some(StrokeJoin::Round) => LineJoinStyle::RoundJoin, Some(StrokeJoin::Bevel) => LineJoinStyle::BevelJoin, _ => LineJoinStyle::MiterJoin });
-        // Miter joins stop at 4 half widths as in tiny-skia, SVG and the PPTX writer (PDF's default is 10).
+        // Miter joins stop at 4 half widths.
         // v1.2 strokes only: v1.1 output keeps its bytes.
         if matches!(style.stroke_join, Some(StrokeJoin::Miter) | None) { c.set_miter_limit(4.0); }
         if let Some((d, g)) = effects::dash_pattern(style.stroke_dash, width) { c.set_dash_pattern([pt(d), pt(g)], 0.0); }

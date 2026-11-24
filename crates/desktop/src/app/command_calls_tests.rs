@@ -30,6 +30,7 @@ mod ui_channel_command_tests;
 
 /// Commands that are not run here, with the reason.
 const NOT_RUN: &[(&str, &str)] = &[
+    ("design_theme.apply", "needs a recorded theme; design_themes tests compare the result"),
     ("props.path", "needs a selected Path node; covered by properties_path_tests"),
     ("add.image", "native dialog"),
     ("file.save_as", "native dialog"),
@@ -150,6 +151,7 @@ fn canvas_with_text_nodes(host: &mut Host, locked_second: bool) -> String {
 const REFRESH_READS: &[&str] = &[
     "workspace.list",
     "design_system.list",
+    "design_themes.search",
     "artifact.inspect",
     // The design warnings of each revision the window shows (lint.rs).
     "artifact.validate",

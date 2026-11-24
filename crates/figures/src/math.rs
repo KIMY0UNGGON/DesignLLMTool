@@ -309,7 +309,7 @@ impl Setter<'_, '_> {
             MathItem::ThinSpace => Ok(Row { width: mu(size_at(self.style.font_size, level), 3), ..Row::default() }),
             MathItem::Group(items) => {
                 let mut row = self.list(items, level)?;
-                // A group is not a character, as in TeX: a script on it is placed by the group's height.
+                // A script on a group is placed by the group's height.
                 row.simple = false;
                 Ok(row)
             }

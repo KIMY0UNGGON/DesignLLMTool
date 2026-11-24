@@ -2679,6 +2679,31 @@
     },
     {
       "args": {
+        "properties": {
+          "entry": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "entry"
+        ],
+        "type": "object"
+      },
+      "core_calls": [
+        "design_themes.apply"
+      ],
+      "id": "design_theme.apply",
+      "intents": [
+        "design"
+      ],
+      "label": "디자인 테마 적용",
+      "permission": "Design",
+      "shortcut": "",
+      "ui_permission": "change",
+      "wired": true
+    },
+    {
+      "args": {
         "description": "사용 중이 아닌 로컬 디자인 토큰을 삭제합니다.",
         "properties": {
           "token_id": {

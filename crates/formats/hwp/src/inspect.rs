@@ -1,5 +1,4 @@
-//! Independent HWP 5.x container and record parser (written from the public Hancom HWP 5.0
-//! format document, revision 1.3, without rhwp code). It re-reads saved output so a save is
+//! Independent HWP 5.x container and record parser. It re-reads saved output so a save is
 //! never verified only by the library that wrote it.
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};

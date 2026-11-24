@@ -1,7 +1,7 @@
 {
   "set": "content",
   "version": 1,
-  "owner": "DesignLLMTool 프로젝트 자체 제작. 다른 아이콘 세트(Lucide, Feather, Material, Figma, Claude Design 등)의 파일·경로를 복사하거나 따라 그리지 않았다.",
+  "owner": "DesignLLMTool 프로젝트 자체 제작 콘텐츠 아이콘. 24 그리드, 선 굵기 1.5(허용 범위 1-3).",
   "license": "project-owned",
   "license_note": "프로젝트 소유. 사용자 디자인에 넣어 PNG·JPEG·SVG·PDF·PPTX·HTML로 내보내도 된다.",
   "rules": "docs/GUI_DESIGN.md §6.1, design/HANDOFF.md B1",

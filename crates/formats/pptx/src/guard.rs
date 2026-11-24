@@ -130,11 +130,11 @@ pub fn check_shadows(shadows: &[Shadow], kind: NodeKind, node_id: &str, context:
         return Err(refuse(format!("more than one shadow is not supported {context} yet"), id));
     }
     if shadow.spread != 0 {
-        return Err(refuse(format!("shadow spread is not supported {context} yet: PowerPoint has no spread"), id));
+        return Err(refuse(format!("shadow spread is not supported {context} yet"), id));
     }
     if shadow.x != 0 && shadow.y != 0 {
         return Err(refuse(
-            format!("a diagonal shadow offset is not supported {context} yet: PowerPoint stores a distance and a direction, so the offset must lie on one axis"),
+            format!("a diagonal shadow offset is not supported {context} yet; the offset must lie on one axis"),
             id,
         ));
     }
@@ -157,11 +157,11 @@ pub fn check_shadows(shadows: &[Shadow], kind: NodeKind, node_id: &str, context:
 pub fn check_path(path: &PathSpec, node_id: &str, context: &str) -> DltResult<()> {
     let id = Some(node_id);
     if path.fill_rule != FillRule::Nonzero {
-        return Err(refuse(format!("an even-odd fill rule is not supported {context} yet: PowerPoint keeps no fill rule"), id));
+        return Err(refuse(format!("an even-odd fill rule is not supported {context} yet"), id));
     }
     if path.view_box.x != 0 || path.view_box.y != 0 {
         return Err(refuse(
-            format!("a view box with an origin other than 0, 0 is not supported {context} yet: PowerPoint keeps only the size of a path"),
+            format!("a view box with an origin other than 0, 0 is not supported {context} yet"),
             id,
         ));
     }

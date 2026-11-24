@@ -109,6 +109,9 @@ CREATE TABLE IF NOT EXISTS artifact_times (
 CREATE TABLE IF NOT EXISTS job_created_ids (
     job_id TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (job_id, id)
 ) STRICT;
+CREATE TABLE IF NOT EXISTS design_themes (
+    id TEXT PRIMARY KEY, recorded_at INTEGER NOT NULL, entry_json TEXT NOT NULL
+) STRICT;
 "#;
 
 /// Store-v2 backup metadata. Blob rows keep every hash needed by a retained schema backup alive.

@@ -1135,7 +1135,7 @@ impl DesktopApp {
             return rows;
         };
         match &artifact.body {
-            // Pages in document order (canvas-board, slides-board); nodes front first, as in Figma.
+            // Pages in document order (canvas-board, slides-board); nodes in reverse paint order, so the node drawn on top comes first.
             ArtifactBody::Canvas(document) => {
                 let mut section_indent = false;
                 for (index, page) in document.pages.iter().enumerate() {

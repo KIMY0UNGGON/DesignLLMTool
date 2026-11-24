@@ -132,6 +132,11 @@ impl DesktopApp {
         self.text_target = None;
         self.text_draft.clear();
         self.token_panel = properties::TokenPanelState::default();
+        self.design_themes.clear();
+        self.design_theme_query.clear();
+        if self.active.as_ref().is_some_and(|active| matches!(active.kind, ArtifactKind::Canvas | ArtifactKind::Slides)) {
+            self.fetch_design_themes();
+        }
         if self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::Canvas) {
             self.fetch_design_systems();
         }

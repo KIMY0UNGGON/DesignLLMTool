@@ -195,6 +195,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { id: "props.shadow_remove", label: "그림자 없애기", permission: Permission::Design, shortcut: "", args: NONE },
     CommandSpec { id: "props.text_style", label: "글자 모양", permission: Permission::Design, shortcut: "Ctrl+B", args: r#"{"type":"object","properties":{"bold":{"type":"boolean"},"italic":{"type":"boolean"},"font_size":{"type":"number","minimum":1},"color":{"type":"string"}}}"# },
     CommandSpec { id: "canvas.token.put", label: "토큰 저장", permission: Permission::Design, shortcut: "", args: TOKEN_PUT_ARGS },
+    CommandSpec { id: "design_theme.apply", label: "디자인 테마 적용", permission: Permission::Design, shortcut: "", args: r#"{"type":"object","required":["entry"],"properties":{"entry":{"type":"object"}}}"# },
     CommandSpec { id: "canvas.token.remove", label: "토큰 삭제", permission: Permission::Design, shortcut: "", args: r#"{"type":"object","required":["token_id"],"description":"사용 중이 아닌 로컬 디자인 토큰을 삭제합니다.","properties":{"token_id":{"type":"string","minLength":1}}}"# },
     CommandSpec { id: "canvas.token.mode", label: "토큰 모드", permission: Permission::Design, shortcut: "", args: r#"{"type":"object","required":["mode"],"description":"캔버스 로컬 토큰을 라이트 또는 다크 모드로 적용합니다.","properties":{"mode":{"type":"string","enum":["light","dark"]}}}"# },
     CommandSpec { id: "canvas.token.bind", label: "선택 항목에 토큰 연결", permission: Permission::Design, shortcut: "", args: TOKEN_BIND_ARGS },
@@ -745,6 +746,7 @@ pub(crate) fn core_calls(id: &str) -> Option<&'static [&'static str]> {
         "page.reorder" => &["changes.apply:reorder_pages"][..],
         "page.notes" => &["changes.apply:set_page_notes"][..],
         "slides.theme" => &["changes.apply:set_theme"][..],
+        "design_theme.apply" => &["design_themes.apply"][..],
         // A change made while something is selected is followed by the window's selection refresh (see props.variant_style).
         "canvas.guides.set" | "canvas.guides.clear" => &["changes.apply:set_canvas_page_guides", "selection.set"][..],
         "page.component" => &["changes.apply:set_page_role"][..],
@@ -832,6 +834,7 @@ const ONE_CHANGE_SET: &[&str] =
 /// `core_calls` and `ONE_CHANGE_SET` declare it. The UI channel follows such a change to its one reply.
 pub(crate) fn one_tracked_change(id: &str) -> bool {
     let Some(calls) = core_calls(id) else { return false };
+    if calls == &["design_themes.apply"] { return true; }
     let changes = calls.iter().filter(|call| call.starts_with("changes.apply:")).count();
     calls.iter().all(|call| call.starts_with("changes.apply:") || *call == "selection.set")
         && (changes == 1 || (changes > 1 && ONE_CHANGE_SET.contains(&id)))

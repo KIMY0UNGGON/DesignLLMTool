@@ -1,4 +1,4 @@
-//! Contract v1.2 drawing model shared by the PNG, SVG and PDF encoders (P1, DESIGN_PARITY §4a #3-#5):
+//! Contract v1.2 drawing model shared by the PNG, SVG and PDF encoders:
 //! per-paint opacity, corner radius, CSS outer box shadow, two-stop linear gradient with the CSS angle
 //! convention, stroke dash/cap/join, vector paths, image fit. Every rule here is public so other
 //! writers (canvas HTML, PPTX) can reproduce the same geometry.
@@ -192,10 +192,10 @@ fn subpaths(path: &tiny_skia::Path) -> Vec<(tiny_skia::Path, bool)> {
     out
 }
 
-/// Stroke outline drawn as a fill (GUI_DESIGN §17.5): unlike tiny-skia's `stroke_path`, joins are kept at
+/// Stroke outline drawn as a fill (GUI_DESIGN §17.5): joins are kept at
 /// one device pixel and below (no hairline shortcut), and a closed subpath no larger than the stroke
-/// width (a small circle) is filled whole instead of leaving the inner offset's hole. Wider strokes are
-/// the same outline `stroke_path` fills. `path` and `stroke` are in pixels; `ts` places them (a translation).
+/// width (a small circle) is filled whole instead of leaving the inner offset's hole.
+/// `path` and `stroke` are in pixels; `ts` places them (a translation).
 pub(crate) fn stroke_as_fill(pm: &mut Pixmap, path: &tiny_skia::Path, stroke: &Stroke, paint: &Paint<'_>, ts: Transform, mask: Option<&Mask>) {
     let (w, res) = (stroke.width, 1.0);
     // Path::stroke does not dash (Pixmap::stroke_path does it first), so dash here.

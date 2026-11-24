@@ -580,7 +580,7 @@ fn invitation() -> CanvasDocument {
     let card = container(
         "invitation.card",
         at(0, 0, 1, 1),
-        bordered("#FFFCF5", "#D6C39A"),
+        bordered("#FFFFFF", "#D6C39A"),
         LayoutSpec {
             mode: "column".into(),
             gap: 5 * MM,
@@ -592,7 +592,6 @@ fn invitation() -> CanvasDocument {
             ..Default::default()
         },
         vec![
-            leaf("invitation.kicker", NodeKind::Text, at(0, 0, 1, 1), text_style(9 * PT, "#8A6B3F", true, "center"), "INVITATION", size_spec("hug", "hug")),
             leaf(
                 "invitation.title",
                 NodeKind::Text,
@@ -640,7 +639,7 @@ fn invitation() -> CanvasDocument {
     let page = container(
         "invitation.page",
         at(0, 0, size.width, size.height),
-        plain("#F7F2E8"),
+        plain("#F8FAFC"),
         LayoutSpec {
             mode: "column".into(),
             justify: Some(designllm_contracts::Justify::Center),
@@ -664,14 +663,13 @@ fn banner(width: i64, height: i64) -> CanvasDocument {
         at(0, 0, 1, 1),
         LayoutSpec { mode: "column".into(), gap: px(6), align: "start".into(), width_mode: "fill".into(), height_mode: "hug".into(), ..Default::default() },
         vec![
-            leaf("banner.brand", NodeKind::Text, at(0, 0, 1, 1), text_style(px(11), "#DBEAFE", true, "left"), "[브랜드 이름]", size_spec("fill", "hug")),
             leaf("banner.title", NodeKind::Text, at(0, 0, 1, 1), Style { font_size: if wide { px(18) } else { px(24) }, font_weight: Some(700), color: "#FFFFFF".into(), ..Style::default() }, "[배너 제목]", size_spec("fill", "hug")),
             leaf(
                 "banner.subtitle",
                 NodeKind::Text,
                 at(0, 0, 1, 1),
                 text_style(if wide { px(12) } else { px(15) }, "#E2E8F0", false, "left"),
-                "[짧은 설명 문구]",
+                "[브랜드 이름] · [짧은 설명]",
                 size_spec("fill", "hug"),
             ),
         ],
@@ -998,7 +996,7 @@ fn poster_a3(width: i64, height: i64) -> CanvasDocument {
     let bg = container(
         "bg",
         at(0, 0, width, height),
-        plain("#FDF6EC"),
+        plain("#FFFFFF"),
         LayoutSpec {
             mode: "column".into(),
             justify: Some(designllm_contracts::Justify::SpaceBetween),
@@ -1269,7 +1267,7 @@ pub(crate) fn lint(doc: &CanvasDocument, scene: &RenderScene, frames: &BTreeMap<
 }
 
 /// The template rules as warnings on a user's document, after layout. They are non-blocking, so an edit is never refused by them.
-/// `LOCKED_NODE` is not a design rule and is left out. The anti-slop rules (`quality.rs`) follow them.
+/// `LOCKED_NODE` is not a design rule and is left out. The design-quality rules (`quality.rs`) follow them.
 pub(crate) fn design_warnings(doc: &CanvasDocument, scene: &RenderScene, frames: &BTreeMap<String, Rect>) -> Vec<Diagnostic> {
     let mut out: Vec<Diagnostic> = lint(doc, scene, frames)
         .into_iter()

@@ -53,6 +53,7 @@ pub(crate) struct Candidate {
     pub created_ids: BTreeSet<String>,
     /// Persisted extension keys are merged in the same transaction as the snapshot.
     pub persisted_features: BTreeSet<String>,
+    pub receipt_notes: Option<Vec<Value>>,
 }
 
 struct GroupUndoRow {
@@ -249,6 +250,10 @@ impl Workspace {
     }
 
     pub(crate) fn apply_keyed(&mut self, cs: &ChangeSet, key: RequestKey, job: Option<JobRef>, audit_job: Option<JobRef>) -> DltResult<ChangeResult> {
+        self.apply_keyed_with_notes(cs, key, job, audit_job, None)
+    }
+
+    pub(crate) fn apply_keyed_with_notes(&mut self, cs: &ChangeSet, key: RequestKey, job: Option<JobRef>, audit_job: Option<JobRef>, notes: Option<Vec<Value>>) -> DltResult<ChangeResult> {
         if let Some(found) = store::find_receipt(&self.conn, &key)? {
             return found.and_then(|v| serde_json::from_value(v).map_err(|e| integrity(format!("stored change receipt is unreadable: {e}"))));
         }
@@ -258,6 +263,7 @@ impl Workspace {
             Err(e) => return Err(self.reject(&key, Some(&cs.artifact_id), e)),
         };
         cand.audit_job = audit_job;
+        cand.receipt_notes = notes;
         self.commit_design_system_change(cand, &staging)
     }
 
@@ -385,7 +391,7 @@ impl Workspace {
             allowed: allowed.clone(), base_revision: row.current_revision, before: row.current_snapshot.clone(),
             after: hash, after_bytes: Some(bytes), title: candidate.title.clone(), changed_ids: changed.into_iter().collect(),
             intents, diagnostics, kind: CommitKind::Change, staged: staging.take_staged(), candidate: None, design_system_revision_guard: None,
-            undone_change: None, created_ids: BTreeSet::new(), persisted_features,
+            undone_change: None, created_ids: BTreeSet::new(), persisted_features, receipt_notes: None,
         })
     }
 
@@ -785,7 +791,7 @@ impl Workspace {
             key: key.clone(), artifact_id: cs.artifact_id.clone(), actor: cs.actor.clone(), job: job.cloned(), audit_job: None,
             allowed: cs.allowed_intents.clone(), base_revision: rev, before: base_snapshot.to_string(), after: hash, after_bytes: Some(bytes),
             title: candidate.title.clone(), changed_ids: prepared.changed_ids, intents: cs.operations.iter().map(Operation::intent).collect(),
-            diagnostics, kind: CommitKind::Change, staged, candidate: Some(candidate), design_system_revision_guard: None, undone_change: None, created_ids, persisted_features,
+            diagnostics, kind: CommitKind::Change, staged, candidate: Some(candidate), design_system_revision_guard: None, undone_change: None, created_ids, persisted_features, receipt_notes: None,
         })
     }
 
@@ -979,7 +985,7 @@ impl Workspace {
                 audit_job: job.cloned(), allowed: req.allowed_intents.clone(), base_revision: row.current_revision,
                 before: row.current_snapshot.clone(), after: target.to_owned(), after_bytes: None, title: restored.title.clone(),
                 changed_ids, intents, diagnostics: Vec::new(), kind, staged: Vec::new(), candidate: None, design_system_revision_guard: None,
-                undone_change: None, created_ids: BTreeSet::new(), persisted_features,
+                undone_change: None, created_ids: BTreeSet::new(), persisted_features, receipt_notes: None,
             });
         }
         Ok(candidates)
@@ -1152,7 +1158,7 @@ impl Workspace {
             Ok(Candidate {
                 key: key.clone(), artifact_id: req.artifact_id.clone(), actor: req.actor.clone(), job: job.cloned(), audit_job: None,
                 allowed: req.allowed_intents.clone(), base_revision: rev, before: row.current_snapshot.clone(), after: target, after_bytes: None,
-                title: restored.title.clone(), changed_ids, intents, diagnostics: vec![], kind, staged: vec![], candidate: None, design_system_revision_guard: None, undone_change: None, created_ids: BTreeSet::new(), persisted_features,
+                title: restored.title.clone(), changed_ids, intents, diagnostics: vec![], kind, staged: vec![], candidate: None, design_system_revision_guard: None, undone_change: None, created_ids: BTreeSet::new(), persisted_features, receipt_notes: None,
             })
         })().map_err(|e| e.at(rev))
     }
@@ -1247,7 +1253,7 @@ impl Workspace {
             let base = |kind: CommitKind, after: String, after_bytes: Option<Vec<u8>>, title: String, diagnostics: Vec<Diagnostic>, staged: Vec<(AssetRef, Arc<Vec<u8>>)>, candidate: Option<Artifact>, persisted_features: BTreeSet<String>| Candidate {
                 key: key.clone(), artifact_id: req.artifact_id.clone(), actor: req.actor.clone(), job: job.cloned(), audit_job: None,
                 allowed: req.allowed_intents.clone(), base_revision: rev, before: row.current_snapshot.clone(), after, after_bytes, title,
-                changed_ids: changed_ids.clone(), intents: intents.clone(), diagnostics, kind, staged, candidate, design_system_revision_guard: None, undone_change: Some(change_id.to_string()), created_ids: BTreeSet::new(), persisted_features,
+                changed_ids: changed_ids.clone(), intents: intents.clone(), diagnostics, kind, staged, candidate, design_system_revision_guard: None, undone_change: Some(change_id.to_string()), created_ids: BTreeSet::new(), persisted_features, receipt_notes: None,
             };
             if later.is_empty() {
                 // The latest change still in effect: exactly history.undo.
@@ -1474,7 +1480,8 @@ fn commit_inner(conn: &mut rusqlite::Connection, base: &crate::blobs::AssetBase,
     }
     store::merge_store_features(&tx, &c.persisted_features).map_err(fin)?;
     let result = ChangeResult { request_id: c.key.request_id.clone(), artifact_id: c.artifact_id.clone(), revision, changed_ids: c.changed_ids.clone(), diagnostics: c.diagnostics.clone(), group: None };
-    let value = serde_json::to_value(&result).map_err(|e| fin(err(ErrorCode::Internal, e.to_string())))?;
+    let mut value = serde_json::to_value(&result).map_err(|e| fin(err(ErrorCode::Internal, e.to_string())))?;
+    if let Some(notes) = &c.receipt_notes { value["notes"] = json!(notes); }
     store::insert_receipt(&tx, &c.key, Some(&c.artifact_id), &StoredResult::Committed { result: value }).map_err(fin)?;
     let mut detail = json!({
         "request_id": c.key.request_id, "changed_ids": c.changed_ids, "actor": c.actor,
@@ -1635,7 +1642,10 @@ fn commit_group_inner(
         request_id: key.request_id.clone(), artifact_id: source_id.to_owned(), revision, changed_ids, diagnostics,
         group: Some(ChangeGroup { group_id: group_id.to_owned(), members: result_members }),
     };
-    let value = serde_json::to_value(&result).map_err(|error| fin(err(ErrorCode::Internal, error.to_string())))?;
+    let mut value = serde_json::to_value(&result).map_err(|error| fin(err(ErrorCode::Internal, error.to_string())))?;
+    if let Some(notes) = members.iter().find(|member| member.artifact_id == source_id).and_then(|member| member.receipt_notes.as_ref()) {
+        value["notes"] = json!(notes);
+    }
     store::insert_receipt(&tx, key, Some(source_id), &StoredResult::Committed { result: value }).map_err(fin)?;
     fire(hook, FaultPoint::TxnBeforeCommit).map_err(fin)?;
     tx.commit().map_err(|error| fin(sql(error)))?;

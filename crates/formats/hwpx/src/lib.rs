@@ -480,7 +480,7 @@ pub fn capability_report(artifact: &Artifact) -> CapabilityReport {
     );
     report.insert(
         Feature::Pages,
-        support(Supported, Approximate, Unsupported, PreserveOnly, Supported, "pages come from this engine's layout; a pageBreak attribute becomes the paragraph's page break, and Hancom's own pagination is not used"),
+        support(Supported, Approximate, Unsupported, PreserveOnly, Supported, "pages come from this engine's layout; a pageBreak attribute becomes the paragraph's page break"),
     );
     report.insert(
         Feature::Notes,

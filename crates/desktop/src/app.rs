@@ -43,6 +43,7 @@ mod page_guides;
 mod chrome;
 mod data_sheet;
 mod dispatch;
+mod design_themes;
 mod figure_tools;
 mod figure_profile;
 mod figure_math;
@@ -307,6 +308,8 @@ pub struct DesktopApp {
     style_color: String,
     style_font_size_pt: f32,
     token_panel: properties::TokenPanelState,
+    design_themes: Vec<designllm_contracts::design_themes::DesignThemeEntry>,
+    design_theme_query: String,
     geometry_mm: [f64; 4],
     paragraph_align: String,
     paragraph_space_before_pt: f32,
@@ -543,6 +546,8 @@ impl DesktopApp {
             style_color: "#20252D".into(),
             style_font_size_pt: 12.0,
             token_panel: properties::TokenPanelState::default(),
+            design_themes: Vec::new(),
+            design_theme_query: String::new(),
             geometry_mm: [0.0; 4],
             paragraph_align: "left".into(),
             paragraph_space_before_pt: 0.0,
@@ -643,7 +648,7 @@ impl DesktopApp {
             return None;
         }
         ui_test_input::pin_ui_test_request(self.ui_test.as_ref(), method, &mut params);
-        let window_commit = matches!(method, "artifact.create" | "changes.apply" | "design_system.publish" | "design_system.set"
+        let window_commit = matches!(method, "artifact.create" | "changes.apply" | "design_themes.apply" | "design_system.publish" | "design_system.set"
             | "figure.dataset.edit" | "proposal.apply" | "history.undo" | "history.redo" | "history.undo_change" | "job.start")
             .then(|| params.get("request_id").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| format!("ticket:{}", self.next_ticket)));
         if window_commit.as_deref().is_some_and(|id| !self.require_window_commit_capacity(id)) { return None; }
@@ -652,7 +657,7 @@ impl DesktopApp {
             .filter(|pending| self.active.as_ref().is_some_and(|active| active.id == pending.intent.artifact_id))
             .map(|pending| (pending.intent.token.clone(), pending.intent.node_id.clone(), pending.stage));
         let competing_method = matches!(method,
-            "changes.apply" | "history.undo" | "history.redo" | "history.undo_change"
+            "changes.apply" | "design_themes.apply" | "history.undo" | "history.redo" | "history.undo_change"
                 | "job.start" | "job.resume" | "design_system.publish" | "design_system.set" | "proposal.apply"
         );
         let call_artifact_id = params.get("artifact_id").and_then(Value::as_str)
@@ -726,7 +731,7 @@ impl DesktopApp {
         self.next_ticket += 1;
         let ui_run_rpc = self.run_context.as_ref().is_some_and(|run| {
             run.await_rpc_reply
-                && (matches!(method, "changes.apply" | "history.undo" | "history.redo" | "history.undo_change" | "proposal.apply")
+                && (matches!(method, "changes.apply" | "design_themes.apply" | "history.undo" | "history.redo" | "history.undo_change" | "proposal.apply")
                     || (method == "selection.set"
                         && matches!(run.command_id.as_str(), "select.next" | "select.previous" | "layer.find.next" | "layer.find.previous"))
                     || (method == "artifact.save" && run.command_id == "file.save")
@@ -774,6 +779,7 @@ impl DesktopApp {
                         | "view.transform.set"
                         | "selection.set"
                         | "changes.apply"
+                        | "design_themes.apply"
                         | "proposal.apply"
                         | "history.undo"
                         | "history.redo"

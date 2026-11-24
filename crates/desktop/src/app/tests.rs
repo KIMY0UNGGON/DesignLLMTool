@@ -30,12 +30,12 @@ fn a_document_opens_by_creating_its_view_before_anything_reads_it() {
     let (opening, view_id) = harness.open_document("canvas", 1);
     assert_eq!(
         methods(&opening),
-        ["targets.list", "design_system.list", "view.transform.set", "context.read", "artifact.inspect", "render.get"],
+        ["targets.list", "design_themes.search", "design_system.list", "view.transform.set", "context.read", "artifact.inspect", "render.get"],
         "a read of a view the host does not know yet is NOT_FOUND"
     );
-    assert_eq!(opening[2].2["view_id"], view_id);
-    assert_eq!(opening[2].2["artifact_id"], "a1");
-    assert_eq!(opening[5].2["expected_revision"], 1);
+    assert_eq!(opening[3].2["view_id"], view_id);
+    assert_eq!(opening[3].2["artifact_id"], "a1");
+    assert_eq!(opening[6].2["expected_revision"], 1);
 }
 
 #[test]

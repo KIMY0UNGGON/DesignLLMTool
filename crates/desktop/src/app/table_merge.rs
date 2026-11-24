@@ -3,7 +3,7 @@
 //! The properties panel's 셀 section, the board's right-click menu and the agent path (`table.merge_cells`,
 //! `table.unmerge_cell`) run the same checks (`span_plan`). A merge is one `set_canvas_table_structure` change that adds a
 //! span whose anchor is the top-left cell; an unmerge removes the span of the region that holds the given cell. A merge
-//! moves the text of the covered cells to the anchor (PowerPoint's merge) and empties them, in the same change, so one undo
+//! moves the text of the covered cells to the anchor and empties them, in the same change, so one undo
 //! restores both. An unmerge leaves the text at the anchor.
 //!
 //! While a cell's text is edited in place, the window's merge stores the edit first and then runs (`run_span_after_edit`);

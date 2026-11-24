@@ -1,6 +1,6 @@
 {
   "set": "ui",
-  "owner": "DesignLLMTool 프로젝트 자체 제작. 다른 아이콘 세트(Claude Design, Lucide 등)의 파일·경로를 복사하지 않았다.",
+  "owner": "DesignLLMTool 프로젝트 자체 제작 UI 아이콘. 24 그리드, 선 굵기 1.5.",
   "rules": "docs/GUI_DESIGN.md §6",
   "grid": {
     "viewBox": "0 0 24 24",

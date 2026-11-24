@@ -230,7 +230,7 @@ fn command_scope(id: &str) -> Option<CommandScope> {
             | "props.distribute" | "layer.move_to" | "fix.grow_to_min" | "fix.darken_text" | "fix.grow_box"
             | "fix.shrink_text" | "fix.grow_parent" | "fix.move_into_page" | "page.remove" | "page.reorder"
             | "page.notes" | "layer.move" | "props.page_size" | "props.rename_page"
-            | "props.shadow" | "props.shadow_remove" => Some(CommandScope::CanvasSlides),
+            | "props.shadow" | "props.shadow_remove" | "design_theme.apply" => Some(CommandScope::CanvasSlides),
         "edit.copy_properties" | "edit.paste_properties" | "props.fill" | "props.fill_remove" | "props.stroke"
             | "props.stroke_width" | "props.stroke_remove" | "props.text_align" => Some(CommandScope::CanvasSlidesFigure),
         "props.opacity" | "props.corner_radius" | "props.line_height" | "props.letter_spacing"

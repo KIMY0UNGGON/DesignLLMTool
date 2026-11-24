@@ -1,4 +1,4 @@
-//! Anti-slop design warnings (tokens `text.lint-rules`, codes `SLOP_*`) for Canvas pages and slides: habits that make a page
+//! Design-quality warnings (tokens `text.lint-rules`) for Canvas pages and slides: patterns that can make a page
 //! read as a default generated layout. The rules are pure functions of the page model (`Page`, `Node`, `Style`) and of each
 //! node's frame, so the Canvas engine and the slides engine share one set. They are non-blocking warnings: no edit is
 //! refused by them. Each rule fires only on a clear pattern (conservative thresholds). Nothing here is serialized, so the
@@ -7,17 +7,20 @@
 use crate::{Diagnostic, Gradient, Node, NodeKind, Page, Rect, Shadow, Style, EMU_PER_CSS_PX, EMU_PER_PT};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Codes of the anti-slop warnings. The desktop words them in `strings::lint_label`.
-pub const SLOP_EMOJI_ICON: &str = "SLOP_EMOJI_ICON";
-pub const SLOP_PLACEHOLDER_TEXT: &str = "SLOP_PLACEHOLDER_TEXT";
-pub const SLOP_FILLER_COPY: &str = "SLOP_FILLER_COPY";
-pub const SLOP_DEFAULT_GRADIENT: &str = "SLOP_DEFAULT_GRADIENT";
-pub const SLOP_HEAVY_SHADOW: &str = "SLOP_HEAVY_SHADOW";
-pub const SLOP_UNIFORM_CARDS: &str = "SLOP_UNIFORM_CARDS";
-pub const SLOP_ALL_CENTERED: &str = "SLOP_ALL_CENTERED";
-pub const SLOP_TYPE_SCALE: &str = "SLOP_TYPE_SCALE";
+/// Codes of the design-quality warnings. The desktop words them in `strings::lint_label`.
+pub const ICON_EMOJI: &str = "ICON_EMOJI";
+pub const TEXT_PLACEHOLDER: &str = "TEXT_PLACEHOLDER";
+pub const TEXT_VAGUE_WORDING: &str = "TEXT_VAGUE_WORDING";
+pub const FILL_STOCK_GRADIENT: &str = "FILL_STOCK_GRADIENT";
+pub const SHADOW_HEAVY: &str = "SHADOW_HEAVY";
+pub const LAYOUT_REPEATED_CARDS: &str = "LAYOUT_REPEATED_CARDS";
+pub const LAYOUT_ALL_CENTERED: &str = "LAYOUT_ALL_CENTERED";
+pub const TEXT_SIZE_SPREAD: &str = "TEXT_SIZE_SPREAD";
+pub const BACKGROUND_CREAM: &str = "BACKGROUND_CREAM";
+pub const TEXT_EXTRA_LABEL: &str = "TEXT_EXTRA_LABEL";
+pub const TITLE_LINE_BREAKS: &str = "TITLE_LINE_BREAKS";
 /// Slides only: the last page's text is nothing but a closing line.
-pub const SLOP_GENERIC_CLOSING: &str = "SLOP_GENERIC_CLOSING";
+pub const SLIDE_PLAIN_CLOSING: &str = "SLIDE_PLAIN_CLOSING";
 
 /// A shadow is heavy from 32 CSS px of blur (EMU) at 0.25 opacity or more.
 const HEAVY_BLUR: i64 = 32 * EMU_PER_CSS_PX;
@@ -60,12 +63,12 @@ pub fn rgba(color: &str) -> Option<(u8, u8, u8, u8)> {
 }
 
 /// The warnings of a list of pages. `frames` gives the drawn frame of each node by ID (a laid-out Canvas document's).
-pub fn slop_warnings(pages: &[Page], frames: &BTreeMap<String, Rect>) -> Vec<Diagnostic> {
+pub fn design_quality_warnings(pages: &[Page], frames: &BTreeMap<String, Rect>) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     for page in pages {
         let nodes = flatten(&page.nodes);
-        for node in nodes.iter().copied() {
-            out.extend(node_warnings(node, page, frames));
+        for (index, node) in nodes.iter().copied().enumerate() {
+            out.extend(node_warnings(node, page, frames, &nodes[index + 1..]));
         }
         out.extend(page_warnings(&nodes, frames));
     }
@@ -73,12 +76,12 @@ pub fn slop_warnings(pages: &[Page], frames: &BTreeMap<String, Rect>) -> Vec<Dia
 }
 
 /// The warnings of a deck: the page rules over the nodes' own bounds (slide nodes are placed in absolute coordinates), and
-/// SLOP_GENERIC_CLOSING on the last page.
-pub fn slop_deck_warnings(pages: &[Page]) -> Vec<Diagnostic> {
+/// SLIDE_PLAIN_CLOSING on the last page.
+pub fn deck_quality_warnings(pages: &[Page]) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     for page in pages {
         let bounds: BTreeMap<String, Rect> = flatten(&page.nodes).into_iter().map(|node| (node.id.clone(), node.bounds)).collect();
-        out.extend(slop_warnings(std::slice::from_ref(page), &bounds));
+        out.extend(design_quality_warnings(std::slice::from_ref(page), &bounds));
     }
     out.extend(closing_warning(pages));
     out
@@ -105,23 +108,30 @@ fn flatten(nodes: &[Node]) -> Vec<&Node> {
     out
 }
 
-fn node_warnings(node: &Node, page: &Page, frames: &BTreeMap<String, Rect>) -> Vec<Diagnostic> {
+fn node_warnings(node: &Node, page: &Page, frames: &BTreeMap<String, Rect>, above: &[&Node]) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     if live_text(node) && emoji_as_icon(&node.text) {
-        out.push(warning(SLOP_EMOJI_ICON, &node.id, format!("text {} starts with an emoji or is only emoji, so it reads as an icon", node.id)));
+        out.push(warning(ICON_EMOJI, &node.id, format!("text {} starts with an emoji or is only emoji, so it reads as an icon", node.id)));
     }
     if live_text(node) && placeholder(&node.text) {
-        out.push(warning(SLOP_PLACEHOLDER_TEXT, &node.id, format!("text {} is placeholder copy", node.id)));
+        out.push(warning(TEXT_PLACEHOLDER, &node.id, format!("text {} is placeholder copy", node.id)));
     }
     // shortcut: a path frame does not establish its filled area; inspect path geometry before warning on it.
     if let Some(gradient) = node.style.gradient.as_ref().filter(|_| matches!(node.kind, NodeKind::Rectangle | NodeKind::Ellipse)) {
         let large = frames.get(&node.id).is_some_and(|frame| covers_page(*frame, page));
         if large && purple_gradient(gradient, &node.style) {
-            out.push(warning(SLOP_DEFAULT_GRADIENT, &node.id, format!("large shape {} is filled with a purple or indigo gradient", node.id)));
+            out.push(warning(FILL_STOCK_GRADIENT, &node.id, format!("large shape {} is filled with a purple or indigo gradient", node.id)));
         }
     }
+    if node.kind == NodeKind::Rectangle && node.style.gradient.is_none()
+        && frames.get(&node.id).is_some_and(|frame| covers_share(*frame, page, 0.5))
+        && cream_fill(&node.style)
+        && !above.iter().any(|other| covers_background(node, other, page, frames))
+    {
+        out.push(warning(BACKGROUND_CREAM, &node.id, format!("large background {} has a warm off-white fill", node.id)));
+    }
     if matches!(node.kind, NodeKind::Rectangle | NodeKind::Ellipse) && heavy_shadow(&node.style) {
-        out.push(warning(SLOP_HEAVY_SHADOW, &node.id, format!("the shadow on {} blurs at least 32 px and is at least 0.25 opaque", node.id)));
+        out.push(warning(SHADOW_HEAVY, &node.id, format!("the shadow on {} blurs at least 32 px and is at least 0.25 opaque", node.id)));
     }
     out
 }
@@ -129,6 +139,19 @@ fn node_warnings(node: &Node, page: &Page, frames: &BTreeMap<String, Rect>) -> V
 fn page_warnings(nodes: &[&Node], frames: &BTreeMap<String, Rect>) -> Vec<Diagnostic> {
     let texts: Vec<&Node> = nodes.iter().copied().filter(|node| live_text(node)).collect();
     let mut out = Vec::new();
+
+    // Use a uniquely largest short text as the title; compare measured frames and font sizes for labels.
+    let heading = texts.iter().copied().find(|node| node.kind == NodeKind::Text && node.style.font_size > 0
+        && node.text.chars().count() <= 60 && !is_body(&node.text)
+        && texts.iter().all(|other| std::ptr::eq(*other, *node) || node.style.font_size > other.style.font_size));
+    if let Some(heading) = heading {
+        if title_fits_one_line(heading, frames) {
+            out.push(warning(TITLE_LINE_BREAKS, &heading.id, "short title contains an explicit line break".into()));
+        }
+        if let Some(label) = texts.iter().copied().find(|node| extra_label(node, heading, frames)) {
+            out.push(warning(TEXT_EXTRA_LABEL, &label.id, "short auxiliary label is close to the title".into()));
+        }
+    }
 
     // A title must be short and uniquely larger than the other text on the page.
     let hits: Vec<usize> = texts.iter().map(|node| filler_count(&node.text)).collect();
@@ -143,35 +166,35 @@ fn page_warnings(nodes: &[&Node], frames: &BTreeMap<String, Rect>) -> Vec<Diagno
             Some(i) if title_hit => i,
             _ => hits.iter().position(|&n| n > 0).unwrap_or(0),
         };
-        out.push(warning(SLOP_FILLER_COPY, &texts[anchor].id, format!("{total} filler words on this page, or one in its title")).with_param("count", total));
+        out.push(warning(TEXT_VAGUE_WORDING, &texts[anchor].id, format!("{total} filler words on this page, or one in its title")).with_param("count", total));
     }
 
     if let Some(card) = card_row(nodes, frames) {
-        out.push(warning(SLOP_UNIFORM_CARDS, &card.id, format!("a row of identical shadowed cards starts at {}", card.id)));
+        out.push(warning(LAYOUT_REPEATED_CARDS, &card.id, format!("a row of identical shadowed cards starts at {}", card.id)));
     }
 
     let text_nodes: Vec<&Node> = texts.iter().copied().filter(|node| node.kind == NodeKind::Text).collect();
     if text_nodes.len() >= CENTRED_TEXTS && text_nodes.iter().all(|node| node.style.align == "center") && text_nodes.iter().any(|node| is_body(&node.text)) {
         out.push(
-            warning(SLOP_ALL_CENTERED, &text_nodes[0].id, format!("all {} text nodes on this page are centred, body copy included", text_nodes.len()))
+            warning(LAYOUT_ALL_CENTERED, &text_nodes[0].id, format!("all {} text nodes on this page are centred, body copy included", text_nodes.len()))
                 .with_param("count", text_nodes.len()),
         );
     }
 
     let sizes: BTreeSet<i64> = text_nodes.iter().map(|node| node.style.font_size.saturating_add(EMU_PER_PT / 2) / EMU_PER_PT).collect();
     if sizes.len() >= TEXT_SIZES {
-        out.push(warning(SLOP_TYPE_SCALE, &text_nodes[0].id, format!("this page uses {} text sizes", sizes.len())).with_param("count", sizes.len()));
+        out.push(warning(TEXT_SIZE_SPREAD, &text_nodes[0].id, format!("this page uses {} text sizes", sizes.len())).with_param("count", sizes.len()));
     }
     out
 }
 
-/// SLOP_GENERIC_CLOSING: the last page has text, and all of it is a closing line.
+/// SLIDE_PLAIN_CLOSING: the last page has text, and all of it is a closing line.
 fn closing_warning(pages: &[Page]) -> Option<Diagnostic> {
     let last = pages.last()?;
     let texts: Vec<&Node> = flatten(&last.nodes).into_iter().filter(|node| live_text(node)).collect();
     let first = texts.first()?;
     if texts.iter().all(|node| closing_line(&node.text)) {
-        Some(warning(SLOP_GENERIC_CLOSING, &first.id, "the last page holds only a closing line".to_owned()))
+        Some(warning(SLIDE_PLAIN_CLOSING, &first.id, "the last page holds only a closing line".to_owned()))
     } else {
         None
     }
@@ -281,6 +304,74 @@ fn hue_and_chroma(color: &str) -> Option<(f64, f64)> {
     Some((hue, delta / 255.0))
 }
 
+fn cream_fill(style: &Style) -> bool {
+    let Some((r, g, b, alpha)) = rgba(&style.fill) else { return false };
+    if u32::from(alpha) * style.opacity_milli.unwrap_or(1000).min(1000) < 255 * 950 { return false; }
+    let Some((hue, _)) = hue_and_chroma(&style.fill) else { return false };
+    let max = f64::from(r.max(g).max(b)) / 255.0;
+    let min = f64::from(r.min(g).min(b)) / 255.0;
+    let lightness = (max + min) / 2.0;
+    let saturation = if lightness == 1.0 { 0.0 } else { (max - min) / (1.0 - (2.0 * lightness - 1.0).abs()) };
+    (30.0..=60.0).contains(&hue) && (0.15..=0.6).contains(&saturation) && lightness >= 0.88
+}
+
+// shortcut: image pixels and fitted bounds are unavailable; treat a full-opacity image frame as potentially covering its background.
+fn covers_background(background: &Node, other: &Node, page: &Page, frames: &BTreeMap<String, Rect>) -> bool {
+    let painted = other.style.opacity_milli.unwrap_or(1000) >= 1000 && !other.style.corner_radius.is_some_and(|r| r > 0)
+        && match other.kind {
+            NodeKind::Image => other.asset.is_some(),
+            NodeKind::Rectangle => other.style.gradient.as_ref().map_or_else(
+                || rgba(&other.style.fill).is_some_and(|(_, _, _, alpha)| alpha == 255),
+                |gradient| !gradient.stops.is_empty() && gradient.stops.iter().all(|s| rgba(&s.color).is_some_and(|(_, _, _, a)| a == 255)),
+            ),
+            _ => false,
+        };
+    if !painted { return false; }
+    let (Some(a), Some(b)) = (frames.get(&background.id), frames.get(&other.id)) else { return false };
+    if a.width <= 0 || a.height <= 0 || b.width <= 0 || b.height <= 0 || page.size.width <= 0 || page.size.height <= 0 { return false; }
+    let interval = |start: i64, length: i64, limit: i64| (i128::from(start).max(0), (i128::from(start) + i128::from(length)).min(i128::from(limit)));
+    let (ax1, ax2) = interval(a.x, a.width, page.size.width);
+    let (ay1, ay2) = interval(a.y, a.height, page.size.height);
+    let (bx1, bx2) = interval(b.x, b.width, page.size.width);
+    let (by1, by2) = interval(b.y, b.height, page.size.height);
+    let area = (ax2 - ax1).max(0) as f64 * (ay2 - ay1).max(0) as f64;
+    let overlap = (ax2.min(bx2) - ax1.max(bx1)).max(0) as f64 * (ay2.min(by2) - ay1.max(by1)).max(0) as f64;
+    area > 0.0 && overlap >= area * 0.5
+}
+
+// shortcut: glyph widths are unavailable; use generous character estimates until shaped text metrics are provided.
+fn title_fits_one_line(title: &Node, frames: &BTreeMap<String, Rect>) -> bool {
+    if !title.text.contains('\n') && !title.text.contains('\r') { return false; }
+    let Some(frame) = frames.get(&title.id).filter(|frame| frame.width > 0) else { return false };
+    let units: f64 = title.text.chars().map(|c| if c == '\t' { 5.0 } else if c.is_ascii() { 1.25 } else { 1.5 }).sum();
+    let spacing = title.style.letter_spacing.unwrap_or(0).max(0) as f64 * title.text.chars().count().saturating_sub(1) as f64;
+    units * title.style.font_size as f64 + spacing <= frame.width as f64
+}
+
+// At most four words/24 characters, <= 60% of the title size, with overlapping frames and a gap <= one title font size.
+// Require a repeated title phrase or an uppercase/spaced generic category directly above the title.
+fn extra_label(node: &Node, title: &Node, frames: &BTreeMap<String, Rect>) -> bool {
+    if std::ptr::eq(node, title) || node.style.font_size <= 0
+        || i128::from(node.style.font_size) * 5 > i128::from(title.style.font_size) * 3
+        || node.text.chars().count() > 24 || node.text.split_whitespace().count() > 4
+        || node.text.chars().any(|c| c.is_numeric()) { return false; }
+    let (Some(a), Some(b)) = (frames.get(&node.id), frames.get(&title.id)) else { return false };
+    if a.width <= 0 || a.height <= 0 || b.width <= 0 || b.height <= 0 { return false; }
+    let (ax, ay, aw, ah) = (i128::from(a.x), i128::from(a.y), i128::from(a.width), i128::from(a.height));
+    let (bx, by, bw, bh) = (i128::from(b.x), i128::from(b.y), i128::from(b.width), i128::from(b.height));
+    let gap = i128::from(title.style.font_size);
+    let above = ax < bx + bw && bx < ax + aw && ay + ah <= by && by - (ay + ah) <= gap;
+    let beside = ay < by + bh && by < ay + ah && ((ax + aw <= bx && bx - (ax + aw) <= gap) || (bx + bw <= ax && ax - (bx + bw) <= gap));
+    if !(above || beside) { return false; }
+    let label_words = words(&node.text);
+    let title_words = words(&title.text);
+    let repeated = label_words.len() >= 2 && title_words.windows(label_words.len()).any(|window| window == label_words.as_slice());
+    let category = matches!(node.text.trim().to_ascii_lowercase().as_str(), "overview" | "introduction" | "section" | "chapter" | "category" | "summary")
+        && (node.text.chars().any(|c| c.is_ascii_uppercase()) && !node.text.chars().any(|c| c.is_ascii_lowercase())
+            || node.style.letter_spacing.is_some_and(|spacing| spacing > 0));
+    repeated || (above && category)
+}
+
 /// Whether every stop of a gradient is a saturated purple or indigo.
 fn purple_gradient(gradient: &Gradient, style: &Style) -> bool {
     let opacity = style.opacity_milli.unwrap_or(1000).min(1000);
@@ -295,12 +386,16 @@ fn purple_gradient(gradient: &Gradient, style: &Style) -> bool {
 
 /// Whether a frame covers at least `LARGE_SHARE` of its page.
 fn covers_page(frame: Rect, page: &Page) -> bool {
+    covers_share(frame, page, LARGE_SHARE)
+}
+
+fn covers_share(frame: Rect, page: &Page, share: f64) -> bool {
     if frame.width <= 0 || frame.height <= 0 || page.size.width <= 0 || page.size.height <= 0 { return false; }
     let visible = |start: i64, length: i64, page_length: i64| {
         (i128::from(start) + i128::from(length)).min(i128::from(page_length)).saturating_sub(i128::from(start).max(0)).max(0) as f64
     };
     let page_area = page.size.width as f64 * page.size.height as f64;
-    visible(frame.x, frame.width, page.size.width) * visible(frame.y, frame.height, page.size.height) >= LARGE_SHARE * page_area
+    visible(frame.x, frame.width, page.size.width) * visible(frame.y, frame.height, page.size.height) >= share * page_area
 }
 
 /// Opacity a shadow paints with: its colour's alpha times the opacity of the node.
@@ -399,8 +494,8 @@ mod tests {
     }
 
     fn codes(pages: &[Page], frames: &BTreeMap<String, Rect>) -> Vec<String> {
-        let found = slop_warnings(pages, frames);
-        assert!(found.iter().all(|d| !d.blocking), "SLOP warnings never block: {found:?}");
+        let found = design_quality_warnings(pages, frames);
+        assert!(found.iter().all(|d| !d.blocking), "design-quality warnings never block: {found:?}");
         found.into_iter().map(|d| d.code).collect()
     }
 
@@ -415,6 +510,80 @@ mod tests {
     }
 
     #[test]
+    fn warm_background_requires_a_large_visible_opaque_fill() {
+        let frames = BTreeMap::from([("bg".into(), rect(0, 0, 1920, 1080))]);
+        let make = |kind, fill: &str| node("bg", kind, "", Style { fill: fill.into(), ..Style::default() });
+        assert!(codes(&pages(vec![make(NodeKind::Rectangle, "#F2EADB")]), &frames).contains(&BACKGROUND_CREAM.to_owned()));
+        for color in ["#FFFFFF", "#EEEEEE", "#EEF3F6", "#F2EADB00", "#F4DAB0"] {
+            assert!(!codes(&pages(vec![make(NodeKind::Rectangle, color)]), &frames).contains(&BACKGROUND_CREAM.to_owned()), "{color}");
+        }
+        assert!(!codes(&pages(vec![make(NodeKind::Image, "#F2EADB")]), &frames).contains(&BACKGROUND_CREAM.to_owned()));
+        let faded = node("bg", NodeKind::Rectangle, "", Style { fill: "#F2EADB".into(), opacity_milli: Some(500), ..Style::default() });
+        assert!(!codes(&pages(vec![faded]), &frames).contains(&BACKGROUND_CREAM.to_owned()));
+        let small = BTreeMap::from([("bg".into(), rect(0, 0, 400, 300))]);
+        assert!(!codes(&pages(vec![make(NodeKind::Rectangle, "#F2EADB")]), &small).contains(&BACKGROUND_CREAM.to_owned()));
+    }
+
+    #[test]
+    fn covering_layers_hide_a_warm_background_only_when_above_it() {
+        let background = node("bg", NodeKind::Rectangle, "", Style { fill: "#F2EADB".into(), ..Style::default() });
+        let mut image = node("photo", NodeKind::Image, "", Style::default());
+        image.asset = Some(crate::AssetRef { sha256: "a".repeat(64), mime: "image/jpeg".into(), bytes: 1 });
+        let mut frames = BTreeMap::from([("bg".into(), rect(0, 0, 1920, 1080)), ("photo".into(), rect(0, 0, 1920, 1080))]);
+        assert!(!codes(&pages(vec![background.clone(), image.clone()]), &frames).contains(&BACKGROUND_CREAM.to_owned()));
+        assert!(codes(&pages(vec![image.clone(), background.clone()]), &frames).contains(&BACKGROUND_CREAM.to_owned()));
+        image.style.opacity_milli = Some(500);
+        assert!(codes(&pages(vec![background.clone(), image.clone()]), &frames).contains(&BACKGROUND_CREAM.to_owned()));
+        image.style.opacity_milli = None;
+        frames.insert("photo".into(), rect(0, 0, 400, 300));
+        assert!(codes(&pages(vec![background.clone(), image]), &frames).contains(&BACKGROUND_CREAM.to_owned()));
+        let cover = node("cover", NodeKind::Rectangle, "", Style { fill: "#FFFFFF".into(), ..Style::default() });
+        frames.insert("cover".into(), rect(0, 0, 1920, 1080));
+        assert!(!codes(&pages(vec![background, cover]), &frames).contains(&BACKGROUND_CREAM.to_owned()));
+    }
+
+    #[test]
+    fn extra_labels_require_a_short_small_text_close_to_the_title() {
+        let frames = BTreeMap::from([("title".into(), rect(100, 120, 400, 60)), ("label".into(), rect(100, 90, 100, 20))]);
+        let title = text("title", "Annual report", 30, "left");
+        let label = text("label", "OVERVIEW", 12, "left");
+        assert!(codes(&pages(vec![title.clone(), label.clone()]), &frames).contains(&TEXT_EXTRA_LABEL.to_owned()));
+        let mut large = label.clone(); large.style.font_size = 20 * EMU_PER_PT;
+        assert!(!codes(&pages(vec![title.clone(), large]), &frames).contains(&TEXT_EXTRA_LABEL.to_owned()));
+        let distant = BTreeMap::from([("title".into(), rect(100, 120, 400, 60)), ("label".into(), rect(100, 0, 100, 20))]);
+        assert!(!codes(&pages(vec![title.clone(), label.clone()]), &distant).contains(&TEXT_EXTRA_LABEL.to_owned()));
+        let beside = BTreeMap::from([("title".into(), rect(100, 120, 400, 60)), ("label".into(), rect(0, 130, 90, 20))]);
+        assert!(!codes(&pages(vec![title.clone(), label.clone()]), &beside).contains(&TEXT_EXTRA_LABEL.to_owned()));
+        let repeated = text("label", "Annual report", 12, "left");
+        assert!(codes(&pages(vec![title.clone(), repeated]), &beside).contains(&TEXT_EXTRA_LABEL.to_owned()));
+        for copy in ["Seoul", "20 June 2026", "Overview"] {
+            assert!(!codes(&pages(vec![title.clone(), text("label", copy, 12, "left")]), &frames).contains(&TEXT_EXTRA_LABEL.to_owned()), "{copy}");
+        }
+        let equal = text("other", "Another heading", 30, "left");
+        assert!(!codes(&pages(vec![title.clone(), label.clone(), equal]), &frames).contains(&TEXT_EXTRA_LABEL.to_owned()));
+        let mut badge = label; badge.kind = NodeKind::Rectangle; badge.text = "Annual report".into();
+        assert!(codes(&pages(vec![title.clone(), badge.clone()]), &frames).contains(&TEXT_EXTRA_LABEL.to_owned()));
+        badge.text = "New".into();
+        assert!(!codes(&pages(vec![title, badge]), &frames).contains(&TEXT_EXTRA_LABEL.to_owned()));
+    }
+
+    #[test]
+    fn short_title_explicit_break_warns_but_long_title_does_not() {
+        let frames = BTreeMap::from([("title".into(), rect(0, 0, 1000, 100))]);
+        assert!(codes(&pages(vec![text("title", "Annual\nreport", 30, "left")]), &frames).contains(&TITLE_LINE_BREAKS.to_owned()));
+        let narrow = BTreeMap::from([("title".into(), rect(0, 0, 120, 100))]);
+        assert!(!codes(&pages(vec![text("title", "Annual\nreport", 30, "left")]), &narrow).contains(&TITLE_LINE_BREAKS.to_owned()));
+        assert!(!codes(&pages(vec![text("title", "Annual\nreport", 30, "left")]), &BTreeMap::new()).contains(&TITLE_LINE_BREAKS.to_owned()));
+        let cjk = text("title", "한글\n제목", 30, "left");
+        assert!(codes(&pages(vec![cjk.clone()]), &frames).contains(&TITLE_LINE_BREAKS.to_owned()));
+        assert!(!codes(&pages(vec![cjk]), &narrow).contains(&TITLE_LINE_BREAKS.to_owned()));
+        assert!(!codes(&pages(vec![text("title", "Annual report", 30, "left")]), &frames).contains(&TITLE_LINE_BREAKS.to_owned()));
+        assert!(!codes(&pages(vec![text("body", "First line\nSecond line\nThird line", 30, "left"), text("other", "Copy", 12, "left")]), &frames).contains(&TITLE_LINE_BREAKS.to_owned()));
+        let long = format!("{}\n{}", "A".repeat(35), "B".repeat(35));
+        assert!(!codes(&pages(vec![text("title", &long, 30, "left")]), &frames).contains(&TITLE_LINE_BREAKS.to_owned()));
+    }
+
+    #[test]
     fn colour_channels_read_hex_with_or_without_alpha_and_refuse_the_rest() {
         assert_eq!(rgba("#0F172A"), Some((15, 23, 42, 255)));
         assert_eq!(rgba("#0F172A80"), Some((15, 23, 42, 128)));
@@ -426,8 +595,8 @@ mod tests {
     #[test]
     fn an_emoji_in_front_of_the_copy_or_alone_reads_as_an_icon() {
         let frames = BTreeMap::new();
-        assert_eq!(codes(&pages(vec![text("a", "🚀 Launch", 12, "left")]), &frames), [SLOP_EMOJI_ICON]);
-        assert_eq!(codes(&pages(vec![text("a", "🚀", 12, "left")]), &frames), [SLOP_EMOJI_ICON]);
+        assert_eq!(codes(&pages(vec![text("a", "🚀 Launch", 12, "left")]), &frames), [ICON_EMOJI]);
+        assert_eq!(codes(&pages(vec![text("a", "🚀", 12, "left")]), &frames), [ICON_EMOJI]);
         assert!(codes(&pages(vec![text("a", "Launch 🚀", 12, "left")]), &frames).is_empty(), "an emoji at the end is not an icon");
         assert!(codes(&pages(vec![text("a", "☀ sunny", 12, "left")]), &frames).is_empty(), "a text-default symbol is not an emoji");
         assert!(codes(&pages(vec![text("a", "Launch", 12, "left")]), &frames).is_empty());
@@ -457,7 +626,7 @@ mod tests {
     fn placeholder_copy_is_named_and_similar_words_are_not() {
         let frames = BTreeMap::new();
         for copy in ["Lorem ipsum dolor", "John Doe", "Acme", "TechCorp launch", "홍길동", "OO회사 소개"] {
-            assert_eq!(codes(&pages(vec![text("a", copy, 12, "left")]), &frames), [SLOP_PLACEHOLDER_TEXT], "{copy}");
+            assert_eq!(codes(&pages(vec![text("a", copy, 12, "left")]), &frames), [TEXT_PLACEHOLDER], "{copy}");
         }
         assert!(codes(&pages(vec![text("a", "Acmeware", 12, "left")]), &frames).is_empty(), "a longer word is not the name");
     }
@@ -477,24 +646,24 @@ mod tests {
         let mut shape = text("shape", "홍길동", 40, "left");
         for kind in [NodeKind::Rectangle, NodeKind::Ellipse] {
             shape.kind = kind;
-            assert!(codes(&pages(vec![shape.clone()]), &BTreeMap::new()).contains(&SLOP_PLACEHOLDER_TEXT.to_owned()));
+            assert!(codes(&pages(vec![shape.clone()]), &BTreeMap::new()).contains(&TEXT_PLACEHOLDER.to_owned()));
             shape.text = "🚀 Launch".into();
-            assert!(codes(&pages(vec![shape.clone()]), &BTreeMap::new()).contains(&SLOP_EMOJI_ICON.to_owned()));
+            assert!(codes(&pages(vec![shape.clone()]), &BTreeMap::new()).contains(&ICON_EMOJI.to_owned()));
             shape.text = "혁신적인 서비스".into();
-            assert!(codes(&pages(vec![shape.clone(), text("body", "내용", 12, "left")]), &BTreeMap::new()).contains(&SLOP_FILLER_COPY.to_owned()));
+            assert!(codes(&pages(vec![shape.clone(), text("body", "내용", 12, "left")]), &BTreeMap::new()).contains(&TEXT_VAGUE_WORDING.to_owned()));
             shape.text = "매출 10% 증가".into();
             let deck = pages(vec![text("end", "Thank you", 40, "left"), shape.clone()]);
-            assert!(!slop_deck_warnings(&deck).iter().any(|d| d.code == SLOP_GENERIC_CLOSING));
+            assert!(!deck_quality_warnings(&deck).iter().any(|d| d.code == SLIDE_PLAIN_CLOSING));
             shape.text = "홍길동".into();
         }
         let body = "First line\nSecond line\nThird line";
         let mut centered: Vec<Node> = (0..4).map(|i| text(&format!("t{i}"), if i == 0 { body } else { "Heading" }, 12, "center")).collect();
         for node in &mut centered { node.kind = NodeKind::Rectangle; }
-        assert!(!codes(&pages(centered), &BTreeMap::new()).contains(&SLOP_ALL_CENTERED.to_owned()));
+        assert!(!codes(&pages(centered), &BTreeMap::new()).contains(&LAYOUT_ALL_CENTERED.to_owned()));
         let scaled: Vec<Node> = (10..17).map(|size| { let mut n = text(&format!("t{size}"), "Copy", size, "left"); n.kind = NodeKind::Ellipse; n }).collect();
-        assert!(!codes(&pages(scaled), &BTreeMap::new()).contains(&SLOP_TYPE_SCALE.to_owned()));
+        assert!(!codes(&pages(scaled), &BTreeMap::new()).contains(&TEXT_SIZE_SPREAD.to_owned()));
         shape.kind = NodeKind::Group;
-        assert!(!codes(&pages(vec![shape]), &BTreeMap::new()).contains(&SLOP_PLACEHOLDER_TEXT.to_owned()));
+        assert!(!codes(&pages(vec![shape]), &BTreeMap::new()).contains(&TEXT_PLACEHOLDER.to_owned()));
     }
 
     #[test]
@@ -504,22 +673,22 @@ mod tests {
         inner.children = vec![text("placeholder", "홍길동", 12, "left"), text("closing", "감사합니다", 12, "left")];
         group.children.push(inner);
         group.ext.hidden = Some(true);
-        assert!(slop_deck_warnings(&pages(vec![group.clone()])).is_empty());
+        assert!(deck_quality_warnings(&pages(vec![group.clone()])).is_empty());
         group.ext.hidden = Some(false);
-        let found = slop_deck_warnings(&pages(vec![group.clone()]));
-        assert!(found.iter().any(|d| d.code == SLOP_PLACEHOLDER_TEXT && d.node_id.as_deref() == Some("placeholder")));
+        let found = deck_quality_warnings(&pages(vec![group.clone()]));
+        assert!(found.iter().any(|d| d.code == TEXT_PLACEHOLDER && d.node_id.as_deref() == Some("placeholder")));
         group.children[0].children.remove(0);
-        assert!(slop_deck_warnings(&pages(vec![group])).iter().any(|d| d.code == SLOP_GENERIC_CLOSING));
+        assert!(deck_quality_warnings(&pages(vec![group])).iter().any(|d| d.code == SLIDE_PLAIN_CLOSING));
     }
 
     #[test]
     fn group_opacity_does_not_change_a_childs_own_opacity() {
         let mut group = node("group", NodeKind::Group, "", Style { opacity_milli: Some(0), ..Style::default() });
         group.children.push(shadowed("child", 32, "#000000"));
-        let found = slop_warnings(&pages(vec![group.clone()]), &BTreeMap::new());
-        assert!(found.iter().any(|d| d.code == SLOP_HEAVY_SHADOW && d.node_id.as_deref() == Some("child")));
+        let found = design_quality_warnings(&pages(vec![group.clone()]), &BTreeMap::new());
+        assert!(found.iter().any(|d| d.code == SHADOW_HEAVY && d.node_id.as_deref() == Some("child")));
         group.children[0].style.opacity_milli = Some(0);
-        assert!(!slop_warnings(&pages(vec![group]), &BTreeMap::new()).iter().any(|d| d.code == SLOP_HEAVY_SHADOW));
+        assert!(!design_quality_warnings(&pages(vec![group]), &BTreeMap::new()).iter().any(|d| d.code == SHADOW_HEAVY));
     }
 
     #[test]
@@ -532,8 +701,8 @@ mod tests {
         assert!(codes(&pages(same), &frames).is_empty());
         assert!(codes(&pages(vec![text("body", body, 30, "left"), text("other", "Copy", 12, "left")]), &frames).is_empty());
         assert!(codes(&pages(vec![text("only", "Unlock growth", 30, "left")]), &frames).is_empty());
-        assert_eq!(codes(&pages(vec![text("title", "Unlock growth", 30, "left"), text("body", "Copy", 12, "left")]), &frames), [SLOP_FILLER_COPY]);
-        assert_eq!(codes(&pages(vec![text("first", "leverage", 12, "left"), text("second", "empower", 12, "left")]), &frames), [SLOP_FILLER_COPY]);
+        assert_eq!(codes(&pages(vec![text("title", "Unlock growth", 30, "left"), text("body", "Copy", 12, "left")]), &frames), [TEXT_VAGUE_WORDING]);
+        assert_eq!(codes(&pages(vec![text("first", "leverage", 12, "left"), text("second", "empower", 12, "left")]), &frames), [TEXT_VAGUE_WORDING]);
     }
 
     #[test]
@@ -545,9 +714,9 @@ mod tests {
             button.kind = if i == 0 { NodeKind::Ellipse } else { NodeKind::Rectangle };
             nodes.push(button);
         }
-        assert!(!codes(&pages(nodes.clone()), &BTreeMap::new()).contains(&SLOP_ALL_CENTERED.to_owned()));
+        assert!(!codes(&pages(nodes.clone()), &BTreeMap::new()).contains(&LAYOUT_ALL_CENTERED.to_owned()));
         for i in 0..3 { nodes.push(text(&format!("heading{i}"), "Heading", 12, "center")); }
-        assert!(codes(&pages(nodes), &BTreeMap::new()).contains(&SLOP_ALL_CENTERED.to_owned()));
+        assert!(codes(&pages(nodes), &BTreeMap::new()).contains(&LAYOUT_ALL_CENTERED.to_owned()));
     }
 
     #[test]
@@ -556,33 +725,33 @@ mod tests {
         let mut button = text("button", "Open", 32, "center");
         button.kind = NodeKind::Rectangle;
         nodes.push(button);
-        assert!(!codes(&pages(nodes.clone()), &BTreeMap::new()).contains(&SLOP_TYPE_SCALE.to_owned()));
+        assert!(!codes(&pages(nodes.clone()), &BTreeMap::new()).contains(&TEXT_SIZE_SPREAD.to_owned()));
         nodes.push(text("seventh", "Copy", 32, "left"));
-        assert!(codes(&pages(nodes), &BTreeMap::new()).contains(&SLOP_TYPE_SCALE.to_owned()));
+        assert!(codes(&pages(nodes), &BTreeMap::new()).contains(&TEXT_SIZE_SPREAD.to_owned()));
     }
 
     #[test]
     fn type_scale_rounding_handles_maximum_font_size() {
         let mut nodes: Vec<Node> = (10..16).map(|size| text(&format!("t{size}"), "Copy", size, "left")).collect();
-        assert!(!codes(&pages(nodes.clone()), &BTreeMap::new()).contains(&SLOP_TYPE_SCALE.to_owned()));
+        assert!(!codes(&pages(nodes.clone()), &BTreeMap::new()).contains(&TEXT_SIZE_SPREAD.to_owned()));
         let mut extreme = text("extreme", "Copy", 12, "left");
         extreme.style.font_size = i64::MAX;
         nodes.push(extreme);
-        assert!(codes(&pages(nodes), &BTreeMap::new()).contains(&SLOP_TYPE_SCALE.to_owned()));
+        assert!(codes(&pages(nodes), &BTreeMap::new()).contains(&TEXT_SIZE_SPREAD.to_owned()));
     }
 
     #[test]
     fn filler_words_warn_from_two_on_a_page_or_from_one_in_the_title() {
         let frames = BTreeMap::new();
         let two_in_body = pages(vec![text("title", "Quarterly results", 28, "left"), text("a", "We leverage data and empower teams", 12, "left")]);
-        assert_eq!(codes(&two_in_body, &frames), [SLOP_FILLER_COPY]);
+        assert_eq!(codes(&two_in_body, &frames), [TEXT_VAGUE_WORDING]);
         let one_in_body = pages(vec![text("title", "Quarterly results", 28, "left"), text("a", "We leverage data", 12, "left")]);
         assert!(codes(&one_in_body, &frames).is_empty(), "one filler word in the body is left alone");
         let one_in_title = pages(vec![text("title", "Unlock growth", 28, "left"), text("a", "Plain body copy", 12, "left")]);
-        let found = slop_warnings(&one_in_title, &frames);
+        let found = design_quality_warnings(&one_in_title, &frames);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].node_id.as_deref(), Some("title"), "the title takes the warning");
-        assert_eq!(codes(&pages(vec![text("a", "Our cutting edge product", 12, "left"), text("b", "혁신적인 원활한 서비스", 12, "left")]), &frames), [SLOP_FILLER_COPY]);
+        assert_eq!(codes(&pages(vec![text("a", "Our cutting edge product", 12, "left"), text("b", "혁신적인 원활한 서비스", 12, "left")]), &frames), [TEXT_VAGUE_WORDING]);
     }
 
     #[test]
@@ -590,7 +759,7 @@ mod tests {
         let mut frames = BTreeMap::new();
         let big = node("bg", NodeKind::Rectangle, "", purple("#7C3AED", "#4338CA"));
         frames.insert("bg".to_string(), rect(0, 0, 1920, 1080));
-        assert_eq!(codes(&pages(vec![big]), &frames), [SLOP_DEFAULT_GRADIENT]);
+        assert_eq!(codes(&pages(vec![big]), &frames), [FILL_STOCK_GRADIENT]);
 
         let small = node("chip", NodeKind::Rectangle, "", purple("#7C3AED", "#4338CA"));
         frames.insert("chip".to_string(), rect(0, 0, 300, 200));
@@ -611,7 +780,7 @@ mod tests {
             assert!(codes(&pages(vec![node("bg", NodeKind::Rectangle, "", style)]), &frames).is_empty());
         }
         for style in [purple("#8000FF80", "#4000FF00"), Style { opacity_milli: Some(500), ..purple("#7C3AED", "#4338CA") }] {
-            assert_eq!(codes(&pages(vec![node("bg", NodeKind::Rectangle, "", style)]), &frames), [SLOP_DEFAULT_GRADIENT]);
+            assert_eq!(codes(&pages(vec![node("bg", NodeKind::Rectangle, "", style)]), &frames), [FILL_STOCK_GRADIENT]);
         }
         assert!(codes(&pages(vec![node("bg", NodeKind::Rectangle, "", purple("#00FF0000", "#4338CA"))]), &frames).is_empty());
     }
@@ -637,9 +806,9 @@ mod tests {
         let mut other = pages(vec![small]).remove(0);
         other.id = "other".into();
         deck.push(other);
-        assert_eq!(slop_deck_warnings(&deck).iter().filter(|d| d.code == SLOP_DEFAULT_GRADIENT).count(), 1);
+        assert_eq!(deck_quality_warnings(&deck).iter().filter(|d| d.code == FILL_STOCK_GRADIENT).count(), 1);
         deck.reverse();
-        assert_eq!(slop_deck_warnings(&deck).iter().filter(|d| d.code == SLOP_DEFAULT_GRADIENT).count(), 1);
+        assert_eq!(deck_quality_warnings(&deck).iter().filter(|d| d.code == FILL_STOCK_GRADIENT).count(), 1);
 
         let mut row: Vec<Node> = (0..3).map(|i| {
             let mut card = shadowed(&format!("card{i}"), 16, "#000000");
@@ -653,9 +822,9 @@ mod tests {
         let mut other = pages(stacked).remove(0);
         other.id = "other".into();
         deck.push(other);
-        assert_eq!(slop_deck_warnings(&deck).iter().filter(|d| d.code == SLOP_UNIFORM_CARDS).count(), 1);
+        assert_eq!(deck_quality_warnings(&deck).iter().filter(|d| d.code == LAYOUT_REPEATED_CARDS).count(), 1);
         deck.reverse();
-        assert_eq!(slop_deck_warnings(&deck).iter().filter(|d| d.code == SLOP_UNIFORM_CARDS).count(), 1);
+        assert_eq!(deck_quality_warnings(&deck).iter().filter(|d| d.code == LAYOUT_REPEATED_CARDS).count(), 1);
     }
 
     #[test]
@@ -666,26 +835,26 @@ mod tests {
         style.shadows.push(Shadow { x: 0, y: 0, blur: px(40), spread: 0, color: "#000000".into() });
         for kind in [NodeKind::Rectangle, NodeKind::Ellipse] {
             let found = codes(&pages(vec![node("item", kind, "", style.clone())]), &frames);
-            assert!(found.contains(&SLOP_DEFAULT_GRADIENT.to_owned()));
-            assert!(found.contains(&SLOP_HEAVY_SHADOW.to_owned()));
+            assert!(found.contains(&FILL_STOCK_GRADIENT.to_owned()));
+            assert!(found.contains(&SHADOW_HEAVY.to_owned()));
         }
         for kind in [NodeKind::Group, NodeKind::Image, NodeKind::Video, NodeKind::Line, NodeKind::Text] {
             let found = codes(&pages(vec![node("item", kind, "", style.clone())]), &frames);
-            assert!(!found.contains(&SLOP_DEFAULT_GRADIENT.to_owned()), "{kind:?}");
-            assert!(!found.contains(&SLOP_HEAVY_SHADOW.to_owned()), "{kind:?}");
+            assert!(!found.contains(&FILL_STOCK_GRADIENT.to_owned()), "{kind:?}");
+            assert!(!found.contains(&SHADOW_HEAVY.to_owned()), "{kind:?}");
         }
         let mut path = node("item", NodeKind::Path, "", style);
         assert!(codes(&pages(vec![path.clone()]), &frames).is_empty());
         path.ext.path = Some(PathSpec { view_box: rect(0, 0, 1, 1), fill_rule: FillRule::Nonzero, commands: vec![PathCommand::MoveTo { x: 0, y: 0 }, PathCommand::LineTo { x: px(1), y: 0 }, PathCommand::Close] });
         let found = codes(&pages(vec![path]), &frames);
-        assert!(!found.contains(&SLOP_DEFAULT_GRADIENT.to_owned()));
-        assert!(!found.contains(&SLOP_HEAVY_SHADOW.to_owned()));
+        assert!(!found.contains(&FILL_STOCK_GRADIENT.to_owned()));
+        assert!(!found.contains(&SHADOW_HEAVY.to_owned()));
     }
 
     #[test]
     fn a_heavy_shadow_is_wide_and_strong() {
         let frames = BTreeMap::new();
-        assert_eq!(codes(&pages(vec![shadowed("a", 32, "#000000")]), &frames), [SLOP_HEAVY_SHADOW]);
+        assert_eq!(codes(&pages(vec![shadowed("a", 32, "#000000")]), &frames), [SHADOW_HEAVY]);
         assert!(codes(&pages(vec![shadowed("a", 31, "#000000")]), &frames).is_empty(), "31 px is not heavy");
         assert!(codes(&pages(vec![shadowed("a", 40, "#0F172A1A")]), &frames).is_empty(), "a 0.10 alpha shadow is light");
         let faded = node(
@@ -712,8 +881,8 @@ mod tests {
                 card
             })
             .collect();
-        let found = slop_warnings(&pages(cards.clone()), &frames);
-        assert_eq!(found.iter().map(|d| d.code.as_str()).collect::<Vec<_>>(), [SLOP_UNIFORM_CARDS]);
+        let found = design_quality_warnings(&pages(cards.clone()), &frames);
+        assert_eq!(found.iter().map(|d| d.code.as_str()).collect::<Vec<_>>(), [LAYOUT_REPEATED_CARDS]);
         assert_eq!(found[0].node_id.as_deref(), Some("card0"));
 
         assert!(codes(&pages(cards[..2].to_vec()), &frames).is_empty(), "two cards are not a pattern");
@@ -744,7 +913,7 @@ mod tests {
         frames.insert("card2".into(), rect(150, 0, 80, 120));
         assert!(codes(&pages(cards.clone()), &frames).is_empty());
         frames.insert("card2".into(), rect(200, 0, 80, 120));
-        assert_eq!(codes(&pages(cards), &frames), [SLOP_UNIFORM_CARDS]);
+        assert_eq!(codes(&pages(cards), &frames), [LAYOUT_REPEATED_CARDS]);
     }
 
     #[test]
@@ -760,7 +929,7 @@ mod tests {
         for card in &mut cards { card.style.shadows[0].color = "#000000".into(); card.style.opacity_milli = Some(0); }
         assert!(codes(&pages(cards.clone()), &frames).is_empty());
         for card in &mut cards { card.style.opacity_milli = Some(1000); }
-        assert_eq!(codes(&pages(cards), &frames), [SLOP_UNIFORM_CARDS]);
+        assert_eq!(codes(&pages(cards), &frames), [LAYOUT_REPEATED_CARDS]);
     }
 
     #[test]
@@ -773,11 +942,11 @@ mod tests {
             frames.insert(card.id.clone(), rect(i * 100, 0, 80, 100));
             card
         }).collect();
-        assert!(!codes(&pages(cards.clone()), &frames).contains(&SLOP_UNIFORM_CARDS.to_owned()));
+        assert!(!codes(&pages(cards.clone()), &frames).contains(&LAYOUT_REPEATED_CARDS.to_owned()));
         for card in &mut cards { card.style.opacity_milli = Some(20); }
-        assert!(codes(&pages(cards.clone()), &frames).contains(&SLOP_UNIFORM_CARDS.to_owned()));
+        assert!(codes(&pages(cards.clone()), &frames).contains(&LAYOUT_REPEATED_CARDS.to_owned()));
         for card in &mut cards { card.style.opacity_milli = Some(1000); card.style.shadows[0].color = "#00000005".into(); }
-        assert!(!codes(&pages(cards), &frames).contains(&SLOP_UNIFORM_CARDS.to_owned()));
+        assert!(!codes(&pages(cards), &frames).contains(&LAYOUT_REPEATED_CARDS.to_owned()));
     }
 
     #[test]
@@ -791,7 +960,7 @@ mod tests {
             frames.insert(card.id.clone(), frame);
             card
         }).collect();
-        assert_eq!(codes(&pages(cards.clone()), &frames), [SLOP_UNIFORM_CARDS]);
+        assert_eq!(codes(&pages(cards.clone()), &frames), [LAYOUT_REPEATED_CARDS]);
         assert!(codes(&pages(cards[..3].to_vec()), &frames).is_empty());
     }
 
@@ -808,7 +977,7 @@ mod tests {
         for i in 0..3 {
             frames.insert(cards[i].id.clone(), rect(i as i64 * 100, 0, 80, 100));
         }
-        assert_eq!(codes(&pages(std::mem::take(&mut cards)), &frames), [SLOP_UNIFORM_CARDS]);
+        assert_eq!(codes(&pages(std::mem::take(&mut cards)), &frames), [LAYOUT_REPEATED_CARDS]);
     }
 
     #[test]
@@ -819,17 +988,17 @@ mod tests {
         assert!(codes(&pages(headings.clone()), &frames).is_empty(), "short centred headings alone are not the pattern");
         let mut with_body = headings.clone();
         with_body.push(text("body", body, 12, "center"));
-        assert_eq!(codes(&pages(with_body.clone()), &frames), [SLOP_ALL_CENTERED]);
+        assert_eq!(codes(&pages(with_body.clone()), &frames), [LAYOUT_ALL_CENTERED]);
         let mut one_left = with_body.clone();
         one_left[0].style.align = "left".into();
         assert!(codes(&pages(one_left), &frames).is_empty(), "one node that is not centred breaks the pattern");
         let three_lines = text("lines", "First line\nSecond line\nThird line", 12, "center");
         let mut with_lines = headings.clone();
         with_lines.push(three_lines);
-        assert_eq!(codes(&pages(with_lines), &frames), [SLOP_ALL_CENTERED], "three lines is a body paragraph");
+        assert_eq!(codes(&pages(with_lines), &frames), [LAYOUT_ALL_CENTERED], "three lines is a body paragraph");
         let mut with_empty = with_body;
         with_empty.push(text("empty", "  ", 12, "left"));
-        assert_eq!(codes(&pages(with_empty), &frames), [SLOP_ALL_CENTERED], "an empty text box does not count");
+        assert_eq!(codes(&pages(with_empty), &frames), [LAYOUT_ALL_CENTERED], "an empty text box does not count");
     }
 
     #[test]
@@ -837,7 +1006,7 @@ mod tests {
         let frames = BTreeMap::new();
         let sizes = [10, 12, 14, 16, 18, 24, 32];
         let seven: Vec<Node> = sizes.iter().enumerate().map(|(i, size)| text(&format!("t{i}"), "Copy", *size, "left")).collect();
-        assert_eq!(codes(&pages(seven.clone()), &frames), [SLOP_TYPE_SCALE]);
+        assert_eq!(codes(&pages(seven.clone()), &frames), [TEXT_SIZE_SPREAD]);
         assert!(codes(&pages(seven[..6].to_vec()), &frames).is_empty(), "six sizes are not too many");
         let mut near = seven[..6].to_vec();
         // 0.2 pt is 2 540 EMU: 12.2 pt and 11.8 pt round to the same whole point as 12 pt.
@@ -850,24 +1019,24 @@ mod tests {
     fn a_closing_last_page_is_the_generic_closing_of_a_deck() {
         let mut deck = pages(vec![text("hero", "Quarterly results", 40, "left")]);
         deck.push(Page { id: "last".into(), size: Size { width: px(1920), height: px(1080) }, nodes: vec![text("end", "Thank you!", 40, "center")], notes: String::new(), name: None, role: None });
-        let found = slop_deck_warnings(&deck);
-        let closing = found.iter().find(|d| d.code == SLOP_GENERIC_CLOSING).expect("the closing warning");
+        let found = deck_quality_warnings(&deck);
+        let closing = found.iter().find(|d| d.code == SLIDE_PLAIN_CLOSING).expect("the closing warning");
         assert_eq!(closing.node_id.as_deref(), Some("end"));
         assert!(!closing.blocking);
 
         for line in ["감사합니다", "Q&A", "질문", "thank you"] {
             deck[1].nodes = vec![text("end", line, 40, "center")];
-            assert!(slop_deck_warnings(&deck).iter().any(|d| d.code == SLOP_GENERIC_CLOSING), "{line}");
+            assert!(deck_quality_warnings(&deck).iter().any(|d| d.code == SLIDE_PLAIN_CLOSING), "{line}");
         }
         deck[1].nodes = vec![text("end", "Thank you, Ana Kim", 40, "center")];
-        assert!(!slop_deck_warnings(&deck).iter().any(|d| d.code == SLOP_GENERIC_CLOSING), "a name after the line is content");
+        assert!(!deck_quality_warnings(&deck).iter().any(|d| d.code == SLIDE_PLAIN_CLOSING), "a name after the line is content");
         deck[1].nodes = vec![text("end", "Thank you", 40, "center"), text("more", "Ask us about the Q3 plan", 20, "left")];
-        assert!(!slop_deck_warnings(&deck).iter().any(|d| d.code == SLOP_GENERIC_CLOSING), "other text on the last page is content");
+        assert!(!deck_quality_warnings(&deck).iter().any(|d| d.code == SLIDE_PLAIN_CLOSING), "other text on the last page is content");
         deck[1].nodes = vec![node("picture", NodeKind::Image, "", Style::default())];
-        assert!(!slop_deck_warnings(&deck).iter().any(|d| d.code == SLOP_GENERIC_CLOSING), "a last page with no text is not a closing line");
+        assert!(!deck_quality_warnings(&deck).iter().any(|d| d.code == SLIDE_PLAIN_CLOSING), "a last page with no text is not a closing line");
         deck[1].nodes = vec![text("end", "Thank you", 40, "center")];
         deck[0].nodes = vec![text("only", "Thank you", 40, "center")];
-        assert_eq!(slop_deck_warnings(&deck).iter().filter(|d| d.code == SLOP_GENERIC_CLOSING).count(), 1, "only the last page is judged");
+        assert_eq!(deck_quality_warnings(&deck).iter().filter(|d| d.code == SLIDE_PLAIN_CLOSING).count(), 1, "only the last page is judged");
     }
 
     #[test]
@@ -877,7 +1046,7 @@ mod tests {
             card.bounds = rect(100 + i as i64 * 250, 300, 200, 120);
             card.style.corner_radius = Some(px(16));
         }
-        let found = slop_deck_warnings(&pages(cards));
-        assert_eq!(found.iter().map(|d| d.code.as_str()).collect::<Vec<_>>(), [SLOP_UNIFORM_CARDS]);
+        let found = deck_quality_warnings(&pages(cards));
+        assert_eq!(found.iter().map(|d| d.code.as_str()).collect::<Vec<_>>(), [LAYOUT_REPEATED_CARDS]);
     }
 }

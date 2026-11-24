@@ -87,6 +87,13 @@ impl DesktopApp {
             (PendingAction::Context, RpcPayload::Json(value)) => { self.context_read(value); self.ensure_agent_revision_reads(); }
             (PendingAction::Inspect, RpcPayload::Json(value)) => { self.artifact_inspected(&value); self.ensure_agent_revision_reads(); }
             (PendingAction::DesignSystemList, RpcPayload::Json(value)) => self.design_systems_listed(value),
+            (PendingAction::DesignThemesList { query }, RpcPayload::Json(value)) => {
+                if query != self.design_theme_query { return; }
+                match serde_json::from_value(value.get("entries").cloned().unwrap_or(Value::Null)) {
+                    Ok(entries) => self.design_themes = entries,
+                    Err(_) => self.set_error("디자인 테마 목록을 읽지 못했습니다".into()),
+                }
+            }
             (
                 PendingAction::DesignSystemSource { consumer_id, source_id, source_revision, generation },
                 RpcPayload::Json(value),
@@ -176,6 +183,15 @@ impl DesktopApp {
                     self.remember_window_commit(request_id.to_owned(), ticket);
                 }
                 self.committed(&value);
+            }
+            (PendingAction::DesignThemeApply, RpcPayload::Json(value)) => {
+                if let Some(request_id) = value.get("request_id").and_then(Value::as_str) {
+                    self.remember_window_commit(request_id.to_owned(), ticket);
+                }
+                self.committed(&value);
+                if let Some(message) = super::design_themes::design_theme_notice(&value) {
+                    self.notices.info(message, Instant::now());
+                }
             }
             (PendingAction::FigureProfile { artifact_id, profile_id, dpi }, RpcPayload::Json(value)) => {
                 let view = self.editor_views.entry(artifact_id).or_default();

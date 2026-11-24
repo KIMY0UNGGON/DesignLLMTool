@@ -92,9 +92,9 @@ fn anchor_paragraph(key: &str) -> Option<&str> {
 
 /// Content that the visual output would omit, one diagnostic for each object so that a page selection keeps those of
 /// its pages. An object placed as a character (an inline atom of its paragraph) is shown as a placeholder in the text, so
-/// it names that paragraph. Any other visible unmodeled object floats: Hancom places it from its anchor, and the page it
-/// lands on is not known here, so it names itself. No page draws that id, and every page selection keeps the loss. An
-/// opaque block names itself and follows the page that draws its placeholder.
+/// it names that paragraph. Any other visible unmodeled object floats, and its page is not known, so it names itself.
+/// No page draws that id, and every page selection keeps the loss. An opaque block names itself and follows the page
+/// that draws its placeholder.
 pub fn visible_losses(sections: &[PSection]) -> Vec<Diagnostic> {
     let modeled_pictures: BTreeSet<&str> = sections
         .iter()
@@ -144,9 +144,8 @@ pub fn visible_losses(sections: &[PSection]) -> Vec<Diagnostic> {
 
 /// Page content that the native file keeps and visual output does not draw: headers and footers, page numbers, footnotes
 /// and endnotes (each a child of an `hp:ctrl`), and a page border, a page background or a master page of a section (a
-/// child of `hp:secPr`). A page border fill counts only when its `hh:borderFill` draws a line or paints a fill; Hancom
-/// writes one with no line and no fill into most documents. `package` is the original package, the one `sections` were
-/// read from. Each section part gives one blocking loss for each code, naming the first such element. No page draws that
+/// child of `hp:secPr`). A page border fill counts only when its `hh:borderFill` draws a line or paints a fill.
+/// `package` is the original package, the one `sections` were read from. Each section part gives one blocking loss for each code, naming the first such element. No page draws that
 /// element and the codes are [`WHOLE_DOCUMENT_LOSSES`], so every page selection keeps the loss.
 pub fn unrendered_page_content(package: &Package) -> DltResult<Vec<Diagnostic>> {
     let header_source = utf8_part(package, crate::package::HEADER)?;
@@ -185,8 +184,7 @@ fn utf8_part<'p>(package: &'p Package, part: &str) -> DltResult<&'p str> {
 }
 
 /// Whether an `hh:borderFill` draws a line on a side of the page, and whether it paints the page. A side draws a line
-/// when its type is not `NONE` and its width (`"0.1 mm"`) is not zero. The `alpha` of a brush is not read: Hancom writes
-/// `alpha="0"` on painted fills, and rhwp draws border fills without it.
+/// when its type is not `NONE` and its width (`"0.1 mm"`) is not zero. The `alpha` of a brush is not read.
 fn border_fill_paints(fill: XNode<'_, '_>) -> (bool, bool) {
     let drawn = |side: XNode<'_, '_>| {
         let width = side.attribute("width").and_then(|w| w.split_whitespace().next()).and_then(|w| w.parse::<f64>().ok());
@@ -236,7 +234,7 @@ fn page_element_losses(node: XNode<'_, '_>, fills: &BTreeMap<&str, (bool, bool)>
 }
 
 /// Whether a header or footer shows anything: text, a visible object, a table, or an automatic number. An empty one
-/// (Hancom writes one for an odd or even page that has no header) shows nothing.
+/// shows nothing.
 fn draws_content(node: XNode<'_, '_>) -> bool {
     node.descendants().any(|n| {
         if is_el(n, NS_HP, "t") {
@@ -368,10 +366,8 @@ fn hyperlink_fields(paragraph: XNode<'_, '_>) -> (Vec<(String, Range<usize>)>, S
 }
 
 /// The URL of a HYPERLINK field, read from its `Command` parameter: the text up to the first `;`, with a backslash taking
-/// the next character, and with the surrounding whitespace removed. A blank result gives `None`. This is the HWPX field
-/// rule. It differs from the HWP rule (`rhwp` `command_uri`, used by `hwp/src/lib.rs`) in that `command_uri` returns the URL
-/// as a `String`, empty for an empty command, where this returns `None`. The command text is all of its text children (see
-/// `direct_text`: a comment or an element inside it adds nothing). The escape and trim steps match `command_uri` in rhwp 0.9.0 (`model/hyperlink.rs`).
+/// the next character, and with the surrounding whitespace removed. A blank result gives `None`. The command text is all
+/// of its text children (see `direct_text`: a comment or an element inside it adds nothing).
 fn field_url(field: XNode<'_, '_>) -> Option<String> {
     let command = field.descendants().find(|n| n.is_element() && n.tag_name().name() == "stringParam" && n.attribute("name") == Some("Command"))?;
     let command = direct_text(command);

@@ -161,6 +161,8 @@ pub(super) enum PendingAction {
     Context,
     Inspect,
     DesignSystemList,
+    DesignThemesList { query: String },
+    DesignThemeApply,
     DesignSystemSource { consumer_id: String, source_id: String, source_revision: u64, generation: u64 },
     DesignSystemChange { refresh_systems: bool },
     Render { page_index: u32 },
@@ -286,6 +288,7 @@ impl PendingAction {
                 | Self::AgentJob { .. }
                 | Self::Context
                 | Self::Inspect
+                | Self::DesignThemesList { .. }
                 | Self::DesignSystemList
                 | Self::DesignSystemSource { .. }
                 | Self::LintWarnings { .. }

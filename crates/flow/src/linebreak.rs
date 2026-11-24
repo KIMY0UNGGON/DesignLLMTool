@@ -6,7 +6,7 @@
 //!   punctuation.
 //! - Break around ideographs, kana, fullwidth letters, emoji and inline atoms (U+FFFC).
 //! - Hangul syllables/jamo and Latin letters/digits keep together (CSS `word-break: keep-all`);
-//!   Korean lines break at spaces like Hancom's default word unit (어절).
+//!   Korean lines break at spaces between word units (어절).
 //! - Break after a hyphen that is followed by a letter.
 //! Forced breaks (LF, CR, LS, PS, VT, FF, NEL) are handled by the caller.
 

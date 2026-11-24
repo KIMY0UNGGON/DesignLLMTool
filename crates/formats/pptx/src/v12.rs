@@ -4,7 +4,7 @@
 //! Mapping (docs/P1_PLAN.md): corner radius -> `roundRect` with `adj`; per-paint opacity -> `a:alpha`; outer shadow ->
 //! `a:outerShdw`; two-stop gradient -> `a:gradFill` with `a:lin`; path -> `a:custGeom`; line height -> `a:lnSpc` (exact
 //! points); letter spacing -> `spc`; vertical alignment -> `bodyPr` anchor; stroke dash -> `a:prstDash` or `a:custDash`; stroke cap ->
-//! `cap`; stroke join -> `a:round`, `a:bevel`, or `a:miter`. A value that PowerPoint does not carry
+//! `cap`; stroke join -> `a:round`, `a:bevel`, or `a:miter`. A value that PresentationML does not carry
 //! exactly is still written as closely as possible, and a loss entry (diagnostic `PPTX_LOSS`, non-blocking) says how.
 
 use designllm_contracts::{
@@ -18,7 +18,7 @@ use crate::writer::{centipoints, generated_rpr, hex6};
 /// Diagnostic code of a value that PresentationML does not carry exactly.
 pub const LOSS: &str = "PPTX_LOSS";
 
-/// A loss entry for `field` on `node_id`. The message names what PowerPoint shows differently.
+/// A loss entry for `field` on `node_id`. The message describes what may change in the output.
 pub fn loss(node_id: &str, field: &str, message: &str) -> Diagnostic {
     Diagnostic { code: LOSS.into(), message: format!("{field}: {message}"), node_id: Some(node_id.to_string()), blocking: false, params: Default::default() }
 }
@@ -170,7 +170,7 @@ pub(crate) fn line_end_xml(style: &Style) -> String {
 }
 
 /// The dash of a stroke, or nothing when unset. Solid is `prstDash solid`. Dotted is `prstDash sysDot` (dash 1 and gap 1
-/// line widths, the render's 1w and 1w; PowerPoint's preset table is not checked in PowerPoint itself). Dashed is a custom
+/// line widths, the render's 1w and 1w; the preset's appearance has not been verified). Dashed is a custom
 /// dash of 3 and 3 line widths: `a:ds` values are in 1/1000 % of the line width, so 300000 is 3w. That is the render's
 /// 3w and 3w exactly, so nothing is reported.
 fn dash_xml(style: &Style) -> String {
@@ -192,9 +192,7 @@ fn cap_attr(style: &Style) -> &'static str {
     }
 }
 
-/// The join of the outline: round, bevel, or miter. The miter limit is 4, the render's limit (tiny-skia's default, which
-/// the raster and SVG output both use), not PowerPoint's default of 8. With 8, joins sharper than 4 to 8 would be mitred
-/// in PowerPoint and bevelled in the render. Unset writes nothing.
+/// The join of the outline: round, bevel, or miter. The miter limit is 4, the limit used for raster and SVG output. Unset writes nothing.
 fn join_xml(style: &Style) -> &'static str {
     match style.stroke_join {
         None => "",
@@ -205,8 +203,8 @@ fn join_xml(style: &Style) -> &'static str {
 }
 
 /// `a:effectLst` with the outer shadow, or nothing. Only the first shadow is written; a second one is reported. A
-/// blur is written as `blurRad`, which PowerPoint blurs differently from CSS, so it is reported. A spread has no
-/// PowerPoint counterpart and is not written. An offset off the axes is written as a distance and a direction.
+/// blur is written as `blurRad` and reported because its appearance may change. Spread is not written.
+/// An offset off the axes is written as a distance and a direction.
 pub fn effect_xml(style: &Style, node_id: &str, losses: &mut Vec<Diagnostic>) -> DltResult<String> {
     let Some(shadow) = style.shadows.first() else { return Ok(String::new()) };
     if style.shadows.len() > 1 {
@@ -218,10 +216,10 @@ pub fn effect_xml(style: &Style, node_id: &str, losses: &mut Vec<Diagnostic>) ->
     let opacity = opacity_of(style.opacity_milli, node_id)?;
     let (dist, dir) = offset_polar(shadow, node_id, losses);
     if shadow.blur > 0 {
-        losses.push(loss(node_id, "shadows", "the blur is written as blurRad, which PowerPoint blurs differently from CSS"));
+        losses.push(loss(node_id, "shadows", "the blur is written as blurRad; its appearance may change"));
     }
     if shadow.spread != 0 {
-        losses.push(loss(node_id, "shadows", "the spread has no PowerPoint counterpart and is not written"));
+        losses.push(loss(node_id, "shadows", "shadow spread is not written"));
     }
     let colour = srgb(&shadow.color, opacity, node_id, "shadows", losses)?;
     Ok(format!(
@@ -252,7 +250,7 @@ fn offset_polar(shadow: &Shadow, node_id: &str, losses: &mut Vec<Diagnostic>) ->
 
 /// The preset geometry of a shape. A corner radius on `rect` or `roundRect` is `roundRect` with `adj` (the radius as
 /// 1/100000 of the shorter side). A radius above half the shorter side is clamped, and one that does not divide is
-/// rounded; both are reported. Other presets have no corner radius in PowerPoint, so it is reported and not written.
+/// rounded; both are reported. For other presets the corner radius is reported and not written.
 pub fn geometry_xml(shape: &str, style: &Style, bounds: &Rect, node_id: &str, losses: &mut Vec<Diagnostic>) -> DltResult<String> {
     let plain = format!("<a:prstGeom prst=\"{shape}\"><a:avLst/></a:prstGeom>");
     let radius = style.corner_radius.unwrap_or(0);
@@ -263,7 +261,7 @@ pub fn geometry_xml(shape: &str, style: &Style, bounds: &Rect, node_id: &str, lo
         return Ok(plain);
     }
     if shape != "rect" && shape != "roundRect" {
-        losses.push(loss(node_id, "corner_radius", &format!("{shape} has no corner radius in PowerPoint; not written")));
+        losses.push(loss(node_id, "corner_radius", &format!("corner radius for {shape} is not written")));
         return Ok(plain);
     }
     let shorter = bounds.width.min(bounds.height);
@@ -284,8 +282,8 @@ pub fn geometry_xml(shape: &str, style: &Style, bounds: &Rect, node_id: &str, lo
     Ok(format!("<a:prstGeom prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val {adj}\"/></a:avLst></a:prstGeom>"))
 }
 
-/// `a:custGeom` for a path. Its points are in the view box, which PowerPoint stretches to the shape, so the path keeps
-/// the view box as its size. PowerPoint keeps no fill rule, so an even-odd path, or one with several subpaths, is
+/// `a:custGeom` for a path. Its points are in the view box, which is stretched to the shape, so the path keeps
+/// the view box as its size. The fill rule is not written, so an even-odd path, or one with several subpaths, is
 /// reported: overlapping parts may fill differently. A view box with an origin other than 0, 0 is refused: PresentationML
 /// has no place for the origin, and dropping it would move every point.
 pub fn cust_geom_xml(path: &PathSpec, node_id: &str, losses: &mut Vec<Diagnostic>) -> DltResult<String> {
@@ -295,12 +293,12 @@ pub fn cust_geom_xml(path: &PathSpec, node_id: &str, losses: &mut Vec<Diagnostic
     }
     if path.view_box.x != 0 || path.view_box.y != 0 {
         return Err(DltError::unsupported(format!(
-            "{node_id}: a view box with an origin other than 0, 0 cannot be written: PowerPoint keeps only the size of a path"
+            "{node_id}: a view box with an origin other than 0, 0 cannot be written"
         )));
     }
     let subpaths = path.commands.iter().filter(|c| matches!(c, PathCommand::MoveTo { .. })).count();
     if path.fill_rule == FillRule::Evenodd || subpaths > 1 {
-        losses.push(loss(node_id, "path", "PowerPoint keeps no fill rule; overlapping parts may fill differently"));
+        losses.push(loss(node_id, "path", "the fill rule is not written; overlapping parts may fill differently"));
     }
     let mut body = String::new();
     for command in &path.commands {
@@ -318,8 +316,7 @@ pub fn cust_geom_xml(path: &PathSpec, node_id: &str, losses: &mut Vec<Diagnostic
     ))
 }
 
-/// `a:lnSpc` with the exact line height: the line height multiple times the font size, in 1/100 pt. PowerPoint places
-/// exact line spacing by its own rule, so the line can move; that is always reported.
+/// `a:lnSpc` with the exact line height: the line height multiple times the font size, in 1/100 pt. The exported line position can change, so that is always reported.
 pub fn line_spacing_xml(style: &Style, node_id: &str, losses: &mut Vec<Diagnostic>) -> DltResult<Option<String>> {
     let Some(milli) = style.line_height_milli else { return Ok(None) };
     if milli == 0 {
@@ -329,9 +326,9 @@ pub fn line_spacing_xml(style: &Style, node_id: &str, losses: &mut Vec<Diagnosti
     let product = style.font_size * i64::from(milli);
     let centi = (product + denominator / 2) / denominator;
     let message = if product % denominator != 0 {
-        "the spacing is rounded to 1/100 pt, and PowerPoint places exact spacing by its own rule; the line can move"
+        "the spacing is rounded to 1/100 pt; the exported line position can change"
     } else {
-        "PowerPoint places exact spacing by its own rule; the line can move"
+        "the exported line position can change"
     };
     losses.push(loss(node_id, "line_height", message));
     Ok(Some(format!("<a:lnSpc><a:spcPts val=\"{centi}\"/></a:lnSpc>")))
@@ -400,21 +397,21 @@ fn unmapped_reason(field: StyleField, kind: Kind) -> Option<&'static str> {
     match (field, kind) {
         (F::Opacity, _) => None,
         (F::CornerRadius, Kind::Shape) => None,
-        (F::CornerRadius, Kind::Text) => Some("text has no corner radius in PowerPoint; not written"),
-        (F::CornerRadius, Kind::Path) => Some("a path has no corner radius in PowerPoint; not written"),
-        (F::CornerRadius, Kind::Line) => Some("a line has no corner radius in PowerPoint; not written"),
+        (F::CornerRadius, Kind::Text) => Some("text corner radius is not written"),
+        (F::CornerRadius, Kind::Path) => Some("path corner radius is not written"),
+        (F::CornerRadius, Kind::Line) => Some("line corner radius is not written"),
         (F::Shadows, Kind::Text) => Some("a text shadow is not written in this release"),
         (F::Shadows, _) => None,
         (F::Gradient, Kind::Shape | Kind::Path) => None,
-        (F::Gradient, Kind::Text) => Some("text has no gradient fill in PowerPoint; not written"),
-        (F::Gradient, Kind::Line) => Some("a line has no gradient fill in PowerPoint; not written"),
+        (F::Gradient, Kind::Text) => Some("text gradient fill is not written"),
+        (F::Gradient, Kind::Line) => Some("line gradient fill is not written"),
         (F::LineHeight | F::LetterSpacing | F::VerticalAlign, Kind::Text) => None,
         (F::LineHeight | F::LetterSpacing | F::VerticalAlign, _) => Some("this primitive has no text; not written"),
         (F::FontWeight | F::Underline | F::Strikethrough, _) => Some("not written in this release"),
         (F::StrokeStart | F::StrokeEnd, Kind::Line) => None,
         (F::StrokeStart | F::StrokeEnd, _) => Some("line-end markers apply only to connectors"),
         // The outline fields are written by every kind that has an outline; text has none.
-        (F::StrokeDash | F::StrokeCap | F::StrokeJoin, Kind::Text) => Some("text has no outline in PowerPoint; not written"),
+        (F::StrokeDash | F::StrokeCap | F::StrokeJoin, Kind::Text) => Some("text outline is not written"),
         (F::StrokeDash | F::StrokeCap | F::StrokeJoin, _) => None,
         // The v1.1 fields are written by the v1.1 path and never reach this table as unset v1.2 values.
         (F::FontFamily | F::FontSize | F::Color | F::Fill | F::Stroke | F::StrokeWidth | F::Bold | F::Italic | F::Align, _) => None,
