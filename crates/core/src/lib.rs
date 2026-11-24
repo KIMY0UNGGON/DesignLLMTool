@@ -876,6 +876,11 @@ impl Workspace {
         Ok((bytes, hash))
     }
 
+    /// Kind of an existing artifact, without opening its snapshot.
+    pub fn artifact_kind(&self, artifact_id: &str) -> DltResult<ArtifactKind> {
+        Ok(store::artifact_row(&self.conn, artifact_id)?.kind)
+    }
+
     // ------------------------------------------------------------------ public job/event API
     pub fn job(&self, job_id: &str) -> DltResult<Job> { Ok(store::job_row(&self.conn, job_id)?.job()) }
     /// Stored start request (runtime, model, effort, prompt, sources) for launching the current

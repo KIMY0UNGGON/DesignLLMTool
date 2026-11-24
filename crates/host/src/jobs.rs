@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::thread;
 
-use designllm_contracts::{DltError, DltResult, Diagnostic, ErrorCode, Job, JobRef, JobStartRequest, JobStatus};
+use designllm_contracts::{ArtifactKind, DltError, DltResult, Diagnostic, ErrorCode, Job, JobRef, JobStartRequest, JobStatus};
 use designllm_runtimes::{detect, start_with_transcript_watched, Attempt, JobWatch, LaunchSpec, McpCommand, ProgressBuffer, RuntimeKind, WaitOutcome};
 
 use crate::shared::{lock, Shared};
@@ -233,14 +233,16 @@ fn run_attempt(shared: std::sync::Arc<Shared>, job: JobRef) {
 /// Starts the runtime for one attempt and reports its lifecycle to the core. Returns the error that should
 /// fail the job. A canceled or superseded attempt returns Ok: the core already holds the final state.
 fn launch_and_wait(shared: &std::sync::Arc<Shared>, job: &JobRef) -> Result<(), DltError> {
-    let request: Option<JobStartRequest> = shared.core_call(|ws| -> DltResult<Option<JobStartRequest>> {
+    let job_context = shared.core_call(|ws| -> DltResult<Option<(JobStartRequest, ArtifactKind)>> {
         let current = ws.job(&job.job_id)?;
         if current.attempt_id != job.attempt_id || current.status != JobStatus::Queued {
             return Ok(None);
         }
-        ws.job_start_request(&job.job_id).map(Some)
+        let request = ws.job_start_request(&job.job_id)?;
+        let artifact_kind = ws.artifact_kind(&request.artifact_id)?;
+        Ok(Some((request, artifact_kind)))
     })?;
-    let Some(request) = request else {
+    let Some((request, artifact_kind)) = job_context else {
         return Ok(());
     };
     let kind = RuntimeKind::parse(&request.runtime)?;
@@ -266,6 +268,7 @@ fn launch_and_wait(shared: &std::sync::Arc<Shared>, job: &JobRef) -> Result<(), 
         request,
         workspace_root: shared.root.clone(),
         mcp: McpCommand::for_job(&program, &shared.root, job),
+        design_guidance: designllm_bridge::manual::job_design_guidance(artifact_kind),
     };
     let transcript = transcript_path(&shared.root, job)?;
     // The job is known before the runtime runs: the start hands it to the callback and resumes the process after it.

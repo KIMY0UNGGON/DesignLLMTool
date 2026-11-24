@@ -54,6 +54,7 @@ pub struct LaunchSpec {
     pub request: JobStartRequest,
     pub workspace_root: PathBuf,
     pub mcp: McpCommand,
+    pub design_guidance: String,
 }
 
 /// A fully resolved process start: program, arguments, the working directory, the stdin text, and the
@@ -142,8 +143,8 @@ pub fn prompt_text(spec: &LaunchSpec) -> String {
          - Slides: no design rule can be read yet. To apply a chosen design guide, use the op set_theme for colors and fonts. New work: no templates exist; add nodes of kind \"text\", \"rectangle\", \"ellipse\", \"line\" or \"path\" with the op add_node (sent through changes_validate, then changes_apply).\n\
          - Figure: no design rule can be read yet. New work: no templates exist; add a plot panel with the op add_panel, put its data with the op put_dataset and set its plot with the op set_plot (sent through changes_validate, then changes_apply); call figure_dataset_edit for cell edits of an existing dataset.\n\
          - Design quality (Canvas, Slides, Figure): before the first change, choose one visual direction (one palette family, three or four text sizes, one alignment logic) and state it in your progress text. Avoid cream, beige and ivory backgrounds. Keep auxiliary labels to the minimum; use grouping, alignment, spacing and size hierarchy to show structure. Keep titles on one line where width allows; widen the box instead of breaking the title. Avoid needless line breaks in body text. Avoid the patterns listed on the design-quality manual page (designllm://manual/design-quality) where the request allows. Use only real data and sources, and invent no figures. After you build a Canvas or a deck, call artifact_validate, keep choices explicitly requested by the user, and fix the other design-quality warnings (ICON_EMOJI, TEXT_PLACEHOLDER, TEXT_VAGUE_WORDING, FILL_STOCK_GRADIENT, SHADOW_HEAVY, LAYOUT_REPEATED_CARDS, LAYOUT_ALL_CENTERED, TEXT_SIZE_SPREAD, SLIDE_PLAIN_CLOSING, BACKGROUND_CREAM, TEXT_EXTRA_LABEL, TITLE_LINE_BREAKS).\n\
-         - Design theme: if the request names or implies a theme or look, call design_themes_search with words from the request. For a fitting entry, use Canvas with design_themes_apply or Slides with design_themes_apply. Otherwise, if you can reach https://getdesign.md, choose the catalog entry whose one-line description best matches, read its DESIGN.md at https://getdesign.md/<slug>/design-md, then call design_themes_record with the catalog slug as id and your own words for tags and summary, plus colors, fonts, type scale, radius and spacing; apply the saved entry with the appropriate tool above. Follow its design direction for other kinds. If neither works, choose your own direction. After applying a Canvas theme, use its stored type scale, spacing and radius tokens for new elements. Never put the brand's name, logo, imagery or marketing copy in the artifact. Describe the chosen look in your own words in progress text.\n\
-         User request:\n{prompt}\n",
+         - Design theme: if the request names or implies a theme or look, call design_themes_search with words from the request. For a fitting entry, use Canvas with design_themes_apply or Slides with design_themes_apply. For a requested look with no matching saved entry, if you can reach https://getdesign.md, choose the catalog entry whose one-line description best matches, read its DESIGN.md at https://getdesign.md/<slug>/design-md, then call design_themes_record with the catalog slug as id and your own words for tags and summary, plus colors, fonts, type scale, radius and spacing; apply the saved entry with the appropriate tool above. Follow its design direction for other kinds. Follow the requested visual direction directly if no guide fits. When the request gives no visual direction, use the black-and-white default in the built-in design guidance. After applying a Canvas theme, use its stored type scale, spacing and radius tokens for new elements. Never put the brand's name, logo, imagery or marketing copy in the artifact. Describe the chosen look in your own words in progress text.\n\
+         Built-in design guidance:\n{design_guidance}\nUser request:\n{prompt}\n",
         job = spec.job.job_id,
         attempt = spec.job.attempt_id,
         artifact = request.artifact_id,
@@ -153,6 +154,7 @@ pub fn prompt_text(spec: &LaunchSpec) -> String {
         figure_refs = if figure_refs.is_empty() { "none".to_string() } else { figure_refs.join(", ") },
         targets = targets,
         delivery = delivery,
+        design_guidance = spec.design_guidance,
         prompt = request.prompt,
     )
 }
@@ -349,6 +351,7 @@ mod tests {
                 )
             },
             workspace_root: PathBuf::from(r"C:\work\ws"),
+            design_guidance: "Use the format guide and verify the rendered layout.".into(),
             mcp: McpCommand::for_job(&PathBuf::from(r"C:\app\DesignLLMTool.exe"), &PathBuf::from(r"C:\work\ws"), &job),
         }
     }
@@ -458,6 +461,7 @@ mod tests {
         assert!(text.contains(&"ab".repeat(32)));
         assert!(text.contains("Approved Figure revisions: figure-1@7."));
         assert!(text.contains("never applied as a change"));
+        assert!(text.contains("Built-in design guidance:\nUse the format guide and verify the rendered layout."));
         assert!(text.ends_with("Make the title larger.\n"));
     }
 
@@ -527,7 +531,7 @@ mod tests {
         let text = prompt_text(&spec("m", "max"));
         let theme = line_starting_with(&text, "- Design theme:");
         assert!(theme.contains("use its stored type scale, spacing and radius tokens for new elements"));
-        for fragment in ["design_themes_search", "words from the request", "fitting entry", "https://getdesign.md", "/<slug>/design-md", "one-line description", "design_themes_record", "catalog slug as id", "your own words", "colors, fonts, type scale, radius and spacing", "Canvas with design_themes_apply", "Slides with design_themes_apply", "Never put the brand's name, logo, imagery or marketing copy in the artifact", "chosen look in your own words", "If neither works, choose your own direction"] {
+        for fragment in ["design_themes_search", "words from the request", "fitting entry", "https://getdesign.md", "/<slug>/design-md", "one-line description", "design_themes_record", "catalog slug as id", "your own words", "colors, fonts, type scale, radius and spacing", "Canvas with design_themes_apply", "Slides with design_themes_apply", "Never put the brand's name, logo, imagery or marketing copy in the artifact", "chosen look in your own words", "use the black-and-white default"] {
             assert!(theme.contains(fragment), "the design-theme line omits {fragment}");
         }
         assert!(theme.find("design_themes_search") < theme.find("https://getdesign.md"));

@@ -5,7 +5,7 @@
 //! The tests check those tools and examples against the tool list and the tool input schemas, so the manual cannot
 //! name a tool or an argument that does not exist.
 
-use designllm_contracts::{NaturalUnit, EMU_PER_CSS_PX, EMU_PER_INCH, EMU_PER_MM, EMU_PER_PT, FRAME_PRESETS};
+use designllm_contracts::{ArtifactKind, NaturalUnit, EMU_PER_CSS_PX, EMU_PER_INCH, EMU_PER_MM, EMU_PER_PT, FRAME_PRESETS};
 use serde_json::{json, Value};
 
 use crate::catalog::{tools_for, Scope};
@@ -70,6 +70,7 @@ const INDEX: Page = Page {
         "artifact_export",
     ],
     steps: &[
+        "For design work, start with the design-workflow page and the task guide. Every task prompt includes the shared design workflow.",
         "Read the page for your task before you call tools. Task pages: mobile-screen, landing-page, social-post, poster, slides, document-edit, paper-figure, web-code. Shared Canvas design systems have a procedure on the design-system page.",
         "Call workspace_list first. It returns workspace_id and each artifact with its current revision. A workspace-scoped response may also include workspace_notices (Diagnostic entries) about migration, backup, or recovery; job-bound responses may omit this workspace-level field. Read notices when present.",
         "When another owner holds a node, a change to it is refused with TARGET_BUSY. The collaboration page explains reservations and job scope.",
@@ -397,14 +398,15 @@ const SLIDES: Page = Page {
 const DOCUMENT_EDIT: Page = Page {
     slug: "document-edit",
     title: "Document edit (DOCX, HWPX, HWP)",
-    description: "Edit an existing Word or Hangul file and save it in its own format.",
+    description: "Create or edit an editable Word or Hangul document and save it in its native format.",
     task: true,
     tools: &[
-        "artifact_open", "artifact_inspect", "changes_validate", "changes_apply", "render_get", "artifact_save", "artifact_export",
+        "artifact_create", "artifact_open", "artifact_inspect", "changes_validate", "changes_apply", "render_get", "artifact_save", "artifact_export",
         "flow_styles", "artifact_save_state",
     ],
     steps: &[
-        "artifact_open copies the file into the workspace; the original file is not modified. The kind (docx, hwpx or hwp) comes from the extension.",
+        "For a new document, create the requested native kind with artifact_create if the workspace does not already provide a blank target. For an existing file, artifact_open copies it into the workspace and infers docx, hwpx or hwp from its extension.",
+        DOCUMENT_LAYOUT,
         "artifact_inspect to read the paragraphs and tables with their node ids and the revision.",
         "flow_styles lists the named styles of a DOCX document (read only); other engines refuse it with UNSUPPORTED_OPERATION. For HWPX, artifact_inspect's body carries the named styles.",
         "Edit with changes: replace_text (content), insert_flow_block (content), set_paragraph_format and set_text_style_range (design), set_table_dimensions (design), set_page_setup (design).",
@@ -549,6 +551,30 @@ const CANVAS_COMPONENTS: Page = Page {
     ],
 };
 
+/// Default visual direction for new AI designs without a user-provided style.
+pub const DEFAULT_DESIGN_STYLE: &str = "For a new design or a requested redesign with no specified palette, theme, or visual reference, use a modern black-and-white palette by default. Use black and white for primary surfaces and text, neutral grays for secondary text and borders, and clear contrast. Use typography, generous spacing and alignment to establish hierarchy. Follow the user's palette or reference when provided. Preserve the established palette for targeted edits that do not request a restyle.";
+
+const LAYOUT_HIERARCHY: &str = "Build the hierarchy with grouping, alignment, spacing, position and type size. Keep auxiliary labels to a minimum. Omit decorative numbering, repeated headings and explanatory text that repeats what the layout shows. Retain labels readers need to interpret the design or act.";
+
+const DOCUMENT_LAYOUT: &str = "Keep report text and tables editable. Use native heading hierarchy, consistent margins, table columns and deliberate page breaks to show structure. Render every page and check heading placement, wrapping, table breaks and Korean glyphs before saving.";
+
+/// Shared authoring rules used by both MCP task prompts and the app's managed AI jobs.
+const DESIGN_WORKFLOW: Page = Page {
+    slug: "design-workflow",
+    title: "Design workflow",
+    description: "Choose and apply the built-in design guidance for a DesignLLMTool artifact.",
+    task: true,
+    tools: &["artifact_inspect", "artifact_validate", "changes_validate", "render_get"],
+    steps: &[
+        "Identify the artifact kind and the intended reader or use. Inspect the target and its capabilities before designing. Follow the matching task guide, plus design-quality for visual review, design-theme when a look is requested, and design-system or templates when reusing one is relevant. The manual index lists the guides.",
+        DEFAULT_DESIGN_STYLE,
+        LAYOUT_HIERARCHY,
+        "Use editable native objects for the core content when the format supports them. Match the layout to the target size, choose one consistent visual direction, and preserve the user's requested content and constraints.",
+        "Validate the changes, use the delivery mode assigned to the job, and inspect the rendered result. For proposals, use proposal_preview to review without committing. Correct avoidable layout defects and supported design-quality warnings within the request. When the user wants to follow the work live, use the GUI guide and the MCP UI commands to show the relevant view.",
+    ],
+    examples: &[],
+};
+
 const DESIGN_QUALITY: Page = Page {
     slug: "design-quality",
     title: "Design-quality warnings",
@@ -557,6 +583,7 @@ const DESIGN_QUALITY: Page = Page {
     tools: &["artifact_validate", "artifact_inspect", "changes_validate", "changes_apply", "render_get"],
     steps: &[
         "Before you build a Canvas, Slides or Figure page, choose one visual direction and state it: one palette family, three or four text sizes, one alignment logic, and one corner radius for the cards.",
+        LAYOUT_HIERARCHY,
         "Use the copy the request gives and real sources. Do not invent figures, testimonials, logos or company names. When a value is unknown, leave a visible gap and say so in your reply.",
         "The lint reports these patterns, on Canvas and slide documents, on the node they name. ICON_EMOJI: a text node starts with an emoji or is only emoji. TEXT_PLACEHOLDER: lorem ipsum, John Doe, Jane Doe, Acme, TechCorp, 홍길동 or OO회사 remains. TEXT_VAGUE_WORDING: two or more filler words on a page, or one in its title (empower, leverage, unlock, seamless, elevate, revolutionize, cutting-edge, next-generation; 혁신적인, 원활한, 차원이 다른, 새로운 차원).",
         "FILL_STOCK_GRADIENT: a rectangle or ellipse with at least a quarter of the page in its frame has a gradient whose stops are all purple or indigo (hue 230 to 300 degrees). SHADOW_HEAVY: a shape's shadow blurs 32 px or more and is at least 0.25 opaque (its colour alpha times the node opacity).",
@@ -577,11 +604,12 @@ const DESIGN_THEME: Page = Page {
     task: false,
     tools: &["design_themes_search", "design_themes_record", "design_themes_apply", "artifact_inspect", "changes_validate", "changes_apply", "proposal_create", "artifact_validate"],
     steps: &[
-        "When a request names or implies a theme or look, call design_themes_search with words from the request. If a returned entry fits, apply it.",
-        "Otherwise, if you can reach https://getdesign.md, browse the catalog and https://getdesign.md/designs/<category>, choose the entry whose one-line description best matches the request, and read its DESIGN.md at https://getdesign.md/<slug>/design-md. Follow its colors, typography, rounded, spacing, components, do's and don'ts.",
+        DEFAULT_DESIGN_STYLE,
+        "When the request names or implies a theme or look, call design_themes_search with words from the request. If a returned entry fits, apply it.",
+        "For a requested look with no matching saved entry, if you can reach https://getdesign.md, browse the catalog and https://getdesign.md/designs/<category>, choose the entry whose one-line description best matches the request, and read its DESIGN.md at https://getdesign.md/<slug>/design-md. Follow its colors, typography, rounded, spacing, components, do's and don'ts.",
         "For a catalog entry, call design_themes_record with its slug as id and tags and a one-line summary in your own words, plus colors, fonts, type scale, radius and spacing. Set recorded_at to the current Unix time in milliseconds.",
         "Inspect the artifact with artifact_inspect. For Canvas or Slides, call design_themes_apply with the saved theme id and the current revision; read its notes. After applying a Canvas theme, use its stored type scale, spacing and radius tokens for new elements. For proposal jobs set dry_run to true and pass the returned change_set, including its operations, to proposal_create. For other kinds, follow the saved design direction when building nodes.",
-        "If neither a fitting saved entry nor the site is available, choose your own direction. Explicit user choices take priority.",
+        "If a requested look has no usable guide, follow the user’s visual direction directly.",
         "Never put the brand's name, logo, imagery or marketing copy in the artifact. Describe the chosen look in your own words in progress text. After building a Canvas or deck, call artifact_validate and follow the design-quality page: preserve explicit user choices and fix the other design-quality warnings.",
     ],
     examples: &[
@@ -593,8 +621,28 @@ const DESIGN_THEME: Page = Page {
 /// Every manual page, in listing order.
 pub const PAGES: &[Page] = &[
     INDEX, REFUSALS, INTENTS, DESIGN_SYSTEM, PRESETS, AI_JOBS, COLLABORATION, TEMPLATES, MOBILE_SCREEN, LANDING_PAGE, SOCIAL_POST, POSTER, SLIDES, DOCUMENT_EDIT,
-    PAPER_FIGURE, WEB_CODE, CANVAS_COMPONENTS, DESIGN_QUALITY, DESIGN_THEME, GUI,
+    PAPER_FIGURE, WEB_CODE, CANVAS_COMPONENTS, DESIGN_WORKFLOW, DESIGN_QUALITY, DESIGN_THEME, GUI,
 ];
+
+/// The app supplies this guidance directly to a managed agent, including clients that do not expose MCP resources.
+pub fn job_design_guidance(kind: ArtifactKind) -> String {
+    let task_page = match kind {
+        ArtifactKind::Canvas => None,
+        ArtifactKind::Slides => Some(&SLIDES),
+        ArtifactKind::Docx | ArtifactKind::Hwpx | ArtifactKind::Hwp => Some(&DOCUMENT_EDIT),
+        ArtifactKind::Figure => Some(&PAPER_FIGURE),
+        ArtifactKind::WebCode => Some(&WEB_CODE),
+    };
+    let mut guidance = page_body(&DESIGN_WORKFLOW);
+    guidance.push_str("\nThe job's scope, intent and delivery rules take precedence over workspace-level actions described in the guides.\n");
+    if let Some(page) = task_page {
+        guidance.push_str(&format!("\nFormat guide ({}):\n\n", page_uri(page)));
+        guidance.push_str(&page_body(page));
+    } else {
+        guidance.push_str("\nFor Canvas, choose the closest task guide from designllm://manual/index: mobile-screen, landing-page, social-post or poster. Use the shared workflow for general Canvas work.\n");
+    }
+    guidance
+}
 
 /// The prompt name of a task page: its slug with `_` for `-`.
 pub fn prompt_name(page: &Page) -> String {
@@ -744,6 +792,10 @@ pub fn prompts_result() -> Value {
 pub fn get_prompt(name: &str, arguments: Option<&Value>) -> Option<Value> {
     let page = PAGES.iter().find(|page| page.task && prompt_name(page) == name)?;
     let mut text = page_body(page);
+    if page.slug != DESIGN_WORKFLOW.slug {
+        text.push('\n');
+        text.push_str(&page_body(&DESIGN_WORKFLOW));
+    }
     if let Some(artifact_id) = arguments.and_then(|a| a.get("artifact_id")).and_then(Value::as_str) {
         text.push_str(&format!("\nTarget artifact: {artifact_id}. Use it wherever the examples show <artifact_id>.\n"));
     }
@@ -773,7 +825,36 @@ mod tests {
         names.sort();
         names.dedup();
         assert_eq!(names.len(), count);
-        assert_eq!(count, 8, "one prompt per task kind");
+        assert_eq!(count, 9, "eight task prompts and the general workflow");
+    }
+
+    #[test]
+    fn design_workflow_reaches_managed_jobs_and_every_mcp_prompt() {
+        for page in PAGES.iter().filter(|page| page.task) {
+            let prompt = get_prompt(&prompt_name(page), None).expect("advertised prompt");
+            let text = prompt["messages"][0]["content"]["text"].as_str().expect("prompt text");
+            assert_eq!(text.matches(LAYOUT_HIERARCHY).count(), 1, "{}", page.slug);
+            assert_eq!(text.matches(DEFAULT_DESIGN_STYLE).count(), 1, "{}", page.slug);
+        }
+        for kind in [ArtifactKind::Docx, ArtifactKind::Hwpx, ArtifactKind::Hwp] {
+            let guidance = job_design_guidance(kind);
+            assert!(guidance.contains(LAYOUT_HIERARCHY));
+            assert!(guidance.contains(DEFAULT_DESIGN_STYLE));
+            assert!(guidance.contains(DOCUMENT_LAYOUT));
+            assert!(guidance.contains("document-edit"));
+        }
+        for (kind, guide) in [
+            (ArtifactKind::Canvas, "poster"),
+            (ArtifactKind::Slides, "slides"),
+            (ArtifactKind::Figure, "paper-figure"),
+            (ArtifactKind::WebCode, "web-code"),
+        ] {
+            let guidance = job_design_guidance(kind);
+            assert!(guidance.contains(LAYOUT_HIERARCHY));
+            assert!(guidance.contains(DEFAULT_DESIGN_STYLE));
+            assert!(guidance.contains(guide));
+            assert!(!guidance.contains(DOCUMENT_LAYOUT));
+        }
     }
 
     #[test]
@@ -803,7 +884,7 @@ mod tests {
         }
         assert!(body.contains("Keep choices explicitly requested by the user and fix the other warnings"));
         assert!(!body.contains("Fix them with changes_validate"));
-        assert!(!DESIGN_QUALITY.task, "a reference page: the task pages stay eight prompts");
+        assert!(!DESIGN_QUALITY.task, "design quality remains a reference page");
     }
 
     #[test]
