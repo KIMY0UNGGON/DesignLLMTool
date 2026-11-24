@@ -189,7 +189,7 @@ impl Workspace {
         if let Some((new, create)) = &created {
             crate::pipeline::insert_new(&tx, new, create.options.kind, key, &create.actor, None)?;
             store::insert_event(&tx, Some(&job.artifact_id), Some(0), "artifact.created",
-                &json!({ "request_id": key.request_id, "kind": create.options.kind, "title": new.artifact.title, "diagnostics": new.artifact.diagnostics.len(), "job_id": job.id }))?;
+                &json!({ "request_id": key.request_id, "kind": create.options.kind, "title": new.artifact.title, "diagnostics": new.artifact.diagnostics.len(), "job_id": job.id, "actor": create.actor }))?;
         }
         tx.execute(
             "INSERT INTO jobs(job_id, artifact_id, base_revision, allowed_intents, status, current_attempt, attempt_count, request_json, error_json) VALUES (?1, ?2, ?3, ?4, 'queued', ?5, 1, ?6, NULL)",

@@ -1098,6 +1098,7 @@ impl DesktopApp {
 
     /// Stand-in for the web page: its preview is a separate window (WebView2), opened from here.
     fn draw_web_placeholder(&mut self, ui: &mut Ui, board_rect: Rect) {
+        self.draw_web_mapping_entry(ui, board_rect);
         let palette = theme::palette(ui.ctx());
         let center = board_rect.center();
         // GUI_DESIGN §8: without a preview engine the board shows its reason in one line; the code editor stays.

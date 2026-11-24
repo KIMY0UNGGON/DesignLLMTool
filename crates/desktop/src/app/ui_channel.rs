@@ -924,6 +924,10 @@ impl DesktopApp {
         let chart_dialog = run.command_id == "add.chart" && run.args.get("path").is_none();
         let outcome = self.invoke(&run.command_id, run.args);
         let run_context = self.run_context.take();
+        if outcome.is_ok() && run.command_id == "nav.home" {
+            self.cancel_pending_agent_follow();
+            self.agent_follow.home_in_poll = true;
+        }
         match outcome {
             Ok(()) if run_context.as_ref().is_some_and(|context| context.await_rpc_reply && context.rpc_ticket.is_some()) => {}
             Ok(()) if chart_dialog => self.complete_ui_run(&run.run_id, Some(json!({ "command": run.command_id, "accepted": true })), None),

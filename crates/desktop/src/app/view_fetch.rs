@@ -61,7 +61,7 @@ impl DesktopApp {
             return;
         }
         // Figure work held back from another document is asked about first (figure_close.rs); the switch waits for the answer.
-        if self.ask_before_switch(&summary) {
+        if !self.auto_following_figure_job_only() && self.ask_before_switch(&summary) {
             return;
         }
         self.show_artifact(summary);
@@ -69,6 +69,8 @@ impl DesktopApp {
 
     /// Shows `summary` as the open document. `activate` calls it once nothing is left to ask about.
     pub(super) fn show_artifact(&mut self, summary: ArtifactSummary) {
+        if self.active.as_ref().is_none_or(|active| active.id != summary.id) { self.close_document_preview(); }
+        self.dismiss_agent_notice_for(&summary.id);
         let left_start_note = self.unanswered_start_note(&summary);
         self.release_waits_of_left_documents(&summary.id);
         self.pending_switch = None;
@@ -110,6 +112,8 @@ impl DesktopApp {
         self.screen = Screen::Editor;
         self.refusal = None;
         self.view_id = new_id();
+        self.agent_opened_view();
+        self.discover_listed_jobs();
         self.ui.user_selection = None;
         self.page_index = 0;
         self.total_pages = 0;
@@ -231,6 +235,10 @@ impl DesktopApp {
 
     pub(super) fn refresh_active(&mut self) {
         self.call("workspace.list", json!({}), PendingAction::WorkspaceList);
+        self.refresh_active_contents();
+    }
+
+    pub(super) fn refresh_active_contents(&mut self) {
         self.fetch_context();
         self.fetch_inspect();
         if self.active.is_some() {

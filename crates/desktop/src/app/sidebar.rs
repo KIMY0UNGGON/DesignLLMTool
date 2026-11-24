@@ -1423,6 +1423,7 @@ impl DesktopApp {
             }
             widgets::divider(ui, palette);
         }
+        self.draw_other_running_jobs(ui, palette);
         self.draw_agent_batches(ui, palette);
         ui.add_space(8.0);
         let mut prompt = self.ai_prompt.clone();

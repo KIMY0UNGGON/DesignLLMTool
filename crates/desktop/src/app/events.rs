@@ -41,7 +41,7 @@ impl Drop for NotUserChoice<'_> {
 
 /// Whether a change came from an agent: neither the window's own edits (`desktop`) nor the text typed into the window
 /// (`desktop:inline:<view>`).
-fn is_agent_actor(actor: &str) -> bool {
+pub(super) fn is_agent_actor(actor: &str) -> bool {
     actor != "desktop" && !is_inline_text_actor(actor)
 }
 
@@ -54,12 +54,16 @@ fn distinct_ids(ids: &[String]) -> Vec<String> {
 impl DesktopApp {
     pub(super) fn poll_events(&mut self) {
         // A UI-test window polls more often, so that an agent's input runs reach it soon (task 69).
-        let interval = if self.ui_test.is_some() { super::ui_test_input::TEST_EVENT_POLL } else { Duration::from_secs(2) };
-        if self.host_lost() || Instant::now().duration_since(self.last_event_poll) < interval {
+        let interval = if self.ui_test.is_some() { super::ui_test_input::TEST_EVENT_POLL } else { self.agent_poll_interval() };
+        if self.host_lost() || (!self.agent_baseline_needed() && Instant::now().duration_since(self.last_event_poll) < interval) {
             return;
         }
         self.last_event_poll = Instant::now();
-        let mut params = json!({ "after_seq": self.last_event_seq });
+        self.discover_listed_jobs();
+        self.ensure_agent_revision_reads();
+        if self.pending.values().any(|pending| matches!(&pending.action, PendingAction::PollEvents)) { return; }
+        self.prune_agent_follow(Instant::now());
+        let mut params = json!({ "after_seq": self.begin_agent_poll() });
         if let Some(token) = self.ui.token.clone() {
             params["view_id"] = json!(self.ui.view_id);
             params["view_token"] = json!(token);
@@ -127,7 +131,13 @@ impl DesktopApp {
 
     pub(super) fn handle_events(&mut self, value: Value) {
         self.prune_pending_save_notices(Instant::now());
+        let baseline_changes = self.baseline_resync_changes(&value);
         self.take_ui_runs(&value);
+        if std::mem::take(&mut self.agent_follow.home_in_poll) {
+            self.agent_follow.home_follow_cutoff = value.get("events").and_then(Value::as_array)
+                .and_then(|events| events.iter().filter_map(|event| event.get("event_seq").and_then(Value::as_u64)).max())
+                .unwrap_or_else(|| self.agent_delivery_cursor());
+        }
         let events = value
             .get("events")
             .and_then(Value::as_array)
@@ -138,36 +148,55 @@ impl DesktopApp {
         let mut document_moved = value
             .get("resync_required")
             .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let mut list_changed = false;
+            .unwrap_or(false) && baseline_changes.is_none_or(|(active_changed, _)| active_changed);
+        let mut list_changed = baseline_changes.is_some_and(|(_, list_changed)| list_changed);
+        if document_moved && baseline_changes.is_some() {
+            let revision = self.active.as_ref().and_then(|active| value.get("artifacts")?.as_array()?.iter()
+                .find(|artifact| artifact.get("id").and_then(Value::as_str) == Some(active.id.as_str()))?
+                .get("revision")?.as_u64());
+            if let Some(revision) = revision {
+                document_moved = self.advance_event_revision(&json!({ "event": "artifact.changed", "revision": revision }));
+            }
+        }
+        let mut delivered = self.agent_delivery_cursor();
+        let can_follow = self.can_follow_agent();
         for event in events {
             let Some(sequence) = event.get("event_seq").and_then(Value::as_u64) else {
                 continue;
             };
-            if sequence <= self.last_event_seq {
+            // The follow baseline can be ahead of a separately delivered proposal batch.
+            if sequence > self.agent_follow.proposal_delivery_seq {
+                self.record_proposal(&event);
+                self.agent_follow.proposal_delivery_seq = sequence;
+            }
+            if sequence <= delivered {
                 continue;
             }
-            self.last_event_seq = sequence;
+            delivered = sequence;
             list_changed = true;
             self.record_save_notice(&event);
+            self.observe_agent_event(&event, sequence, can_follow);
             let about_active = self.active.as_ref().is_some_and(|active| {
                 event.get("artifact_id").and_then(Value::as_str) == Some(active.id.as_str())
             });
-            let newer = match (event.get("revision").and_then(Value::as_u64), self.active.as_ref()) {
-                (Some(revision), Some(active)) => revision > active.revision,
-                _ => false,
-            };
+            self.record_reservation(&event, about_active);
+            let newer = about_active && self.advance_event_revision(&event);
             if about_active && newer {
                 document_moved = true;
             }
             self.record_batch(&event, about_active);
-            self.record_reservation(&event, about_active);
-            self.record_proposal(&event);
         }
+        self.finish_agent_poll(&value, delivered);
         if document_moved {
-            self.refresh_active();
-        } else if list_changed {
+            if self.request_agent_follow_listing() {
+                self.refresh_active_contents();
+            } else {
+                self.refresh_active();
+            }
+        } else if list_changed && !self.request_agent_follow_listing() {
             self.call("workspace.list", json!({}), PendingAction::WorkspaceList);
+        } else if !list_changed {
+            self.request_agent_follow_listing();
         }
     }
 

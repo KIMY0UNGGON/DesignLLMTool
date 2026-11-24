@@ -2,8 +2,7 @@
 //!
 //! Window modes:
 //! - `smoke` / invisible: a popup window kept off-screen with no WS_VISIBLE. It is never shown and never activated.
-//! - embedded (`parent` given, visible): a WS_CHILD window that fills the parent's client area. It follows the parent's
-//!   size by polling, and never takes focus or z-order from the parent.
+//! - anchored (`parent` given, visible): an independent top-level window whose lifetime follows the desktop window.
 //! - standalone visible (no parent, not invisible): a normal window for an explicit user request.
 //!
 //! Isolation: navigation is limited to the preview origin, external URI schemes (mailto:, tel:, ...) never launch
@@ -46,25 +45,33 @@ use webview2_com::{
 };
 use windows::core::{w, Interface, BOOL, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{E_FAIL, HGLOBAL, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromRect, MonitorFromWindow, HMONITOR, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
 use windows::Win32::System::Com::{CoInitializeEx, IStream, COINIT_APARTMENTTHREADED, STREAM_SEEK_SET};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EnumChildWindows, EnumWindows,
-    GetClientRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, PeekMessageW, RegisterClassW, SetWindowPos,
-    TranslateMessage, CW_USEDEFAULT, MSG, PM_REMOVE, SWP_NOACTIVATE, SWP_NOZORDER, WM_CLOSE, WNDCLASSW, WS_CHILD,
-    WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_VISIBLE,
+    GetClientRect, GetWindowPlacement, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, PeekMessageW, RegisterClassW, SetWindowPlacement, SetWindowPos, ShowWindow,
+    TranslateMessage, CW_USEDEFAULT, HWND_TOP, MSG, PM_REMOVE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WINDOWPLACEMENT, WM_CLOSE, WNDCLASSW,
+    WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_MAXIMIZE, WS_OVERLAPPEDWINDOW, WS_POPUP, WS_VISIBLE,
 };
 
 use crate::isolation::{self, Containment};
 use crate::runtime::RuntimeSelection;
 use crate::{PREVIEW_ORIGIN, READY_MESSAGE};
 
+#[path = "host_bounds.rs"]
+mod bounds;
+
+#[cfg(test)]
+#[path = "host_tests.rs"]
+mod tests;
+
 const OFFSCREEN: i32 = -32_000;
 const RPC_E_CHANGED_MODE: i32 = 0x8001_0106u32 as i32;
 const ENVIRONMENT_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Stop flag for embedded and visible hosts. Set by `request_stop`, cleared at the start of each session.
+/// Stop flag for anchored and visible hosts. Set by `request_stop`, cleared at the start of each session.
 static STOP: AtomicBool = AtomicBool::new(false);
 
 pub(crate) fn request_stop() {
@@ -196,18 +203,76 @@ fn client_size(hwnd: HWND) -> (i32, i32) {
     ((rc.right - rc.left).max(1), (rc.bottom - rc.top).max(1))
 }
 
+fn monitor_info(monitor: HMONITOR) -> Option<MONITORINFO> {
+    let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    unsafe { GetMonitorInfoW(monitor, &mut info).as_bool() }.then_some(info)
+}
+
+fn restored_window_placement() -> Option<(RECT, RECT, u32, u32)> {
+    let (rect, show, flags) = bounds::parse_placement(&std::env::var("DESIGNLLM_PREVIEW_RECT").ok()?)?;
+    let info = monitor_info(unsafe { MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST) })?;
+    let screen = bounds::clamp_rect(rect, info.rcWork)?;
+    Some((screen, bounds::workspace_rect(screen, info.rcMonitor, info.rcWork)?, show, flags))
+}
+
+fn initial_window_rect(owner: HWND) -> Result<RECT, HostError> {
+    let mut rect = RECT::default();
+    unsafe { GetWindowRect(owner, &mut rect)?; }
+    let info = monitor_info(unsafe { MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST) })
+        .ok_or_else(|| HostError::Win("could not get the owner's monitor work area".into()))?;
+    bounds::initial_rect(rect, info.rcWork).ok_or_else(|| HostError::Win("invalid monitor work area".into()))
+}
+
+fn parse_z_order(value: &str) -> Option<((isize, u32), (isize, u32))> {
+    let mut parts = value.split(',');
+    let result = ((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?), (parts.next()?.parse().ok()?, parts.next()?.parse().ok()?));
+    parts.next().is_none().then_some(result)
+}
+
+fn restore_z_order(hwnd: HWND) {
+    let Some((previous, editor)) = std::env::var("DESIGNLLM_PREVIEW_Z_AFTER").ok().and_then(|value| parse_z_order(&value)) else { return; };
+    for (after, pid) in [previous, editor] {
+        let target = if after == 0 && pid == 0 && previous == (0, 0) { HWND_TOP } else {
+            let target = HWND(after as *mut _);
+            let mut actual_pid = 0;
+            if pid == 0 || target == hwnd || !unsafe { IsWindow(Some(target)).as_bool() } { continue; }
+            unsafe { GetWindowThreadProcessId(target, Some(&mut actual_pid)); }
+            if actual_pid != pid { continue; }
+            target
+        };
+        if unsafe { SetWindowPos(hwnd, Some(target), 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE) }.is_ok() { break; }
+    }
+}
+
 fn create_host_window(parent: Option<HWND>, invisible: bool) -> Result<HWND, HostError> {
     register_class()?;
     let module = unsafe { GetModuleHandleW(None)? };
     let instance = Some(windows::Win32::Foundation::HINSTANCE(module.0));
     let hwnd = match parent {
         Some(p) => {
-            let (w, h) = client_size(p);
-            let mut style = WS_CHILD | WS_CLIPCHILDREN;
-            if !invisible {
-                style |= WS_VISIBLE;
-            }
-            unsafe { CreateWindowExW(Default::default(), w!("DesignLLMWebPreviewHost"), w!("DesignLLM Web Preview"), style, 0, 0, w, h, Some(p), None, instance, None)? }
+            let title = wide(&std::env::var("DESIGNLLM_PREVIEW_TITLE").unwrap_or_else(|_| "DesignLLM Web Preview".into()));
+            let restored = if invisible { None } else { restored_window_placement() };
+            let style = if invisible { WS_POPUP } else if restored.is_some_and(|(_, _, show, _)| show == 3) {
+                WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_MAXIMIZE
+            } else { WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN };
+            let rect = if invisible { None } else { Some(match restored { Some((screen, _, _, _)) => screen, None => initial_window_rect(p)? }) };
+            let (x, y, width, height) = rect.map_or((CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768), |r| (r.left, r.top, r.right - r.left, r.bottom - r.top));
+            let hwnd = unsafe { CreateWindowExW(Default::default(), w!("DesignLLMWebPreviewHost"), PCWSTR(title.as_ptr()), style, x, y, width, height, None, None, instance, None)? };
+            if !invisible { restore_z_order(hwnd); }
+            if let Some((_, normal, show, flags)) = restored {
+                let mut placement = WINDOWPLACEMENT { length: std::mem::size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
+                let result = unsafe { GetWindowPlacement(hwnd, &mut placement) }.and_then(|()| {
+                    bounds::apply_placement(&mut placement, normal, show, flags);
+                    unsafe { SetWindowPlacement(hwnd, &placement) }
+                });
+                if let Err(error) = result {
+                    unsafe { let _ = DestroyWindow(hwnd); }
+                    return Err(error.into());
+                }
+                unsafe { let _ = ShowWindow(hwnd, bounds::show_without_activation(show)); }
+            } else if !invisible { unsafe { let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE); } }
+            if !invisible { restore_z_order(hwnd); }
+            hwnd
         }
         None if invisible => unsafe {
             CreateWindowExW(
@@ -260,7 +325,7 @@ fn remaining_timeout(deadline: Option<Instant>, fallback: Duration) -> Duration 
 }
 
 /// Pumps messages until a value arrives, the deadline passes, or the sender is gone.
-fn pump_until<T>(rx: &Receiver<T>, timeout: Duration, what: &'static str, cancellation: Option<&AtomicBool>) -> Result<T, HostError> {
+fn pump_until<T>(rx: &Receiver<T>, timeout: Duration, what: &'static str, cancellation: Option<&AtomicBool>, hwnd: HWND, owner: Option<HWND>) -> Result<T, HostError> {
     let deadline = Instant::now() + timeout;
     loop {
         if cancellation.is_some_and(|cancel| cancel.load(Ordering::SeqCst)) {
@@ -275,8 +340,15 @@ fn pump_until<T>(rx: &Receiver<T>, timeout: Duration, what: &'static str, cancel
             return Err(HostError::Timeout(what));
         }
         pump_messages();
+        if window_gone(hwnd, owner) {
+            return Err(HostError::Cancelled(what));
+        }
         std::thread::sleep(Duration::from_millis(2));
     }
+}
+
+fn window_gone(hwnd: HWND, owner: Option<HWND>) -> bool {
+    unsafe { !IsWindow(Some(hwnd)).as_bool() || owner.is_some_and(|owner| !IsWindow(Some(owner)).as_bool()) }
 }
 
 /// Visibility of this process's windows (host, children, and all top-level windows of this process).
@@ -346,6 +418,11 @@ pub(crate) fn run_session(options: SessionOptions<'_>) -> DltResult<SessionRepor
     let parent_hwnd = options.parent.map(|v| HWND(v as *mut core::ffi::c_void));
     let hwnd = create_host_window(parent_hwnd, options.invisible).map_err(|e| to_dlt(e, ErrorCode::Internal))?;
 
+    if std::env::var_os("DESIGNLLM_PREVIEW_REPORT_WINDOW").is_some() {
+        let mut out = std::io::stdout().lock();
+        let _ = out.write_all(b"\ndesignllm.preview.window.ready\n").and_then(|()| out.flush());
+    }
+
     // Everything after window creation runs inside this guard, so the window is destroyed on every error path.
     struct WindowGuard(HWND);
     impl Drop for WindowGuard {
@@ -358,8 +435,16 @@ pub(crate) fn run_session(options: SessionOptions<'_>) -> DltResult<SessionRepor
     let guard = WindowGuard(hwnd);
     let mut report = SessionReport::default();
     let result = run_inside(&options, hwnd, &mut report, overall_deadline, containment);
+    let closed = !options.smoke && window_gone(hwnd, parent_hwnd);
     drop(guard);
-    result.map(|_| report)
+    finish_session(result, closed, options.cancellation.as_ref().is_some_and(|cancel| cancel.load(Ordering::SeqCst)), report)
+}
+
+fn finish_session(result: DltResult<()>, closed: bool, cancelled: bool, report: SessionReport) -> DltResult<SessionReport> {
+    match result {
+        Err(error) if closed && !cancelled && error.code == ErrorCode::Canceled => Ok(report),
+        other => other.map(|()| report),
+    }
 }
 
 /// In-memory stream holding `bytes`, positioned at its start.
@@ -479,7 +564,7 @@ fn run_inside(
                 )
             })?;
         }
-        match pump_until(&rx, remaining_timeout(overall_deadline, ENVIRONMENT_TIMEOUT), "environment", options.cancellation.as_deref()) {
+        match pump_until(&rx, remaining_timeout(overall_deadline, ENVIRONMENT_TIMEOUT), "environment", options.cancellation.as_deref(), hwnd, parent_hwnd_of(options)) {
             Ok(Ok(env)) => env,
             Ok(Err(e)) => {
                 return Err(DltError::new(
@@ -508,7 +593,7 @@ fn run_inside(
         unsafe {
             environment.CreateCoreWebView2Controller(hwnd, &handler).map_err(|e| to_dlt(HostError::from(e), ErrorCode::Internal))?;
         }
-        match pump_until(&rx, remaining_timeout(overall_deadline, ENVIRONMENT_TIMEOUT), "controller", options.cancellation.as_deref()) {
+        match pump_until(&rx, remaining_timeout(overall_deadline, ENVIRONMENT_TIMEOUT), "controller", options.cancellation.as_deref(), hwnd, parent_hwnd_of(options)) {
             Ok(Ok(c)) => ControllerGuard(c),
             Ok(Err(e)) => return Err(to_dlt(e, ErrorCode::Internal)),
             Err(e) => return Err(to_dlt(e, ErrorCode::Internal)),
@@ -522,6 +607,7 @@ fn run_inside(
     };
 
     let (width, height) = client_size(hwnd);
+    let mut last_size = (0, 0);
     let (msg_tx, msg_rx) = mpsc::channel::<String>();
     let (nav_tx, nav_rx) = mpsc::channel::<bool>();
     let blocked_requests = Arc::new(AtomicUsize::new(0));
@@ -565,7 +651,7 @@ fn run_inside(
                 .AddScriptToExecuteOnDocumentCreated(PCWSTR(script.as_ptr()), &handler)
                 .map_err(|e| to_dlt(HostError::from(e), ErrorCode::Internal))?
         };
-        match pump_until(&rx, remaining_timeout(overall_deadline, ENVIRONMENT_TIMEOUT), "document script", options.cancellation.as_deref()) {
+        match pump_until(&rx, remaining_timeout(overall_deadline, ENVIRONMENT_TIMEOUT), "document script", options.cancellation.as_deref(), hwnd, parent_hwnd_of(options)) {
             Ok(Ok(())) => {}
             Ok(Err(e)) => return Err(to_dlt(HostError::from(e), ErrorCode::Internal)),
             Err(e) => return Err(to_dlt(e, ErrorCode::Internal)),
@@ -798,7 +884,8 @@ fn run_inside(
 
     let page_deadline = Instant::now() + options.timeout;
     let deadline = overall_deadline.map_or(page_deadline, |overall| overall.min(page_deadline));
-    let mut last_size = client_size(hwnd);
+    bounds::sync_bounds(&mut last_size, client_size(hwnd), |rect| unsafe { controller.SetBounds(rect) })
+        .map_err(|e| to_dlt(HostError::from(e), ErrorCode::Internal))?;
     let mut ready = false;
     #[cfg(test)]
     let mut input_step: isize = 0;
@@ -853,6 +940,9 @@ fn run_inside(
         if ready_id.is_some() && entry_served.get() == Some(false) {
             return Err(DltError::new(ErrorCode::NotFound, "preview entry could not be served"));
         }
+        if !options.smoke && window_gone(hwnd, parent_hwnd_of(options)) {
+            break;
+        }
         if let Some(id) = ready_id.as_ref().filter(|_| entry_dom_ready.get() && entry_served.get() == Some(true)) {
             let mut out = std::io::stdout().lock();
             write!(out, "\n{READY_MESSAGE} {id}\n")?;
@@ -871,22 +961,11 @@ fn run_inside(
                 ));
             }
         } else {
-            if STOP.load(Ordering::SeqCst) || unsafe { !IsWindow(Some(hwnd)).as_bool() } {
+            if STOP.load(Ordering::SeqCst) {
                 break;
             }
-            if let Some(parent) = parent_hwnd_of(options) {
-                if unsafe { !IsWindow(Some(parent)).as_bool() } {
-                    break;
-                }
-                let size = client_size(parent);
-                if size != last_size {
-                    last_size = size;
-                    unsafe {
-                        let _ = SetWindowPos(hwnd, None, 0, 0, size.0, size.1, SWP_NOACTIVATE | SWP_NOZORDER);
-                        let _ = controller.SetBounds(RECT { left: 0, top: 0, right: size.0, bottom: size.1 });
-                    }
-                }
-            }
+            let size = client_size(hwnd);
+            let _ = bounds::sync_bounds(&mut last_size, size, |rect| unsafe { controller.SetBounds(rect) });
         }
         std::thread::sleep(Duration::from_millis(5));
     }

@@ -310,7 +310,7 @@ impl McpServer {
                     "title": "DesignLLMTool",
                     "version": env!("CARGO_PKG_VERSION"),
                 },
-                "instructions": "Edit DesignLLMTool artifacts through these tools. Every change is a ChangeSet with request_id, base_revision, and allowed_intents; repeat the same request_id after a timeout instead of sending a new one. In this build some v1.2 fields and operations are refused with UNSUPPORTED_OPERATION; read artifact_validate's capability report before using them. Usage manuals for each task kind are MCP resources (designllm://manual/index) and prompts.",
+                "instructions": "Edit DesignLLMTool artifacts through these tools. Every change is a ChangeSet with request_id, base_revision, and allowed_intents; repeat the same request_id after a timeout instead of sending a new one. In this build some v1.2 fields and operations are refused with UNSUPPORTED_OPERATION; read artifact_validate's capability report before using them. Usage manuals for each task kind are MCP resources (designllm://manual/index) and prompts. Read designllm://manual/design-quality before you build visual Canvas, Slides or Figure work.",
             }),
         ))
     }

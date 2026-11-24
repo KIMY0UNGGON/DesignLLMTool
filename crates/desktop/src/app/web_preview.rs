@@ -1,3 +1,8 @@
+mod lifecycle;
+#[cfg(windows)]
+mod placement;
+pub(super) use lifecycle::PreviewState;
+
 use super::*;
 use std::io::{Read, Seek, SeekFrom};
 
@@ -11,25 +16,44 @@ struct MaterializedPreview {
 
 pub(super) struct PreviewRun {
     id: String,
+    generation: u64,
     deadline: Instant,
     preview: MaterializedPreview,
     ready_frame: Vec<u8>,
     matched: usize,
 }
 
+#[cfg(windows)]
+pub(super) struct FocusGuard {
+    anchor: isize,
+    matched: usize,
+    ready: bool,
+    deadline: Instant,
+}
+
+#[cfg(windows)]
+const WINDOW_READY_FRAME: &[u8] = b"\ndesignllm.preview.window.ready\n";
+
 fn preview_timeout() -> DltError {
     DltError::new(ErrorCode::Unavailable, "제한 시간 안에 웹 미리보기의 READY 응답을 받지 못했습니다")
 }
 
 fn closed_before_ready(stderr: &str, exit: std::process::ExitStatus) -> DltError {
+    if exit.success() {
+        return DltError::new(ErrorCode::Canceled, "READY 응답 전에 웹 미리보기 창이 닫혔습니다");
+    }
     let last = stderr.lines().rev().map(str::trim).find(|line| !line.is_empty());
-    if let Some(line) = last.filter(|_| !exit.success()) {
+    if let Some(line) = last {
         return serde_json::from_str(line).unwrap_or_else(|_| DltError::new(ErrorCode::Unavailable, line));
     }
     DltError::new(ErrorCode::Unavailable, format!("READY 응답 전에 웹 미리보기 창이 닫혔습니다 ({exit})"))
 }
 
 fn child_reported_ready(child: &mut Child, run: &mut PreviewRun) -> DltResult<bool> {
+    child_reported_frame(child, &run.ready_frame, &mut run.matched)
+}
+
+fn child_reported_frame(child: &mut Child, frame: &[u8], matched: &mut usize) -> DltResult<bool> {
     #[cfg(windows)]
     {
         use std::os::windows::io::AsRawHandle;
@@ -48,11 +72,11 @@ fn child_reported_ready(child: &mut Child, run: &mut PreviewRun) -> DltResult<bo
                 let count = stdout.read(&mut bytes[..limit])?;
                 // The frame starts and ends with LF and has no internal LF.
                 for &byte in &bytes[..count] {
-                    if byte == run.ready_frame[run.matched] {
-                        run.matched += 1;
-                        if run.matched == run.ready_frame.len() { return Ok(true); }
+                    if byte == frame[*matched] {
+                        *matched += 1;
+                        if *matched == frame.len() { return Ok(true); }
                     } else {
-                        run.matched = usize::from(byte == b'\n');
+                        *matched = usize::from(byte == b'\n');
                     }
                 }
                 Ok(false)
@@ -64,7 +88,7 @@ fn child_reported_ready(child: &mut Child, run: &mut PreviewRun) -> DltResult<bo
     }
     #[cfg(not(windows))]
     {
-        let _ = (child, run);
+        let _ = (child, frame, matched);
         Err(DltError::unsupported("웹 미리보기는 Windows에서만 열 수 있습니다"))
     }
 }
@@ -78,20 +102,10 @@ impl DesktopApp {
     }
 
     pub(super) fn start_materialized_web_preview(&mut self) {
-        let Some(active) = self.active.as_ref() else {
-            return;
-        };
-        if active.kind != ArtifactKind::WebCode {
-            return;
-        }
-        self.call(
-            "web.materialize",
-            json!({
-                "artifact_id": active.id,
-                "expected_revision": active.revision,
-            }),
-            PendingAction::MaterializeWeb,
-        );
+        self.collect_exited_preview_before_request();
+        self.cancel_materializing_previews();
+        let ticket = self.send_web_materialization();
+        self.track_explicit_materialization(ticket);
     }
 
     /// `view.play` (canvas, D09): the canvas exported as HTML to a scratch file, shown in the WebView2 preview window.
@@ -125,14 +139,21 @@ impl DesktopApp {
             if Instant::now() >= run.deadline {
                 return Err(preview_timeout());
             }
-            if !self.preview_target_is_current(&preview) {
-                return Err(DltError::new(ErrorCode::RevisionConflict, "미리보기를 준비하는 동안 작업물이나 판 번호가 바뀌었습니다"));
-            }
         }
-        self.launch_web_preview(&preview.entry_path, run.map(|r| r.run_id.as_str()))?;
+        if !self.preview_target_is_current(&preview) {
+            return if run.is_some() { Err(DltError::new(ErrorCode::RevisionConflict, "미리보기를 준비하는 동안 작업물이나 판 번호가 바뀌었습니다")) } else { Ok(()) };
+        }
+        if self.refresh_child_has_closed(preview.revision) { return Ok(()); }
+        self.begin_preview_launch();
+        let mut launched = self.launch_web_preview(&preview.entry_path, run.map(|r| r.run_id.as_str()));
+        self.end_preview_launch(launched.is_ok());
+        if let Err(error) = &mut launched {
+            error.message.push_str(" 미리보기를 다시 열어 주세요");
+        }
+        launched?;
         if let Some(run) = run {
             let ready_frame = format!("\n{} {}\n", designllm_web_preview::READY_MESSAGE, run.run_id).into_bytes();
-            self.web_preview_run = Some(PreviewRun { id: run.run_id.clone(), deadline: run.deadline, preview, ready_frame, matched: 0 });
+            self.web_preview_run = Some(PreviewRun { id: run.run_id.clone(), generation: self.web_preview_state.child_generation, deadline: run.deadline, preview, ready_frame, matched: 0 });
         }
         Ok(())
     }
@@ -172,14 +193,28 @@ impl DesktopApp {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x08000000);
         }
-        if self.web_preview_run.is_some() {
-            self.poll_web_preview_child();
-        }
+        #[cfg(windows)]
+        let refresh = self.preview_is_refresh();
+        #[cfg(windows)]
+        let focus_anchor = if refresh && self.parent_hwnd.is_some() {
+            placement::foreground_to_preserve(self.web_preview_child.as_ref().map(Child::id))
+        } else { None };
+        self.poll_web_preview_child();
+        #[cfg(windows)]
+        placement::hand_over(&mut command, self.web_preview_child.as_ref().and_then(|child| placement::window_placement(child.id(), self.parent_hwnd)), refresh);
         self.stop_web_preview_child()?;
         if let Some(old) = self.web_preview_run.take() {
             self.complete_ui_run(&old.id, None, Some(DltError::new(ErrorCode::Canceled, "다른 미리보기를 요청해 이전 창의 READY 대기를 취소했습니다")));
         }
+        if let Some(active) = &self.active {
+            command.env("DESIGNLLM_PREVIEW_TITLE", format!("{} - 웹 미리보기", active.title));
+        }
         command.env_remove(designllm_web_preview::REPORT_READY_ENV);
+        command.env_remove("DESIGNLLM_PREVIEW_REPORT_WINDOW");
+        #[cfg(windows)]
+        if focus_anchor.is_some() && ready_id.is_none() {
+            command.env("DESIGNLLM_PREVIEW_REPORT_WINDOW", "1").stdout(std::process::Stdio::piped());
+        }
         if let Some(id) = ready_id {
             command.env(designllm_web_preview::REPORT_READY_ENV, id).stdout(std::process::Stdio::piped());
         }
@@ -193,19 +228,47 @@ impl DesktopApp {
             let _ = std::fs::remove_file(path);
             DltError::new(ErrorCode::Unavailable, format!("웹 미리보기를 열지 못했습니다: {error}"))
         })?);
+        let deferred_notice = self.web_preview_state.deferred_exit_notice.take();
+        self.track_web_preview();
+        #[cfg(windows)]
+        if ready_id.is_none() {
+            self.web_preview_state.focus_guard = focus_anchor.map(|anchor| FocusGuard { anchor, matched: 0, ready: false, deadline: Instant::now() + Duration::from_secs(2) });
+        }
+        if let Some(message) = deferred_notice { self.set_error(message); }
         Ok(())
     }
 
     pub(super) fn stop_web_preview_child(&mut self) -> std::io::Result<()> {
         if let Some(child) = self.web_preview_child.as_mut() {
-            if child.try_wait()?.is_none() {
-                child.kill()?;
-                child.wait()?;
-            }
+            let exited = match child.try_wait()? {
+                Some(exit) => Some(exit),
+                None => match child.kill() {
+                    Ok(()) => { child.wait()?; None }
+                    Err(error) => match child.try_wait()? {
+                        Some(exit) => Some(exit),
+                        None => return Err(error),
+                    },
+                },
+            };
             self.web_preview_child = None;
-            let _ = std::fs::remove_file(preview_stderr_path());
+            #[cfg(windows)]
+            { self.web_preview_state.focus_guard = None; }
+            let path = preview_stderr_path();
+            if exited.is_some_and(|exit| !exit.success()) {
+                self.report_preview_failure(&read_preview_stderr(&path));
+            }
+            let _ = std::fs::remove_file(path);
         }
         Ok(())
+    }
+
+    fn report_preview_failure(&mut self, stderr: &str) {
+        if let Some(message) = super::messages::preview_exit_message(stderr, false) {
+            if self.web_preview_state.generation != self.web_preview_state.child_generation {
+                self.web_preview_state.deferred_exit_notice = Some(message.to_owned());
+            }
+            self.set_error(message.to_owned());
+        }
     }
 
     /// The materialization reply can arrive after the caller's deadline. Forget its ticket so it cannot launch a window.
@@ -221,30 +284,65 @@ impl DesktopApp {
 
     pub(super) fn poll_web_preview_child(&mut self) {
         self.expire_materializing_previews();
+        self.update_web_preview();
         if self.host_lost() {
-            // The native preview covers the editor, including egui's reconnect and quit buttons.
+            self.cancel_materializing_previews();
+            self.web_preview_state = Default::default();
             self.web_preview_run = None;
             if let Err(error) = self.stop_web_preview_child() {
                 self.set_error(format!("웹 미리보기 창을 닫지 못했습니다 ({error})"));
             }
             return;
         }
-        let current = self.web_preview_run.as_ref().is_none_or(|run| self.preview_target_is_current(&run.preview));
+        #[cfg(windows)]
+        if let (Some(guard), Some(child)) = (&mut self.web_preview_state.focus_guard, &mut self.web_preview_child) {
+            let mut failed = false;
+            if !guard.ready && Instant::now() < guard.deadline {
+                match child_reported_frame(child, WINDOW_READY_FRAME, &mut guard.matched) {
+                    Ok(ready) => guard.ready = ready,
+                    Err(_) => failed = true,
+                }
+            }
+            if failed || placement::preserve_foreground(guard.anchor, child.id(), guard.ready, Instant::now() >= guard.deadline) {
+                self.web_preview_state.focus_guard = None;
+            }
+        }
+        self.poll_preview_generation(self.web_preview_state.child_generation);
+    }
+
+    pub(super) fn preview_focus_pending(&self) -> bool {
+        #[cfg(windows)] { self.web_preview_state.focus_guard.is_some() }
+        #[cfg(not(windows))] { false }
+    }
+
+    fn poll_preview_generation(&mut self, generation: u64) {
+        if generation != self.web_preview_state.child_generation { return; }
+        let current = self.web_preview_run.as_ref().is_none_or(|run| run.generation == generation && self.preview_target_is_current(&run.preview));
         let Some(child) = self.web_preview_child.as_mut() else { return };
         let pid = child.id();
         let outcome = match child.try_wait() {
             Ok(Some(exit)) => {
                 self.web_preview_child = None;
+                #[cfg(windows)]
+                { self.web_preview_state.focus_guard = None; }
+                let owns_request = generation == self.web_preview_state.generation;
+                if owns_request {
+                    self.cancel_materializing_previews();
+                    self.web_preview_state = Default::default();
+                } else {
+                    self.cancel_preview_refresh();
+                }
                 let path = preview_stderr_path();
                 let stderr = read_preview_stderr(&path);
                 let _ = std::fs::remove_file(path);
-                if let Some(message) = super::messages::preview_exit_message(&stderr, exit.success()) {
-                    self.set_error(message.to_owned());
+                if !exit.success() {
+                    self.report_preview_failure(&stderr);
                 }
                 Err(closed_before_ready(&stderr, exit))
             }
             Ok(None) => {
                 let Some(run) = &mut self.web_preview_run else { return };
+                if run.generation != generation { return; }
                 if Instant::now() >= run.deadline {
                     Err(preview_timeout())
                 } else if !current {
@@ -259,10 +357,15 @@ impl DesktopApp {
             }
             Err(error) => Err(DltError::from(error)),
         };
-        let Some(run) = self.web_preview_run.take() else { return };
+        if self.web_preview_run.as_ref().is_none_or(|run| run.generation != generation) { return; }
+        let run = self.web_preview_run.take().unwrap();
         if let Err(mut error) = outcome {
-            if let Err(stop) = self.stop_web_preview_child() {
-                error.message.push_str(&format!(" (미리보기 종료 실패: {stop})"));
+            let keep = error.code == ErrorCode::RevisionConflict && self.screen_is_editor()
+                && self.active.as_ref().is_some_and(|active| active.id == run.preview.artifact_id);
+            if !keep {
+                if let Err(stop) = self.stop_web_preview_child() {
+                    error.message.push_str(&format!(" (미리보기 종료 실패: {stop})"));
+                }
             }
             self.complete_ui_run(&run.id, None, Some(error));
         } else {
@@ -319,14 +422,15 @@ mod tests {
     /// take this lock, so that one test does not read or remove the file of another.
     static SHARED_STDERR_FILE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    fn shared_stderr_file() -> std::sync::MutexGuard<'static, ()> {
+    pub(super) fn shared_stderr_file() -> std::sync::MutexGuard<'static, ()> {
         SHARED_STDERR_FILE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn fake_child() -> Command {
+    pub(super) fn fake_child() -> Command {
         let script = r#"
             while ($null -ne ($line = [Console]::ReadLine())) {
                 if ($line -eq 'exit') { exit 1 }
+                if ($line -eq 'close') { exit 0 }
                 if ($line -eq 'end-frame') {
                     [Console]::Out.Write(" $env:DESIGNLLM_PREVIEW_REPORT_READY" + [char]10)
                     [Console]::Out.Flush()
@@ -338,6 +442,34 @@ mod tests {
         let mut command = Command::new("powershell.exe");
         command.args(["-NoProfile", "-NonInteractive", "-Command", script]).stdin(std::process::Stdio::piped());
         command
+    }
+
+    #[test]
+    fn focus_window_ready_frame_is_detected_across_pipe_reads() {
+        use std::io::Write;
+        use std::os::windows::process::CommandExt;
+        let mut command = Command::new("powershell.exe");
+        command.args(["-NoProfile", "-NonInteractive", "-Command", r#"
+            $null = [Console]::ReadLine(); [Console]::Out.Write("`ndesignllm.preview."); [Console]::Out.Flush();
+            $null = [Console]::ReadLine(); [Console]::Out.Write("window.ready`n"); [Console]::Out.Flush();
+            $null = [Console]::ReadLine()
+        "#]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).creation_flags(0x08000000);
+        let mut child = command.spawn().unwrap();
+        writeln!(child.stdin.as_mut().unwrap(), "first").unwrap();
+        let mut matched = 0;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while matched < b"\ndesignllm.preview.".len() {
+            assert!(Instant::now() < deadline);
+            assert!(!child_reported_frame(&mut child, WINDOW_READY_FRAME, &mut matched).unwrap());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        writeln!(child.stdin.as_mut().unwrap(), "second").unwrap();
+        while !child_reported_frame(&mut child, WINDOW_READY_FRAME, &mut matched).unwrap() {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     fn tell_child(window: &mut Window, script: &str) {
@@ -436,6 +568,25 @@ mod tests {
         assert!(window.app.web_preview_child.is_none());
     }
 
+    #[test]
+    fn user_close_before_ready_is_canceled_without_notice_and_can_reopen() {
+        let _shared = shared_stderr_file();
+        let mut host = Host::start();
+        let web = host.create("web_code", "웹");
+        let mut window = Window::open(&mut host, &web);
+        window.app.web_runtime_unavailable = None;
+        window.app.fake_preview_command = Some(fake_child());
+        let run = window.agent_run_granted(&mut host, "web.preview", json!({}), "read", &[]);
+        tell_child(&mut window, "close");
+        let outcome = preview_outcome(&mut window, &mut host, &run);
+        assert_eq!(outcome["status"], "failed");
+        assert_eq!(outcome["error"]["code"], "CANCELED");
+        assert!(window.message().is_none(), "closing the preview is not an error notice");
+        window.app.fake_preview_command = Some(fake_child());
+        window.step(&mut host, "web.preview", json!({})).unwrap();
+        assert!(window.app.web_preview_child.is_some());
+    }
+
     /// Starts a child that writes `stderr` (one line, when given) to the preview's stderr file and exits with `code`, hands it to a
     /// window, and returns the sentence the window shows once it has taken the ended child down.
     fn end_preview(stderr: Option<&str>, code: u32) -> Option<String> {
@@ -478,6 +629,8 @@ mod tests {
         }
         assert_eq!(end_preview(None, 1).as_deref(), Some("미리보기 창이 예기치 않게 닫혔습니다. 다시 열어 주세요"), "a failure with no reason");
         assert_eq!(end_preview(None, 0), None, "a normal close shows nothing");
+        let stale = format!("{{\"message\":\"{}; the preview was closed\"}}", designllm_web_preview::PREVIEW_UNRESPONSIVE);
+        assert_eq!(end_preview(Some(&stale), 0), None, "a successful close ignores old diagnostic text");
     }
 
     /// The stderr file is read from its end, and not at all past `PREVIEW_STDERR_MAX_BYTES`.

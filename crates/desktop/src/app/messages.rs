@@ -529,3 +529,14 @@ mod tests {
         assert!(sentence.contains("상대 주소"), "{sentence}");
     }
 }
+pub(super) const AGENT_FOLLOW_NOTICE: &str = "AI가 다른 작업물을 편집했습니다";
+pub(super) const AGENT_FOLLOW_BUSY: &str = "편집을 마친 후 작업물을 열어 주세요";
+
+pub(super) fn agent_follow_notice(title: &str) -> String {
+    format!("AI가 ‘{title}’ 작업물을 편집했습니다")
+}
+
+pub(super) fn agent_editing(revision: u64, changes: usize) -> String {
+    format!("AI 편집 중 · 리비전 {revision} · 변경 {changes}개")
+}
+

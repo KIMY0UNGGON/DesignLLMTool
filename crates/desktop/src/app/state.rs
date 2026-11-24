@@ -154,6 +154,8 @@ pub(super) struct HeldPdfEvidence {
 pub(super) enum PendingAction {
     Hello,
     WorkspaceList,
+    AgentWorkspaceList { candidates: Vec<(u64, String, String, Screen)> },
+    AgentJob { sequence: u64, artifact_id: String, job_id: String, view_id: String },
     Create,
     Open,
     Context,
@@ -280,6 +282,8 @@ impl PendingAction {
             self,
             Self::Hello
                 | Self::WorkspaceList
+                | Self::AgentWorkspaceList { .. }
+                | Self::AgentJob { .. }
                 | Self::Context
                 | Self::Inspect
                 | Self::DesignSystemList

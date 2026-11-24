@@ -230,7 +230,11 @@ impl DesktopApp {
         if self.icon(ui, palette, "redo", "edit.redo").clicked() && ready {
             self.invoke_ui("edit.redo", json!({}));
         }
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if let Some(status) = self.agent_status(std::time::Instant::now()) {
+            ui.label(egui::RichText::new(status).color(palette.ink_3));
+        }
+        // The optional agent status must not change the action buttons' popup IDs.
+        ui.scope_builder(egui::UiBuilder::new().id("editor-top-actions").layout(Layout::right_to_left(Align::Center)), |ui| {
             ui.spacing_mut().item_spacing.x = theme::GROUP_GAP;
             // The button keeps `surface-2` while its popover is open (`label-button.open`); its id is the next auto id.
             let open = egui::Popup::is_id_open(ui.ctx(), ui.next_auto_id().with("popup"));
@@ -599,9 +603,10 @@ const CALLOUT_ABOVE_BAR: f32 = 8.0;
 /// stands above that bar, so the two do not cover each other.
 impl DesktopApp {
     pub(super) fn draw_error_callout(&mut self, ctx: &Context) {
-        let Some(notice) = self.notices.current(std::time::Instant::now()).cloned() else {
+        let notice = self.notices.current(std::time::Instant::now()).cloned();
+        if notice.is_none() && self.agent_follow.notices.is_empty() {
             return;
-        };
+        }
         let palette = theme::palette(ctx);
         let screen = ctx.content_rect();
         let pass = ctx.cumulative_pass_nr();
@@ -609,16 +614,30 @@ impl DesktopApp {
             .data(|data| data.get_temp::<(u64, Rect)>(egui::Id::new(BOTTOM_BAR)))
             .filter(|(drawn_in, _)| *drawn_in == pass)
             .map_or(screen.bottom() - 16.0, |(_, bar)| bar.top() - CALLOUT_ABOVE_BAR);
-        let requires_acknowledgement = notice.requires_acknowledgement();
-        let buttons = if requires_acknowledgement { &["확인"][..] } else { &[] };
+        let requires_acknowledgement = notice.as_ref().is_some_and(|notice| notice.requires_acknowledgement());
+        let agent_notice = !self.agent_follow.notices.is_empty()
+            && notice.as_ref().is_none_or(|notice| notice.text == super::messages::AGENT_FOLLOW_NOTICE || notice.text == super::messages::AGENT_FOLLOW_BUSY);
+        let buttons = if requires_acknowledgement { &["확인"][..] } else if agent_notice { &["보기"][..] } else { &[] };
+        let agent_text = self.agent_follow.notices.front().map(|id| {
+            let title = self.artifacts.iter().find(|artifact| &artifact.id == id).map_or(id.as_str(), |artifact| artifact.title.as_str());
+            super::messages::agent_follow_notice(title)
+        });
+        let text = if agent_notice && notice.as_ref().is_none_or(|notice| notice.text != super::messages::AGENT_FOLLOW_BUSY) {
+            agent_text.as_deref().unwrap_or(super::messages::AGENT_FOLLOW_NOTICE)
+        } else {
+            notice.as_ref().map_or(super::messages::AGENT_FOLLOW_NOTICE, |notice| notice.text.as_str())
+        };
+        let warning = notice.as_ref().is_some_and(|notice| notice.severity == Severity::Warning);
         Area::new(egui::Id::new("error-callout"))
             .order(Order::Foreground)
             .pivot(egui::Align2::CENTER_BOTTOM)
             .fixed_pos(Pos2::new(screen.center().x, bottom))
             .show(ctx, |ui| {
-                let clicked = widgets::callout(ui, &palette, &notice.text, buttons, notice.severity == Severity::Warning);
+                let clicked = widgets::callout(ui, &palette, text, buttons, warning);
                 if requires_acknowledgement && clicked == Some(0) {
                     self.acknowledge_workspace_notice();
+                } else if agent_notice && clicked == Some(0) {
+                    self.open_agent_notice();
                 }
             });
     }

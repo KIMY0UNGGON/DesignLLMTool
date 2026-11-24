@@ -8,14 +8,13 @@
 //! - `inspect_video_source(path)`: bounded local MP4/WebM type, size, and SHA preflight before asset import.
 //! - `extract_video_poster(path, expected_asset_sha256, timeout)`: bounded first-frame PNG extraction from a local MP4/WebM.
 //!   Use `extract_video_poster_cancellable` when a caller needs per-request cancellation.
-//! - `request_stop()`: ends the current embedded or visible session.
+//! - `request_stop()`: ends the current anchored or visible session.
 //!
 //! Runtime: see `runtime.rs`. A fixed-version runtime (`DESIGNLLM_WEBVIEW2_DIR` or `runtime/webview2`) is preferred.
 //! The installed Evergreen runtime is a labelled development fallback.
 //! This crate never installs or downloads a runtime.
 //!
-//! Host window handle contract for the desktop GUI: pass the HWND of a child window that the GUI created for the
-//! preview area. The host fills that window and follows its size. The host never activates or focuses a window.
+//! Host window handle contract for the desktop GUI: pass the main window HWND as the lifetime anchor of the independent preview window.
 
 mod isolation;
 mod runtime;
@@ -55,7 +54,7 @@ pub const PREVIEW_HOST: &str = "designllm-preview.local";
 pub const PREVIEW_ORIGIN: &str = "https://designllm-preview.local/";
 /// Message a smoke page posts with `window.chrome.webview.postMessage` when it has loaded.
 pub const READY_MESSAGE: &str = "designllm.preview.ready";
-/// The embedded child's run ID. Its stdout acknowledgment is LF, READY_MESSAGE, space, ID, LF.
+/// The preview process's run ID. Its stdout acknowledgment is LF, READY_MESSAGE, space, ID, LF.
 pub const REPORT_READY_ENV: &str = "DESIGNLLM_PREVIEW_REPORT_READY";
 /// Default smoke timeout.
 pub const DEFAULT_SMOKE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -638,7 +637,7 @@ fn extract_video_poster_windows(
     parse_video_poster_message(message, file_name)
 }
 
-/// Asks the current embedded or visible session to end. Smoke sessions end on their own.
+/// Asks the current anchored or visible session to end. Smoke sessions end on their own.
 pub fn request_stop() {
     #[cfg(windows)]
     host::request_stop();

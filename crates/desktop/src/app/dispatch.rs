@@ -782,11 +782,13 @@ impl DesktopApp {
         match id {
             // Screens and navigation.
             "nav.home" => {
+                self.close_document_preview();
                 self.cancel_canvas_image_replacement();
                 self.screen = super::Screen::Home;
                 Ok(())
             }
             "nav.new" => {
+                self.close_document_preview();
                 self.cancel_canvas_image_replacement();
                 self.screen = super::Screen::Home;
                 self.home.focus_request = true;

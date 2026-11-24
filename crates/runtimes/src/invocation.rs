@@ -141,6 +141,7 @@ pub fn prompt_text(spec: &LaunchSpec) -> String {
          - WebCode: no design rule can be read yet. New work: WebCode templates cannot be previewed; edit the page's source files with the op replace_web_source for one file with its expected_hash, or the op mapped_web_edit for one mapped property (sent through changes_validate, then changes_apply).\n\
          - Slides: no design rule can be read yet. New work: no templates exist; add nodes of kind \"text\", \"rectangle\", \"ellipse\", \"line\" or \"path\" with the op add_node (sent through changes_validate, then changes_apply).\n\
          - Figure: no design rule can be read yet. New work: no templates exist; add a plot panel with the op add_panel, put its data with the op put_dataset and set its plot with the op set_plot (sent through changes_validate, then changes_apply); call figure_dataset_edit for cell edits of an existing dataset.\n\
+         - Design quality (Canvas, Slides, Figure): before the first change, choose one visual direction (one palette family, three or four text sizes, one alignment logic) and state it in your progress text. Avoid the patterns listed on the design-quality manual page (designllm://manual/design-quality) where the request allows. Use only real data and sources, and invent no figures. After you build a Canvas or a deck, call artifact_validate, keep choices explicitly requested by the user, and fix the other SLOP_* warnings.\n\
          User request:\n{prompt}\n",
         job = spec.job.job_id,
         attempt = spec.job.attempt_id,
@@ -497,6 +498,24 @@ mod tests {
         let figure = line_starting_with(&text, "- Figure:");
         assert!(["add_panel", "put_dataset", "set_plot", "figure_dataset_edit"].iter().all(|name| figure.contains(name)));
         assert!(!figure.contains("templates_"));
+        let quality = line_starting_with(&text, "- Design quality");
+        for fragment in ["designllm://manual/design-quality", "artifact_validate", "SLOP_*", "real data", "invent no figures"] {
+            assert!(quality.contains(fragment), "the design-quality line omits {fragment}: {quality}");
+        }
+        assert!(quality.contains("keep choices explicitly requested by the user, and fix the other SLOP_* warnings"));
+        assert!(!quality.contains("fix every SLOP_* warning"));
+        assert!(text.find("- Design quality") > text.find("- Figure:"), "the design-quality line follows the kind lines");
+    }
+
+    #[test]
+    fn design_quality_prompt_preserves_requested_closing_and_fixes_other_warnings() {
+        let mut launch = spec("m", "max");
+        launch.request.prompt = "마지막 슬라이드에는 감사합니다만 넣어 주세요".into();
+        let prompt = prompt_text(&launch);
+        let quality = line_starting_with(&prompt, "- Design quality");
+        assert!(prompt.contains("마지막 슬라이드에는 감사합니다만 넣어 주세요"));
+        assert!(quality.contains("keep choices explicitly requested by the user, and fix the other SLOP_* warnings"));
+        assert!(!quality.contains("fix every SLOP_* warning"));
     }
 
     #[test]

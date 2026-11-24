@@ -8,6 +8,7 @@ pub(crate) mod html;
 pub(crate) mod layout;
 pub(crate) mod model;
 pub(crate) mod ops;
+pub(crate) mod quality;
 pub(crate) mod repeat;
 pub(crate) mod templates;
 pub(crate) mod tokens;

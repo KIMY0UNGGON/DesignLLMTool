@@ -465,7 +465,7 @@ fn dashboard() -> CanvasDocument {
         },
         vec![
             leaf("dashboard.brand", NodeKind::Text, at(0, 0, 1, 1), text_style(px(18), "#FFFFFF", true, "left"), "[서비스 이름]", size_spec("fill", "hug")),
-            leaf("dashboard.nav.heading", NodeKind::Text, at(0, 0, 1, 1), text_style(px(11), "#94A3B8", true, "left"), "작업 공간", size_spec("fill", "hug")),
+            leaf("dashboard.nav.heading", NodeKind::Text, at(0, 0, 1, 1), text_style(px(12), "#94A3B8", true, "left"), "작업 공간", size_spec("fill", "hug")),
             leaf("dashboard.nav.overview", NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#FFFFFF", true, "left"), "개요", size_spec("fill", "hug")),
             leaf("dashboard.nav.reports", NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#CBD5E1", false, "left"), "보고서", size_spec("fill", "hug")),
             leaf("dashboard.nav.settings", NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#CBD5E1", false, "left"), "설정", size_spec("fill", "hug")),
@@ -1107,16 +1107,16 @@ pub(crate) fn build(template: &str, size: Size) -> Option<CanvasDocument> {
     })
 }
 
-fn channel(hex: &str, at: usize) -> Option<f64> {
-    let v = u8::from_str_radix(hex.get(at..at + 2)?, 16).ok()?;
+/// Linear value (0..=1) of one 8-bit sRGB channel.
+fn channel(v: u8) -> f64 {
     let s = f64::from(v) / 255.0;
-    Some(if s <= 0.03928 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) })
+    if s <= 0.03928 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
 }
 
 /// Relative luminance of `#RRGGBB` or `#RRGGBBAA` (alpha ignored). None for anything else.
 fn luminance(color: &str) -> Option<f64> {
-    let hex = color.strip_prefix('#').filter(|h| h.is_ascii() && (h.len() == 6 || h.len() == 8))?;
-    Some(0.2126 * channel(hex, 0)? + 0.7152 * channel(hex, 2)? + 0.0722 * channel(hex, 4)?)
+    let (r, g, b, _) = designllm_contracts::design_quality::rgba(color)?;
+    Some(0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b))
 }
 
 /// WCAG contrast ratio of two colours, or None when one is not `#RRGGBB`.
@@ -1269,13 +1269,15 @@ pub(crate) fn lint(doc: &CanvasDocument, scene: &RenderScene, frames: &BTreeMap<
 }
 
 /// The template rules as warnings on a user's document, after layout. They are non-blocking, so an edit is never refused by them.
-/// `LOCKED_NODE` is not a design rule and is left out.
+/// `LOCKED_NODE` is not a design rule and is left out. The anti-slop rules (`quality.rs`) follow them.
 pub(crate) fn design_warnings(doc: &CanvasDocument, scene: &RenderScene, frames: &BTreeMap<String, Rect>) -> Vec<Diagnostic> {
-    lint(doc, scene, frames)
+    let mut out: Vec<Diagnostic> = lint(doc, scene, frames)
         .into_iter()
         .filter(|finding| finding.code != "LOCKED_NODE")
         .map(|finding| Diagnostic { blocking: false, ..finding })
-        .collect()
+        .collect();
+    out.extend(super::quality::warnings(doc, frames));
+    out
 }
 
 fn designllm_contracts_flatten(doc: &CanvasDocument) -> Vec<&Node> {

@@ -20,6 +20,7 @@ pub mod layout_guides;
 pub mod figure_rules;
 pub mod figure_math;
 pub mod design_policy;
+pub mod design_quality;
 pub mod base64;
 pub mod native_envelope;
 pub mod page_losses;

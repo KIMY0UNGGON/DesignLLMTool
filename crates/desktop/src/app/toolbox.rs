@@ -85,6 +85,9 @@ pub(super) struct PendingIcon {
 }
 
 pub(super) const PENDING_ICON: &str = "toolbox-pending-icon";
+pub(super) fn icon_picker_open(ctx: &Context) -> bool {
+    ctx.data(|data| data.get_temp::<PendingIcon>(Id::new(PENDING_ICON)).is_some())
+}
 /// The id of the tile being dragged, in the frame memory (`drag_under_way`).
 const TOOLBOX_DRAG: &str = "toolbox-drag";
 

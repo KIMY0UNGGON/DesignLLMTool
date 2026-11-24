@@ -1346,7 +1346,7 @@ impl Workspace {
             store::merge_store_features(&tx, &new.persisted_features)?;
             store::insert_receipt(&tx, &key, Some(&artifact.id), &StoredResult::Committed { result: result.clone() })?;
             store::insert_event(&tx, Some(&artifact.id), Some(0), if opened { "artifact.opened" } else { "artifact.created" },
-                &json!({ "request_id": key.request_id, "kind": kind, "title": artifact.title, "diagnostics": artifact.diagnostics.len() }))?;
+                &json!({ "request_id": key.request_id, "kind": kind, "title": artifact.title, "diagnostics": artifact.diagnostics.len(), "actor": actor }))?;
             fire(&self.hook, FaultPoint::TxnBeforeCommit)?;
             tx.commit().map_err(sql)?;
         }

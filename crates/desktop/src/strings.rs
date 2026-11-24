@@ -16,6 +16,16 @@ pub fn lint_label(code: &str) -> Option<&'static str> {
         "OUT_OF_PAGE" => "페이지 밖",
         "TEMPLATE_FIT" => "템플릿 크기 맞지 않음",
         "TABLE_OVERFLOW" => "표가 본문보다 넓음",
+        // The anti-slop warnings (contracts `design_quality`): non-blocking, shown on the node they name.
+        "SLOP_EMOJI_ICON" => "이모지를 아이콘으로 씀",
+        "SLOP_PLACEHOLDER_TEXT" => "자리표시 글",
+        "SLOP_FILLER_COPY" => "빈 수사 문구",
+        "SLOP_DEFAULT_GRADIENT" => "보라·남색 그라디언트",
+        "SLOP_HEAVY_SHADOW" => "짙고 넓은 그림자",
+        "SLOP_UNIFORM_CARDS" => "같은 카드가 줄지어 반복",
+        "SLOP_ALL_CENTERED" => "글이 모두 가운데 정렬",
+        "SLOP_TYPE_SCALE" => "글 크기 종류가 많음",
+        "SLOP_GENERIC_CLOSING" => "마지막 쪽이 인사말뿐",
         _ => return None,
     })
 }
@@ -30,7 +40,11 @@ mod tests {
         let tokens: serde_json::Value =
             serde_json::from_str(include_str!("../../../design/tokens.json")).expect("tokens.json parses");
         let rules = tokens.pointer("/text/lint-rules").expect("text.lint-rules");
-        for code in ["TOUCH_TARGET", "CONTRAST", "CLIPPED", "CHILD_OUTSIDE_PARENT", "OUT_OF_PAGE", "TEMPLATE_FIT", "TABLE_OVERFLOW"] {
+        for code in [
+            "TOUCH_TARGET", "CONTRAST", "CLIPPED", "CHILD_OUTSIDE_PARENT", "OUT_OF_PAGE", "TEMPLATE_FIT", "TABLE_OVERFLOW", "SLOP_EMOJI_ICON",
+            "SLOP_PLACEHOLDER_TEXT", "SLOP_FILLER_COPY", "SLOP_DEFAULT_GRADIENT", "SLOP_HEAVY_SHADOW", "SLOP_UNIFORM_CARDS", "SLOP_ALL_CENTERED",
+            "SLOP_TYPE_SCALE", "SLOP_GENERIC_CLOSING",
+        ] {
             assert_eq!(lint_label(code), rules[code]["label"].as_str(), "{code}");
         }
         assert_eq!(lint_label("table_overflow"), lint_label("TABLE_OVERFLOW"), "case does not matter");

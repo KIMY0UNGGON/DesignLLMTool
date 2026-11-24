@@ -10,13 +10,24 @@ impl DesktopApp {
     pub(super) fn handle_payload(&mut self, ctx: &Context, ticket: u64, action: PendingAction, payload: RpcPayload) {
         match (action, payload) {
             (PendingAction::Hello, RpcPayload::Json(value)) => self.hello_answered(&value),
-            (PendingAction::WorkspaceList, RpcPayload::Json(value)) => self.workspace_listed(value),
+            (PendingAction::WorkspaceList, RpcPayload::Json(value)) => {
+                if self.accept_workspace_listing(ticket) { self.workspace_listed(value); }
+            }
+            (PendingAction::AgentWorkspaceList { candidates }, RpcPayload::Json(value)) => {
+                self.agent_workspace_listed(value, ticket, candidates);
+            }
+            (PendingAction::AgentJob { sequence, artifact_id, job_id, view_id }, RpcPayload::Json(value)) => {
+                self.agent_job_read(value, sequence, &artifact_id, &job_id, &view_id);
+            }
             (PendingAction::Create, RpcPayload::Json(value)) => {
                 self.apply_created_figure_profile(ticket, &value);
                 self.artifact_opened(value);
             }
             (PendingAction::Open, RpcPayload::Json(value)) => self.artifact_opened(value),
             (PendingAction::HomeCreate { prompt }, RpcPayload::Json(value)) => {
+                if let Some(job_id) = value.pointer("/job/id").and_then(Value::as_str) {
+                    self.remember_window_commit(format!("job:{job_id}"), ticket);
+                }
                 self.apply_created_figure_profile(ticket, &value["artifact"]);
                 self.home_created(&value, prompt);
             }
@@ -73,8 +84,8 @@ impl DesktopApp {
             (PendingAction::ImageAsset { page_id, center }, RpcPayload::Json(value)) => self.insert_image(&page_id, value, center),
             (PendingAction::FigureImageAsset { origin, source_ref }, RpcPayload::Json(value)) => self.add_figure_image_panel(&origin, source_ref, &value),
             (PendingAction::LintWarnings { artifact_id }, RpcPayload::Json(value)) => self.take_lint(&artifact_id, &value),
-            (PendingAction::Context, RpcPayload::Json(value)) => self.context_read(value),
-            (PendingAction::Inspect, RpcPayload::Json(value)) => self.artifact_inspected(&value),
+            (PendingAction::Context, RpcPayload::Json(value)) => { self.context_read(value); self.ensure_agent_revision_reads(); }
+            (PendingAction::Inspect, RpcPayload::Json(value)) => { self.artifact_inspected(&value); self.ensure_agent_revision_reads(); }
             (PendingAction::DesignSystemList, RpcPayload::Json(value)) => self.design_systems_listed(value),
             (
                 PendingAction::DesignSystemSource { consumer_id, source_id, source_revision, generation },
@@ -89,7 +100,7 @@ impl DesktopApp {
             (PendingAction::FlowFindPage { request }, RpcPayload::Json(value)) => {
                 self.flow_find_page_received(&request, value);
             }
-            (PendingAction::Render { page_index }, RpcPayload::Json(value)) => self.page_rendered(page_index, value),
+            (PendingAction::Render { page_index }, RpcPayload::Json(value)) => { self.page_rendered(page_index, value); self.ensure_agent_revision_reads(); }
             (PendingAction::PreviewAsset { snapshot, page_index }, payload @ RpcPayload::Image { .. }) => {
                 if !self.shows_revision(&snapshot.artifact_id, snapshot.revision) {
                     return;
@@ -99,6 +110,7 @@ impl DesktopApp {
                     return;
                 };
                 self.show_page_preview(ctx, page_index, snapshot, image);
+                self.ensure_agent_revision_reads();
             }
             (PendingAction::Transform { .. }, RpcPayload::Json(_)) => {}
             (PendingAction::HitTest { snapshot_id, page_index, transform_id, additive, edit_text }, RpcPayload::Json(value)) => {
@@ -159,7 +171,12 @@ impl DesktopApp {
                 | PendingAction::History
                 | PendingAction::LinkApply,
                 RpcPayload::Json(value),
-            ) => self.committed(&value),
+            ) => {
+                if let Some(request_id) = value.get("request_id").and_then(Value::as_str) {
+                    self.remember_window_commit(request_id.to_owned(), ticket);
+                }
+                self.committed(&value);
+            }
             (PendingAction::FigureProfile { artifact_id, profile_id, dpi }, RpcPayload::Json(value)) => {
                 let view = self.editor_views.entry(artifact_id).or_default();
                 view.figure_output_profile = Some(profile_id);
@@ -267,7 +284,10 @@ impl DesktopApp {
             (PendingAction::CsvDeclaredImport, RpcPayload::Json(value)) => self.csv_declaration_read(value),
             (PendingAction::PdfAssetImport { page_index }, RpcPayload::Json(value)) => self.pdf_asset_imported(ticket, page_index, value),
             (PendingAction::PdfEvidenceImport, RpcPayload::Json(value)) => self.pdf_evidence_read(ticket, &value),
-            (PendingAction::PollEvents, RpcPayload::Json(value)) => self.handle_events(value),
+            (PendingAction::PollEvents, RpcPayload::Json(value)) => {
+                self.agent_follow.poll_ticket = Some(ticket);
+                self.handle_events(value);
+            }
             (PendingAction::ReleaseDrag, RpcPayload::Json(_)) => {}
             (_, RpcPayload::Image { .. }) => self.set_error("예기치 않은 이미지 응답입니다".into()),
             (_, RpcPayload::Json(_)) => self.set_error("예기치 않은 작업 응답입니다".into()),
@@ -277,6 +297,7 @@ impl DesktopApp {
     // Workspace and documents.
 
     fn hello_answered(&mut self, value: &Value) {
+        if self.agent_baseline_needed() { self.poll_events(); }
         if let Some(id) = value.get("workspace_id").and_then(Value::as_str) {
             if let Some(listing_id) = self.context.as_ref().map(|item| item.workspace_id.as_str()) {
                 if listing_id != id {
@@ -286,12 +307,13 @@ impl DesktopApp {
         }
     }
 
-    fn workspace_listed(&mut self, value: Value) {
+    pub(super) fn workspace_listed(&mut self, value: Value) {
         match serde_json::from_value::<WorkspaceListing>(value) {
             Ok(listing) => {
                 self.update_workspace_notices(&listing.workspace_id, listing.workspace_notices);
                 self.artifacts = listing.artifacts;
                 self.workspace_loaded = true;
+                self.prune_unlisted_agent_notices();
                 // The app always starts on the home screen; only the smoke capture opens a document,
                 // so that the capture shows an editor.
                 let smoke_editor = std::env::var("DESIGNLLM_SMOKE_SCREEN").map_or(true, |value| value != "home");
@@ -306,14 +328,11 @@ impl DesktopApp {
                         self.activate(first);
                     }
                 } else if let Some(active) = &self.active {
-                    self.active = self
-                        .artifacts
-                        .iter()
-                        .find(|item| item.id == active.id)
-                        .cloned();
+                    self.active = self.listed_active(active);
                 }
                 self.forget_unlisted_jobs();
                 self.forget_unlisted_pdf_evidence();
+                self.discover_listed_jobs();
             }
             Err(_) => self.set_error(String::from("작업 목록을 읽지 못했습니다")),
         }
@@ -385,10 +404,14 @@ impl DesktopApp {
 
     /// Brings the edit state in line with a context or a document structure just read: the image being replaced, the
     /// style fields, the text target, and the inline text session with the table cell it may wait on.
-    fn resync_edit_state(&mut self) {
+    pub(super) fn resync_edit_state(&mut self) {
         self.invalidate_image_replacement_if_target_moved();
-        self.sync_style_fields();
-        self.sync_text_target();
+        if self.protect_document_sync() {
+            self.defer_agent_edit_sync();
+        } else {
+            self.sync_style_fields();
+            if self.protect_text_draft() { self.defer_agent_text_sync(); } else { self.sync_text_target(); }
+        }
         self.reconcile_inline_text_after_refresh();
         if let Some(page_index) = self.inline_text_edit.as_ref()
             .filter(|session| session.reservation_node_ids.len() > 1)
@@ -404,17 +427,19 @@ impl DesktopApp {
                 if self.active.as_ref().is_none_or(|active| active.id != snapshot.artifact_id)
                     || self.view_id != snapshot.view_id
                 {
-                    self.reset_held_edit_checks("최신 작업물 상태가 달라졌습니다. 다시 확인하거나 변경을 취소하세요");
                     return;
                 }
+                if self.context_reply_is_older(&snapshot) { return; }
                 if let Some(active) = self.active.as_mut() {
-                    active.revision = snapshot.revision;
+                    active.revision = active.revision.max(snapshot.revision);
                 }
                 let selection_set_pending = self.pending.values().any(|pending| pending.method == "selection.set");
-                if !selection_set_pending {
+                if !selection_set_pending && !self.protect_document_sync() {
                     self.set_selected_ids(snapshot.selection.node_ids.clone());
                     self.local_selection = Some(snapshot.selection.clone());
                     self.reselect = stale_selection(&snapshot);
+                } else {
+                    self.defer_agent_context(selection_set_pending);
                 }
                 self.view_id = snapshot.view_id.clone();
                 self.context = Some(snapshot);
@@ -431,29 +456,25 @@ impl DesktopApp {
         match parse_artifact(value) {
             Some(artifact) => {
                 if self.active.as_ref().is_some_and(|summary| summary.id == artifact.id) {
+                    if self.inspect_reply_is_older(&artifact) { return; }
                     self.active = Some(ArtifactSummary {
                         id: artifact.id.clone(),
                         kind: artifact.kind,
                         title: artifact.title.clone(),
-                        revision: artifact.revision,
+                        revision: self.active.as_ref().map_or(artifact.revision, |active| active.revision.max(artifact.revision)),
                         engine_id: artifact.engine_id.clone(),
                         dirty: self.active.as_ref().is_some_and(|summary| summary.dirty),
                         modified_at_ms: self.active.as_ref().and_then(|summary| summary.modified_at_ms),
                         active_jobs: self.active.as_ref().map(|summary| summary.active_jobs.clone()).unwrap_or_default(),
                     });
-                    if let Some(active) = self.active.as_mut() {
-                        active.revision = artifact.revision;
-                    }
                     self.artifact = Some(artifact);
                     self.resync_edit_state();
-                    self.restore_selection();
+                    if !self.protect_document_sync() { self.restore_agent_selection(); } else { self.defer_agent_edit_sync(); }
                     self.fetch_linked_design_system_source();
                     // Every revision the window shows (its own edits, an agent's, undo) gets its warnings.
                     self.request_lint();
                     self.resume_held_edits();
                     self.reconcile_video_insert_after_refresh();
-                } else {
-                    self.reset_held_edit_checks("보류한 변경의 작업물을 다시 연 뒤 확인하세요");
                 }
             }
             None => {

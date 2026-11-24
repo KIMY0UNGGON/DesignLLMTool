@@ -361,6 +361,8 @@ impl EngineAdapter for SlidesEngine {
             }
             Err(e) => out.push(Diagnostic { code: "PPTX_WRITE_FAILED".into(), message: e.message, node_id: None, blocking: true, params: Default::default() }),
         }
+        // The anti-slop warnings (contracts `design_quality`, the rules Canvas pages get): non-blocking, on the deck's pages.
+        out.extend(designllm_contracts::design_quality::slop_deck_warnings(&state.pages));
         out
     }
 

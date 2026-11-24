@@ -83,6 +83,8 @@ mod doc_tree;
 mod drag;
 mod edit_fields;
 mod events;
+mod agent_follow;
+#[cfg(test)] mod agent_follow_tests;
 mod held_edit;
 mod host_link;
 pub(crate) use host_link::HostStarter;
@@ -352,6 +354,7 @@ pub struct DesktopApp {
     unknown_starts: figure_close::UnknownStarts,
     last_job_poll: Instant,
     last_event_seq: u64,
+    agent_follow: agent_follow::AgentFollow,
     last_event_poll: Instant,
     smoke_started: Instant,
     smoke_frames: u32,
@@ -395,6 +398,7 @@ pub struct DesktopApp {
     parent_hwnd: Option<isize>,
     web_preview_child: Option<Child>,
     web_preview_run: Option<web_preview::PreviewRun>,
+    web_preview_state: web_preview::PreviewState,
     #[cfg(test)]
     fake_preview_command: Option<Command>,
     smoke_output: Option<PathBuf>,
@@ -567,6 +571,7 @@ impl DesktopApp {
             unknown_starts: figure_close::UnknownStarts::default(),
             last_job_poll: Instant::now(),
             last_event_seq: 0,
+            agent_follow: agent_follow::AgentFollow::default(),
             last_event_poll: Instant::now(),
             smoke_started: Instant::now(),
             smoke_frames: 0,
@@ -602,6 +607,7 @@ impl DesktopApp {
             parent_hwnd: None,
             web_preview_child: None,
             web_preview_run: None,
+            web_preview_state: Default::default(),
             #[cfg(test)]
             fake_preview_command: None,
             smoke_output,
@@ -637,6 +643,10 @@ impl DesktopApp {
             return None;
         }
         ui_test_input::pin_ui_test_request(self.ui_test.as_ref(), method, &mut params);
+        let window_commit = matches!(method, "artifact.create" | "changes.apply" | "design_system.publish" | "design_system.set"
+            | "figure.dataset.edit" | "proposal.apply" | "history.undo" | "history.redo" | "history.undo_change" | "job.start")
+            .then(|| params.get("request_id").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| format!("ticket:{}", self.next_ticket)));
+        if window_commit.as_deref().is_some_and(|id| !self.require_window_commit_capacity(id)) { return None; }
         let mut image_replacement_cancelled = false;
         let replacement = self.pending_image_replacement.as_ref()
             .filter(|pending| self.active.as_ref().is_some_and(|active| active.id == pending.intent.artifact_id))
@@ -750,6 +760,7 @@ impl DesktopApp {
         // The flow search reads only the page's scene, not its picture: its render.get gets no raw pixels (pixels.rs).
         match self.rpc.call_with(ticket, method, params, !matches!(action, PendingAction::FlowFindPage { .. })) {
             Ok(()) => {
+                if let Some(request_id) = window_commit { self.remember_window_commit(request_id, ticket); }
                 let in_flight = self.pending.len();
                 if let Some(test) = self.ui_test.as_mut() {
                     test.perf.sent(ticket, method, in_flight);
@@ -843,10 +854,13 @@ impl DesktopApp {
         }
         let ticket = self.next_ticket;
         self.next_ticket += 1;
+        let window_commit = format!("ticket:{ticket}");
+        if !self.require_window_commit_capacity(&window_commit) { return None; }
         self.notices.clear_transient();
         let prompt = request.prompt.clone();
         match self.rpc.create_from_home(ticket, request) {
             Ok(()) => {
+                self.remember_window_commit(window_commit, ticket);
                 self.pending.insert(ticket, PendingRequest {
                     action: PendingAction::HomeCreate { prompt },
                     method: "create_from_home".to_owned(),
@@ -1007,6 +1021,7 @@ impl eframe::App for DesktopApp {
         // A UI-test window times its frames (68f, perf.rs).
         let frame_started = self.ui_test.is_some().then(Instant::now);
         self.process_replies(ctx);
+        self.resume_deferred_agent_revision();
         let replies_took = frame_started.map(|at| at.elapsed());
         self.expire_awaited_starts();
         self.sync_drafts();
@@ -1075,10 +1090,10 @@ impl eframe::App for DesktopApp {
             test.perf.frame(started, replies, started.elapsed());
         }
         self.ui_test_frame_end(ctx);
-        ctx.request_repaint_after(Duration::from_secs(1));
+        ctx.request_repaint_after(self.agent_repaint_interval());
         self.smoke_step(ctx);
 
-        if !self.pending.is_empty() || self.web_preview_run.is_some() || self.smoke_output.is_some() {
+        if !self.pending.is_empty() || self.web_preview_run.is_some() || self.preview_focus_pending() || self.smoke_output.is_some() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
         if self.has_video_poster_worker() {

@@ -164,7 +164,7 @@ pub(super) fn refusal_for(
     kind: designllm_contracts::ArtifactKind,
     artifact: Option<&designllm_contracts::Artifact>,
 ) -> (String, Vec<RefusalFix>) {
-    if let Some(diagnostic) = error.diagnostics.iter().find(|diagnostic| lint_label(&diagnostic.code).is_some()) {
+    if let Some(diagnostic) = error.diagnostics.iter().find(|diagnostic| diagnostic.blocking && lint_label(&diagnostic.code).is_some()) {
         let line = lint_message(diagnostic, kind, artifact).unwrap_or_else(|| lint_label(&diagnostic.code).unwrap_or_default().to_owned());
         // The fix commands work on canvases and slides only.
         let fixes = if matches!(kind, designllm_contracts::ArtifactKind::Canvas | designllm_contracts::ArtifactKind::Slides) { lint_fixes(diagnostic) } else { Vec::new() };
@@ -177,18 +177,29 @@ pub(super) fn refusal_for(
 /// label of the first rule the engine names; else the reason in Korean the window already has; else
 /// `이 편집은 적용되지 않았습니다`. English codes and messages are never shown.
 pub(super) fn refusal_text(error: &designllm_contracts::DltError, friendly: &str) -> String {
-    let korean = |text: &str| text.chars().any(|c| ('\u{AC00}'..='\u{D7A3}').contains(&c));
-    let shouts_a_code = |text: &str| text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|word| word.len() > 3 && word.contains('_') && word.chars().all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()));
-    if let Some(label) = error.diagnostics.iter().find_map(|diagnostic| lint_label(&diagnostic.code)) {
+    if let Some(label) = error.diagnostics.iter().filter(|diagnostic| diagnostic.blocking).find_map(|diagnostic| lint_label(&diagnostic.code)) {
         return label.to_owned();
     }
-    if let Some(message) = error.diagnostics.iter().map(|diagnostic| diagnostic.message.as_str()).find(|message| korean(message) && !shouts_a_code(message)) {
+    if let Some(message) = error.diagnostics.iter().filter(|diagnostic| diagnostic.blocking).map(|diagnostic| diagnostic.message.as_str()).find(|message| usable_korean(message)) {
         return message.to_owned();
     }
-    if korean(friendly) && !shouts_a_code(friendly) {
+    if usable_korean(friendly) {
         return friendly.to_owned();
     }
     String::from("이 편집은 적용되지 않았습니다")
+}
+
+fn usable_korean(text: &str) -> bool {
+    let korean = text.chars().any(|c| ('\u{AC00}'..='\u{D7A3}').contains(&c));
+    let code = text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|word| word.len() > 3 && word.contains('_') && word.chars().all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()));
+    korean && !code
+}
+
+fn warning_text(diagnostic: &designllm_contracts::Diagnostic, kind: designllm_contracts::ArtifactKind, artifact: Option<&designllm_contracts::Artifact>) -> String {
+    lint_message(diagnostic, kind, artifact)
+        .or_else(|| lint_label(&diagnostic.code).map(str::to_owned))
+        .or_else(|| usable_korean(&diagnostic.message).then(|| diagnostic.message.clone()))
+        .unwrap_or_else(|| String::from("이 편집은 적용되지 않았습니다"))
 }
 
 /// The page that holds `id`, searching nested children too.
@@ -407,13 +418,7 @@ impl DesktopApp {
         let lines: Vec<(String, Vec<RefusalFix>)> = warnings[..shown]
             .iter()
             .map(|diagnostic| {
-                let line = lint_message(diagnostic, kind, self.artifact.as_ref())
-                    .or_else(|| lint_label(&diagnostic.code).map(str::to_owned))
-                    .unwrap_or_else(|| {
-                        let mut error = designllm_contracts::DltError::new(designllm_contracts::ErrorCode::InvalidArgument, "");
-                        error.diagnostics = vec![diagnostic.clone()];
-                        refusal_text(&error, "")
-                    });
+                let line = warning_text(diagnostic, kind, self.artifact.as_ref());
                 let fixes = if matches!(kind, designllm_contracts::ArtifactKind::Canvas | designllm_contracts::ArtifactKind::Slides) { lint_fixes(diagnostic) } else { Vec::new() };
                 (line, fixes)
             })
@@ -1493,6 +1498,35 @@ mod tests {
         error.diagnostics = vec![diagnostic("SOMETHING_NEW", "english only")];
         assert_eq!(refusal_text(&error, "도형이 패널 밖으로 나갑니다"), "도형이 패널 밖으로 나갑니다");
         assert_eq!(refusal_text(&error, "refused: SOMETHING_NEW"), "이 편집은 적용되지 않았습니다");
+    }
+
+    #[test]
+    fn a_warning_in_a_refused_edit_never_words_the_refusal() {
+        use designllm_contracts::{ArtifactKind, Diagnostic, DltError, ErrorCode};
+        let diagnostic = |code: &str, blocking: bool| Diagnostic { code: code.into(), message: String::from("english only"), node_id: None, blocking, params: Default::default() };
+        let mut error = DltError::new(ErrorCode::InvalidArgument, "change refused");
+        error.diagnostics = vec![diagnostic("SLOP_EMOJI_ICON", false), diagnostic("CLIPPED", true)];
+        let clipped = crate::strings::lint_label("CLIPPED").unwrap();
+        assert_eq!(refusal_text(&error, "변경이 거부되었습니다"), clipped, "the blocking rule words the refusal");
+        assert_eq!(refusal_for(&error, "변경이 거부되었습니다", ArtifactKind::Canvas, None).0, clipped);
+        error.diagnostics = vec![diagnostic("SLOP_EMOJI_ICON", false)];
+        assert_eq!(refusal_text(&error, "변경이 거부되었습니다"), "변경이 거부되었습니다", "a warning alone does not word a refusal");
+        assert_eq!(refusal_for(&error, "변경이 거부되었습니다", ArtifactKind::Canvas, None).0, "변경이 거부되었습니다");
+    }
+
+    #[test]
+    fn unknown_warning_shows_its_korean_message_without_wording_a_refusal() {
+        use designllm_contracts::{ArtifactKind, Diagnostic, DltError, ErrorCode};
+        let mut diagnostic = Diagnostic { code: "UNKNOWN_WARNING".into(), message: "이미지가 잘립니다".into(), node_id: None, blocking: false, params: Default::default() };
+        assert_eq!(warning_text(&diagnostic, ArtifactKind::Canvas, None), "이미지가 잘립니다");
+        let mut error = DltError::new(ErrorCode::InvalidArgument, "refused");
+        error.diagnostics.push(diagnostic.clone());
+        assert_eq!(refusal_text(&error, "변경이 거부되었습니다"), "변경이 거부되었습니다");
+        diagnostic.blocking = true;
+        error.diagnostics = vec![diagnostic.clone()];
+        assert_eq!(refusal_text(&error, "변경이 거부되었습니다"), "이미지가 잘립니다");
+        diagnostic.message = "unknown warning".into();
+        assert_eq!(warning_text(&diagnostic, ArtifactKind::Canvas, None), "이 편집은 적용되지 않았습니다");
     }
 
     #[test]

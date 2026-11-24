@@ -549,10 +549,30 @@ const CANVAS_COMPONENTS: Page = Page {
     ],
 };
 
+const DESIGN_QUALITY: Page = Page {
+    slug: "design-quality",
+    title: "Design quality: anti-slop warnings",
+    description: "The visual habits that the lint reports as SLOP_* warnings in artifact_validate for Canvas and slide documents, and how to check a page for them. Warnings only: no edit is refused.",
+    task: false,
+    tools: &["artifact_validate", "artifact_inspect", "changes_validate", "changes_apply", "render_get"],
+    steps: &[
+        "Before you build a Canvas, Slides or Figure page, choose one visual direction and state it: one palette family, three or four text sizes, one alignment logic, and one corner radius for the cards.",
+        "Use the copy the request gives and real sources. Do not invent figures, testimonials, logos or company names. When a value is unknown, leave a visible gap and say so in your reply.",
+        "The lint reports these patterns, on Canvas and slide documents, on the node they name. SLOP_EMOJI_ICON: a text node starts with an emoji or is only emoji. SLOP_PLACEHOLDER_TEXT: lorem ipsum, John Doe, Jane Doe, Acme, TechCorp, 홍길동 or OO회사 remains. SLOP_FILLER_COPY: two or more filler words on a page, or one in its title (empower, leverage, unlock, seamless, elevate, revolutionize, cutting-edge, next-generation; 혁신적인, 원활한, 차원이 다른, 새로운 차원).",
+        "SLOP_DEFAULT_GRADIENT: a rectangle or ellipse with at least a quarter of the page in its frame has a gradient whose stops are all purple or indigo (hue 230 to 300 degrees). SLOP_HEAVY_SHADOW: a shape's shadow blurs 32 px or more and is at least 0.25 opaque (its colour alpha times the node opacity).",
+        "SLOP_UNIFORM_CARDS: three or more rectangles of the same size, with a shadow at least 0.02 opaque and a corner radius of 12 to 24 px, sit in one row without overlap. SLOP_ALL_CENTERED: four or more text nodes on a page are all centred and one of them is a body paragraph (three or more lines, or 120 characters or more). SLOP_TYPE_SCALE: a page uses seven or more text node sizes, counted in whole points. The last two rules exclude text inside shapes.",
+        "SLOP_GENERIC_CLOSING (slide decks only): the text of the last slide is nothing but a closing line (Thank you, 감사합니다, Q&A or 질문).",
+        "The warnings do not refuse an edit. Fix them where the request allows, and keep a choice that the request asks for.",
+        "Check the result: after the last change, call artifact_validate on the Canvas artifact or the deck. Its diagnostics list each SLOP_* warning with its node_id. Keep choices explicitly requested by the user and fix the other warnings with changes_validate and changes_apply, then call artifact_validate again. Look at the page with render_get.",
+        "A Canvas gets the warnings only when it uses v1.2 values (a shadow, gradient, corner radius, opacity or another v1.2 field); a Canvas with v1.1 values only gets none. A deck gets them whatever its values. Figure gets none yet, so check its look with render_get.",
+    ],
+    examples: &[("artifact_validate", r#"{"artifact_id":"<artifact_id>"}"#)],
+};
+
 /// Every manual page, in listing order.
 pub const PAGES: &[Page] = &[
     INDEX, REFUSALS, INTENTS, DESIGN_SYSTEM, PRESETS, AI_JOBS, COLLABORATION, TEMPLATES, MOBILE_SCREEN, LANDING_PAGE, SOCIAL_POST, POSTER, SLIDES, DOCUMENT_EDIT,
-    PAPER_FIGURE, WEB_CODE, CANVAS_COMPONENTS, GUI,
+    PAPER_FIGURE, WEB_CODE, CANVAS_COMPONENTS, DESIGN_QUALITY, GUI,
 ];
 
 /// The prompt name of a task page: its slug with `_` for `-`.
@@ -745,6 +765,21 @@ mod tests {
         for fragment in ["stroke_start", "stroke_end", "line end on another kind of node is refused", "After creation its position and style can be edited"] {
             assert!(slides.contains(fragment), "the slides page omits {fragment}");
         }
+    }
+
+    #[test]
+    fn the_design_quality_page_names_every_slop_code_and_is_a_reference_page() {
+        let body = page_body(&DESIGN_QUALITY);
+        for code in [
+            "SLOP_EMOJI_ICON", "SLOP_PLACEHOLDER_TEXT", "SLOP_FILLER_COPY", "SLOP_DEFAULT_GRADIENT", "SLOP_HEAVY_SHADOW", "SLOP_UNIFORM_CARDS",
+            "SLOP_ALL_CENTERED", "SLOP_TYPE_SCALE", "SLOP_GENERIC_CLOSING",
+        ] {
+            assert!(body.contains(code), "the design-quality page omits {code}");
+        }
+        assert!(body.contains("changes_apply") && body.contains("v1.2"), "the check procedure and the version gate are stated");
+        assert!(body.contains("Keep choices explicitly requested by the user and fix the other warnings"));
+        assert!(!body.contains("Fix them with changes_validate"));
+        assert!(!DESIGN_QUALITY.task, "a reference page: the task pages stay eight prompts");
     }
 
     #[test]
