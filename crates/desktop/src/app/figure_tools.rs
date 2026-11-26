@@ -36,16 +36,32 @@ use crate::{
 
 const PLOT_KINDS: [(&str, &str); 3] = [("bar", "막대"), ("line", "선"), ("scatter", "산점도")];
 
-/// The colour of the first data series (the figure engine's own first palette colour).
+/// The colour of the first data series without an output profile (the figure engine's own first palette colour).
 const SERIES_COLOR: &str = "#1F4E79";
 
 /// A plot panel draws its first series in the panel's fill colour, and `Style::default()` fills
-/// with white: a chart made with the default style has lines, markers and bars that cannot be seen.
-fn plot_style() -> Style {
-    Style {
-        fill: SERIES_COLOR.into(),
-        ..Style::default()
-    }
+/// with white: a chart made with the default style has lines, markers and bars that cannot be seen. A new plot starts at the
+/// fill the figure's plots already use (an output profile gives them all its first colour, and the figure keeps it across a
+/// restart, which the view's chosen profile does not); a figure with no plot takes the chosen profile's first colour
+/// (`profile`, the view's), else the engine's own.
+///
+/// The type size and stroke width follow in the same order: the first plot's, else the chosen profile's, else the defaults.
+fn plot_style(figure: &FigureDocument, profile: Option<&str>) -> Style {
+    let first_plot = figure.panels.iter().find(|panel| matches!(&panel.body, PanelBody::Plot(_)));
+    let profile = profile.and_then(designllm_contracts::figure_rules::figure_output_profile);
+    let defaults = Style::default();
+    // The colour and the type and stroke are taken separately: a first plot with no fill still gives its sizes.
+    let fill = first_plot
+        .map(|panel| panel.style.fill.trim())
+        .filter(|fill| !fill.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| profile.map_or(SERIES_COLOR, |profile| profile.palette[0]).to_owned());
+    let (font_size, stroke_width) = match (first_plot, profile) {
+        (Some(panel), _) => (panel.style.font_size, panel.style.stroke_width),
+        (None, Some(profile)) => (profile.font_size_emu, profile.stroke_width_emu),
+        (None, None) => (defaults.font_size, defaults.stroke_width),
+    };
+    Style { fill, font_size, stroke_width, ..defaults }
 }
 
 /// "(a)", "(b)", … for the first 26 panels, then "(27)", … — the lettering of multi-panel figures.
@@ -622,7 +638,7 @@ fn held_pdf_copy_text(held: &HeldPdfEvidence) -> String {
     held.records
         .iter()
         .map(|record| {
-            let page = record.physical_page_index.map_or_else(|| "-".to_owned(), |index| format!("{}쪽", index.saturating_add(1)));
+            let page = record.physical_page_index.map_or_else(|| "-".to_owned(), |index| crate::i18n::page_label(index.saturating_add(1)));
             format!("{} [{} {page} sha256:{}]", record.text, held.target.file_name, record.source_hash)
         })
         .collect::<Vec<_>>()
@@ -722,10 +738,22 @@ pub(super) fn connection(panel_id: &str, from: &str, to: &str) -> Operation {
 /// The change that adds the imported table to the figure and, with `make_plot`, a chart panel that
 /// plots it, with the intents it needs. A table the figure already holds is reused at its current
 /// version, never replaced. `None` when there is nothing to add or the chart is not fully described.
+/// Tests use it for a figure with no output profile chosen; the window calls `chart_change_with`.
+#[cfg(test)]
 pub(super) fn chart_change(
     figure: &FigureDocument,
     draft: &CsvImportDraft,
     make_plot: bool,
+) -> Option<(Vec<Operation>, BTreeSet<Intent>)> {
+    chart_change_with(figure, draft, make_plot, None)
+}
+
+/// `chart_change` for a figure whose view has the output profile `profile` chosen: the new plot takes its first colour.
+pub(super) fn chart_change_with(
+    figure: &FigureDocument,
+    draft: &CsvImportDraft,
+    make_plot: bool,
+    profile: Option<&str>,
 ) -> Option<(Vec<Operation>, BTreeSet<Intent>)> {
     let held = figure.datasets.iter().find(|dataset| dataset.id == draft.dataset.id);
     let dataset_ref = DatasetRef {
@@ -749,7 +777,7 @@ pub(super) fn chart_change(
             bounds: Default::default(),
             label: panel_label(figure.panels.len()),
             body: PanelBody::Plot(plot),
-            style: plot_style(),
+            style: plot_style(figure, profile),
         };
         operations.extend(panel_additions(figure, panel));
         intents.insert(Intent::Content);
@@ -795,7 +823,7 @@ const PICKER_MAX: f32 = 140.0;
 /// width is the house dialog button's (`dialog_button_width`), so the row never runs past the panel.
 pub(super) fn connect_row_layout(ui: &Ui) -> (f32, bool) {
     let spacing = ui.spacing().item_spacing.x;
-    let arrow = ui.painter().layout_no_wrap(CONNECT_ARROW.to_owned(), egui::TextStyle::Body.resolve(ui.style()), theme::INK).size().x;
+    let arrow = ui.painter().layout_no_wrap(crate::i18n::tr(&CONNECT_ARROW).into_owned(), egui::TextStyle::Body.resolve(ui.style()), theme::INK).size().x;
     let button = widgets::dialog_button_width(ui, CONNECT_LABEL, DialogButton::Plain);
     let room = ui.available_width();
     let beside = (room - arrow - button - 3.0 * spacing) / 2.0;
@@ -814,13 +842,19 @@ fn connect_ready(diagram: &Diagram, from: &Option<String>, to: &Option<String>) 
     }
 }
 
+/// A node's name in the connector menus: its own text as written, or a numbered kind in the window's language.
 fn node_title(index: usize, node: &Node) -> String {
+    // The whole text: two nodes that start alike ("Encoder output A", "… B") must read apart in the menu. The closed picker
+    // cuts what does not fit its width (`widgets::dropdown`).
     let text = node.text.trim();
     if !text.is_empty() {
-        return super::truncate(text, 14);
+        return text.to_owned();
     }
-    let kind = if node.kind == NodeKind::Ellipse { "원" } else { "도형" };
-    format!("{kind} {}", index + 1)
+    let ellipse = node.kind == NodeKind::Ellipse;
+    match crate::i18n::language() {
+        crate::i18n::Language::English => format!("{} {}", if ellipse { "Ellipse" } else { "Shape" }, index + 1),
+        _ => format!("{} {}", if ellipse { "원" } else { "도형" }, index + 1),
+    }
 }
 
 impl DesktopApp {
@@ -1258,14 +1292,15 @@ impl DesktopApp {
     }
 
     /// Adds the imported table to the figure, and with `make_plot` a chart panel that plots it.
-    fn add_csv_data(&mut self, make_plot: bool) {
+    pub(super) fn add_csv_data(&mut self, make_plot: bool) {
         let Some(draft) = self.csv_draft.clone() else {
             return;
         };
         let Some(figure) = self.figure_document() else {
             return;
         };
-        let Some((operations, intents)) = chart_change(&figure, &draft, make_plot) else {
+        let profile = self.view_ref().figure_output_profile.clone();
+        let Some((operations, intents)) = chart_change_with(&figure, &draft, make_plot, profile.as_deref()) else {
             return;
         };
         self.apply_operations_for(operations, intents, PendingAction::FigureDataset);
@@ -1301,7 +1336,7 @@ impl DesktopApp {
         }
         if let Some(text) = self.pdf_coverage_text() {
             ui.separator();
-            ui.label(RichText::new(text).color(theme::MUTED));
+            ui.label(RichText::new(crate::i18n::tr(&text)).color(theme::MUTED));
         }
         if !self.held_pdf_evidence.is_empty() {
             ui.separator();
@@ -1313,19 +1348,19 @@ impl DesktopApp {
             let has_toggle = figure.evidence.iter().any(|evidence| review_target(evidence).is_some());
             if has_toggle && self.feature_edit_supported(Feature::Evidence) {
                 if let Some(reason) = self.review_wait_reason() {
-                    ui.label(RichText::new(reason).color(theme::MUTED));
+                    ui.label(RichText::new(crate::i18n::tr(&reason)).color(theme::MUTED));
                 }
             }
             let mut review = None;
             for evidence in &figure.evidence {
                 let page = evidence
                     .physical_page_index
-                    .map(|index| format!("{}쪽", index.saturating_add(1)))
+                    .map(|index| crate::i18n::page_label(index.saturating_add(1)))
                     .unwrap_or_else(|| "원문".into());
                 let target = review_target(evidence);
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(page).color(theme::TEAL));
-                    ui.label(review_state_label(&evidence.review_state));
+                    ui.label(RichText::new(crate::i18n::tr(&page)).color(theme::TEAL));
+                    ui.label(crate::i18n::tr(&review_state_label(&evidence.review_state)));
                     if let Some(reviewed) = target {
                         let label = if reviewed { "검토 완료로 표시" } else { "검토 해제" };
                         if widgets::dialog_button(ui, &palette, label, DialogButton::Plain, can_review).clicked() {
@@ -1441,7 +1476,7 @@ impl DesktopApp {
             }
             let wait = self.held_pdf_wait(held);
             ui.label(
-                RichText::new(format!("보류한 PDF 근거 {}개 · {}쪽", held.records.len(), held.target.page_index.saturating_add(1)))
+                RichText::new(crate::i18n::tr(&format!("보류한 PDF 근거 {}개 · {}쪽", held.records.len(), held.target.page_index.saturating_add(1))))
                     .color(theme::TEAL),
             );
             let line = match wait {
@@ -1449,7 +1484,7 @@ impl DesktopApp {
                 None => held.message.as_str(),
             };
             if !line.is_empty() {
-                ui.label(RichText::new(line).color(theme::MUTED));
+                ui.label(RichText::new(crate::i18n::tr(&line)).color(theme::MUTED));
             }
             ui.horizontal_wrapped(|ui| {
                 if widgets::dialog_button(ui, &palette, "다시 넣기", DialogButton::Plain, wait.is_none()).clicked() {
@@ -1465,7 +1500,7 @@ impl DesktopApp {
             ui.add_space(4.0);
         }
         if elsewhere > 0 {
-            ui.label(RichText::new(format!("다른 그림에 보류한 PDF 근거 {elsewhere}개가 있습니다. 그 그림을 열어 다시 넣거나 버리세요")).color(theme::MUTED));
+            ui.label(RichText::new(crate::i18n::tr(&format!("다른 그림에 보류한 PDF 근거 {elsewhere}개가 있습니다. 그 그림을 열어 다시 넣거나 버리세요"))).color(theme::MUTED));
         }
         if let Some(id) = retry {
             self.retry_held_pdf_evidence(&id);
@@ -1517,7 +1552,7 @@ impl DesktopApp {
             for choice in [true, false] {
                 let current = if choice { self.connect_from.clone() } else { self.connect_to.clone() };
                 let current_index = current.as_ref().and_then(|id| diagram.nodes.iter().position(|node| &node.id == id));
-                if let Some(index) = widgets::select_menu(ui, &palette, &title_of(&current), &options, current_index, picker_width) {
+                if let Some(index) = widgets::select_menu_verbatim(ui, &palette, &title_of(&current), &options, current_index, picker_width) {
                     let picked = Some(diagram.nodes[index].id.clone());
                     if choice {
                         self.connect_from = picked;
@@ -1526,7 +1561,7 @@ impl DesktopApp {
                     }
                 }
                 if choice {
-                    ui.label(CONNECT_ARROW);
+                    ui.label(crate::i18n::tr(&CONNECT_ARROW));
                 }
             }
             if !button_below {
@@ -1550,9 +1585,9 @@ impl DesktopApp {
         let can_edit = self.feature_edit_supported(Feature::Dataset);
         for dataset in &figure.datasets {
             egui::CollapsingHeader::new(format!(
-                "{} · {}행",
-                dataset_origin_label(&dataset.origin),
-                dataset.rows.len()
+                "{} · {}",
+                crate::i18n::tr(dataset_origin_label(&dataset.origin)),
+                crate::i18n::rows_label(dataset.rows.len())
             ))
             .id_salt(("dataset", dataset.id.as_str()))
             .show(ui, |ui| {
@@ -1568,7 +1603,7 @@ impl DesktopApp {
                                         .as_ref()
                                         .map(|unit| format!("{} ({unit})", column.name))
                                         .unwrap_or_else(|| column.name.clone());
-                                    widgets::table_head(ui, &title);
+                                    widgets::table_head_verbatim(ui, &title);
                                 }
                                 ui.end_row();
                                 for (row_index, row) in dataset.rows.iter().enumerate() {
@@ -1710,7 +1745,7 @@ impl DesktopApp {
         let wait = figure_wait_reason(self.requests_on_their_way());
         let ready = page_ok && !self.pdf_path.trim().is_empty() && wait.is_none();
         if let Some(reason) = wait {
-            ui.label(RichText::new(reason).color(theme::MUTED));
+            ui.label(RichText::new(crate::i18n::tr(&reason)).color(theme::MUTED));
         }
         FormAnswer::of(
             vec![DialogChoice::new("취소", DialogButton::Plain), DialogChoice::new("근거 추가", DialogButton::Primary).enabled(ready)],
@@ -1754,7 +1789,8 @@ impl DesktopApp {
         // would size itself to the body's last height and stay that small.
         {
             for column in &mut draft.columns {
-                widgets::dialog_row(ui, palette, &column.name, |ui, width| {
+                // The column's name is the file's: shown as written; its type and unit are the window's words.
+                widgets::dialog_row_verbatim(ui, palette, &column.name, |ui, width| {
                     let current = COLUMN_TYPES.iter().position(|(data_type, _)| *data_type == column.data_type);
                     if let Some(picked) = widgets::dropdown_menu(ui, palette, &types, current, width - UNIT_WIDTH - 8.0) {
                         column.data_type = COLUMN_TYPES[picked].0.to_owned();
@@ -1813,7 +1849,7 @@ impl DesktopApp {
             let current = columns.iter().position(|(id, _)| *id == draft.x_column);
             let numeric = draft.x_is_numeric();
             let field = if numeric { width - UNIT_WIDTH - 8.0 } else { width };
-            if let Some(picked) = widgets::dropdown_menu(ui, palette, &names, current, field) {
+            if let Some(picked) = widgets::dropdown_menu_verbatim(ui, palette, &names, current, field) {
                 draft.x_column = columns[picked].0.clone();
             }
             if numeric {
@@ -1827,7 +1863,7 @@ impl DesktopApp {
                 .collect::<Vec<_>>();
             let names: Vec<&str> = columns.iter().map(|(_, name)| name.as_str()).collect();
             let current = columns.iter().position(|(id, _)| *id == draft.y_column);
-            if let Some(picked) = widgets::dropdown_menu(ui, palette, &names, current, width - UNIT_WIDTH - 8.0) {
+            if let Some(picked) = widgets::dropdown_menu_verbatim(ui, palette, &names, current, width - UNIT_WIDTH - 8.0) {
                 draft.y_column = columns[picked].0.clone();
             }
             widgets::text_field(ui, palette, &mut draft.y_unit, "단위", UNIT_WIDTH);
@@ -1837,7 +1873,7 @@ impl DesktopApp {
         }
         draft.sync_units(&before.1, &before.2);
         if let Some(reason) = draft.blocker() {
-            ui.label(RichText::new(reason).color(theme::MUTED));
+            ui.label(RichText::new(crate::i18n::tr(&reason)).color(theme::MUTED));
         }
         let can_plot = draft.plot_spec(dataset_ref).is_some();
         self.csv_draft = Some(draft);
@@ -2297,3 +2333,33 @@ mod evidence_review_tests;
 #[cfg(test)]
 #[path = "figure_evidence_reimport_tests.rs"]
 mod evidence_reimport_tests;
+
+#[cfg(test)]
+mod node_title_tests {
+    use super::*;
+
+    #[test]
+    fn a_connector_menu_shows_node_text_as_written_and_numbers_unnamed_nodes_in_the_window_language() {
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                crate::i18n::set_language(crate::i18n::Language::Korean);
+            }
+        }
+        let _restore = Restore;
+        let node = |kind: NodeKind, text: &str| Node {
+            id: "n".into(), kind, bounds: designllm_contracts::Rect { x: 0, y: 0, width: 1, height: 1 }, text: text.into(),
+            style: Style::default(), asset: None, children: Vec::new(), layout: None, interactions: Vec::new(),
+            variants: Default::default(), ext: Default::default(),
+        };
+        crate::i18n::set_language(crate::i18n::Language::English);
+        assert_eq!(node_title(0, &node(NodeKind::Rectangle, "제목")), "제목");
+        assert_eq!(node_title(0, &node(NodeKind::Rectangle, "Title")), "Title");
+        // Long texts that start alike stay whole, so the menu tells them apart.
+        assert_eq!(node_title(0, &node(NodeKind::Rectangle, "Encoder output A")), "Encoder output A");
+        assert_ne!(node_title(0, &node(NodeKind::Rectangle, "Encoder output A")), node_title(1, &node(NodeKind::Rectangle, "Encoder output B")));
+        assert_eq!(node_title(1, &node(NodeKind::Ellipse, "")), "Ellipse 2");
+        crate::i18n::set_language(crate::i18n::Language::Korean);
+        assert_eq!(node_title(2, &node(NodeKind::Rectangle, " ")), "도형 3");
+    }
+}

@@ -36,6 +36,18 @@ mod board;
 mod board_memos;
 mod canvas_find;
 #[cfg(test)] mod canvas_find_tests;
+#[cfg(test)] mod i18n_tests;
+#[cfg(test)] mod kind_controls_tests;
+#[cfg(test)] mod series_colour_tests;
+#[cfg(test)] mod profile_followup_tests;
+#[cfg(test)] mod legend_import_tests;
+#[cfg(test)] mod figure_output_tests;
+#[cfg(test)] mod settings_merge_tests;
+#[cfg(test)] mod settings_lock_tests;
+#[cfg(test)] mod settings_os_lock_tests;
+#[cfg(test)] mod export_draft_tests;
+#[cfg(test)] mod export_queue_tests;
+#[cfg(test)] mod export_flow_tests;
 #[cfg(test)] mod undo_selection_tests;
 mod page_sections;
 mod print_range;
@@ -59,6 +71,7 @@ mod repeat_groups;
 mod selection;
 mod settings;
 mod sidebar;
+mod shape_insert;
 mod tools;
 mod toolbox;
 #[cfg(test)] mod toolbox_tests;
@@ -197,6 +210,19 @@ pub struct DesktopApp {
     requested_pages: HashMap<u32, (u32, u64)>,
     /// Page sizes the core reported, for pages the board has not drawn yet.
     known_sizes: HashMap<u32, Size>,
+    /// The page count a render reported, with the document and the revision it was rendered at (`page_count_at`).
+    page_count_read: Option<(String, designllm_contracts::Revision, u32)>,
+    /// The export settings whose loss preview failed: a refusal is not asked again until the settings change or the host
+    /// comes back (None); a passing failure is asked again after the instant it holds.
+    export_preview_failed: Option<(String, Option<Instant>)>,
+    /// The `ui.command.complete` calls that report an agent's export (its write, or the window's own refusal), by ticket, with
+    /// what they send and how many times it was sent: the window stays open until the host has them.
+    export_completions: HashMap<u64, (Value, u32)>,
+    /// Reports of an agent's export that are not on their way (the link was lost, or a send did not reach the host), with how
+    /// many times each was sent: sent once the host answers again (`send_waiting_export_reports`).
+    export_reports_waiting: Vec<(Value, u32)>,
+    /// The runs of `file.export` / `file.export_selection` whose outcome is not reported yet.
+    export_runs: BTreeSet<String>,
     /// Per-document view (zoom, pan, panels, tab), kept while the app runs.
     editor_views: HashMap<String, board::EditorView>,
     screen: Screen,
@@ -233,7 +259,8 @@ pub struct DesktopApp {
     recent_open: bool,
     export_open: bool,
     export_scale: u32,
-    pending_figure_create_profile: Option<(u64, Option<String>, u32)>,
+    /// The output profile and DPI of each Figure creation waiting for its reply, by its ticket: two creations never share one.
+    pending_figure_create_profiles: HashMap<u64, (Option<String>, u32)>,
     /// `page` (the current page) or `all`.
     export_scope: String,
     /// PNG only: a transparent background instead of the page colour.
@@ -249,13 +276,17 @@ pub struct DesktopApp {
     save_path: String,
     export_path: String,
     export_format: String,
-    pending_export: Option<ExportFileRequest>,
+    /// The GUI exports waiting for a reply, by the ticket of their dry run or write: each reply settles its own request, so
+    /// two exports sent one after the other never take each other's.
+    pending_exports: HashMap<u64, ExportFileRequest>,
     pending_image_replacement: Option<PendingImageReplacement>,
     image_crop_editor: Option<ImageCropEditor>,
     video_insert: Option<PendingVideoInsert>,
     video_worker_tx: mpsc::Sender<VideoPosterWorkerResult>,
     video_worker_rx: Receiver<VideoPosterWorkerResult>,
     export_confirmation: Option<ExportConfirmation>,
+    /// Loss confirmations of other exports waiting for theirs to be answered: shown one after another (`ask_export_losses`).
+    export_confirmations_waiting: std::collections::VecDeque<ExportConfirmation>,
     agent_batches: Vec<AgentBatch>,
     reservations: Vec<JobReservation>,
     user_reservations: Vec<UserReservation>,
@@ -333,6 +364,17 @@ pub struct DesktopApp {
     ai_runtime: String,
     ai_model: String,
     ai_effort: String,
+    /// The UI language the window draws in (`i18n`), kept in the GUI settings.
+    language: crate::i18n::Language,
+    /// The output profile and DPI chosen per Figure, as kept in the GUI settings (`settings::FigureOutput`).
+    figure_outputs: std::collections::BTreeMap<String, settings::FigureOutput>,
+    /// The DPI picked in the open export popover: it stays the popover's until its export is sent (`file.export` then sets
+    /// the view's), and closing the popover drops it.
+    export_dpi_draft: Option<u32>,
+    /// This window's settings changes not written yet (`settings::SettingsChanges`).
+    settings_changes: settings::SettingsChanges,
+    /// A notice for a document, from a reply handled while another document was shown: shown when it is shown again.
+    figure_notices: HashMap<String, String>,
     /// The runner menu's model lists, asked from each CLI once (`runner_models.rs`).
     runner_models: runner_models::RunnerModels,
     job: Option<Job>,
@@ -456,6 +498,11 @@ impl DesktopApp {
             failed_transform_id: None,
             requested_pages: HashMap::new(),
             known_sizes: HashMap::new(),
+            page_count_read: None,
+            export_preview_failed: None,
+            export_completions: HashMap::new(),
+            export_runs: BTreeSet::new(),
+            export_reports_waiting: Vec::new(),
             editor_views: HashMap::new(),
             screen: Screen::Home,
             home: home::HomeState::default(),
@@ -486,7 +533,7 @@ impl DesktopApp {
             recent_open: false,
             export_open: false,
             export_scale: 1,
-            pending_figure_create_profile: None,
+            pending_figure_create_profiles: HashMap::new(),
             export_scope: String::from("page"),
             export_transparent: false,
             export_preview: None,
@@ -499,11 +546,12 @@ impl DesktopApp {
             save_path: String::new(),
             export_path: String::new(),
             export_format: "pdf".into(),
-            pending_export: None,
+            pending_exports: HashMap::new(),
             pending_image_replacement: None,
             image_crop_editor: None,
             video_insert: None,
             export_confirmation: None,
+            export_confirmations_waiting: Default::default(),
             agent_batches: Vec::new(),
             reservations: Vec::new(),
             user_reservations: Vec::new(),
@@ -565,6 +613,11 @@ impl DesktopApp {
             ai_runtime: "claude".into(),
             ai_model: String::new(),
             ai_effort: "high".into(),
+            language: crate::i18n::Language::Korean,
+            figure_outputs: Default::default(),
+            settings_changes: Default::default(),
+            export_dpi_draft: None,
+            figure_notices: HashMap::new(),
             runner_models: Default::default(),
             job: None,
             parked_jobs: Vec::new(),
@@ -634,6 +687,16 @@ impl DesktopApp {
         app.call("system.hello", json!({}), PendingAction::Hello);
         app.call("workspace.list", json!({}), PendingAction::WorkspaceList);
         app
+    }
+
+    /// `call` recorded under `artifact_id` instead of the shown document: a request that names its own document (an export sent
+    /// after another document was opened) counts for that document in every check that reads `PendingRequest::artifact_id`.
+    fn call_for(&mut self, artifact_id: &str, method: &str, params: Value, action: PendingAction) -> Option<u64> {
+        let ticket = self.call(method, params, action)?;
+        if let Some(pending) = self.pending.get_mut(&ticket) {
+            pending.artifact_id = Some(artifact_id.to_owned());
+        }
+        Some(ticket)
     }
 
     fn call(&mut self, method: &str, mut params: Value, action: PendingAction) -> Option<u64> {
@@ -812,7 +875,9 @@ impl DesktopApp {
                 } else {
                     None
                 };
-                let require_active = scoped && !job_scoped && !external_source_read && !matches!(&action, PendingAction::Save { .. });
+                // A save and a GUI export carry their own artifact id and revision: they finish when another document is shown.
+                let require_active = scoped && !job_scoped && !external_source_read
+                    && !matches!(&action, PendingAction::Save { .. } | PendingAction::ExportDryRun | PendingAction::Export);
                 let ui_run = self.run_context.as_ref().filter(|_| ui_run_rpc).cloned().map(Box::new);
                 if matches!(action, PendingAction::StartJob | PendingAction::FigureAiJob { .. } | PendingAction::FigureAiImport { .. }) {
                     self.awaited_starts.insert(ticket, Instant::now());
@@ -1024,6 +1089,8 @@ impl eframe::App for DesktopApp {
             self.rpc.set_waker(ctx);
         }
         self.parent_hwnd = window_hwnd(frame);
+        // Every text of the frame is drawn in the window's language (i18n.rs).
+        crate::i18n::set_language(self.language);
         // A UI-test window times its frames (68f, perf.rs).
         let frame_started = self.ui_test.is_some().then(Instant::now);
         self.process_replies(ctx);

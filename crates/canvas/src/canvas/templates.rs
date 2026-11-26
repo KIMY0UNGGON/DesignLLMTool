@@ -191,7 +191,7 @@ fn resume_heading(id: &str, text: &str) -> Node {
         id,
         NodeKind::Text,
         at(0, 0, 1, 1),
-        Style { font_size: 13 * PT, font_weight: Some(700), color: "#1D4ED8".into(), ..Style::default() },
+        Style { font_size: 13 * PT, font_weight: Some(700), color: "#1C1C1C".into(), ..Style::default() },
         text,
         size_spec("fill", "hug"),
     )
@@ -221,7 +221,7 @@ fn resume_entry(id: &str, title: &str, date: &str, detail: &str) -> Node {
                 &format!("{id}.title"),
                 NodeKind::Text,
                 at(0, 0, 1, 1),
-                Style { font_size: 11 * PT, font_weight: Some(600), color: "#0F172A".into(), ..Style::default() },
+                Style { font_size: 11 * PT, font_weight: Some(600), color: "#1C1C1C".into(), ..Style::default() },
                 title,
                 size_spec("fill", "hug"),
             ),
@@ -243,7 +243,7 @@ fn resume() -> CanvasDocument {
     let header = container(
         "resume.header",
         at(0, 0, 1, 1),
-        rounded(plain("#0F172A"), 2 * MM),
+        rounded(plain("#1C1C1C"), 2 * MM),
         LayoutSpec { mode: "column".into(), gap: 2 * MM, padding_sides: Some([7 * MM; 4]), align: "start".into(), width_mode: "fill".into(), height_mode: "hug".into(), ..Default::default() },
         vec![
             leaf(
@@ -254,7 +254,7 @@ fn resume() -> CanvasDocument {
                 "[이름]",
                 size_spec("fill", "hug"),
             ),
-            leaf("resume.role", NodeKind::Text, at(0, 0, 1, 1), text_style(12 * PT, "#DBEAFE", false, "left"), "[직무 / 전문 분야]", size_spec("fill", "hug")),
+            leaf("resume.role", NodeKind::Text, at(0, 0, 1, 1), text_style(12 * PT, "#D6D6D3", false, "left"), "[직무 / 전문 분야]", size_spec("fill", "hug")),
             leaf(
                 "resume.contact",
                 NodeKind::Text,
@@ -377,8 +377,8 @@ fn login(width: i64, height: i64) -> CanvasDocument {
             ..Default::default()
         },
         vec![
-            leaf("login.brand", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#1D4ED8", true, "left"), "[서비스 이름]", size_spec("fill", "hug")),
-            leaf("login.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(26), "#0F172A", true, "left"), "로그인", size_spec("fill", "hug")),
+            leaf("login.brand", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#1C1C1C", true, "left"), "[서비스 이름]", size_spec("fill", "hug")),
+            leaf("login.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(26), "#1C1C1C", true, "left"), "로그인", size_spec("fill", "hug")),
             leaf("login.subtitle", NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#475569", false, "left"), "[서비스 안내 문구]", size_spec("fill", "hug")),
             login_field("login.email", "[이메일 주소]"),
             login_field("login.password", "[비밀번호]"),
@@ -386,7 +386,7 @@ fn login(width: i64, height: i64) -> CanvasDocument {
                 container(
                     "login.submit",
                     at(0, 0, 1, px(48)),
-                    rounded(plain("#2563EB"), px(8)),
+                    rounded(plain("#1C1C1C"), px(8)),
                     LayoutSpec { mode: "row".into(), justify: Some(designllm_contracts::Justify::Center), align: "center".into(), width_mode: "fill".into(), height_mode: "fixed".into(), ..Default::default() },
                     vec![leaf("login.submit.label", NodeKind::Text, at(0, 0, 1, 1), text_style(px(15), "#FFFFFF", true, "center"), "[계속하기]", size_spec("hug", "hug"))],
                 ),
@@ -440,7 +440,7 @@ fn dashboard_metric(id: &str, title: &str) -> Node {
                 &format!("{id}.value"),
                 NodeKind::Text,
                 at(0, 0, 1, 1),
-                Style { font_size: px(24), font_weight: Some(700), color: "#0F172A".into(), ..Style::default() },
+                Style { font_size: px(24), font_weight: Some(700), color: "#1C1C1C".into(), ..Style::default() },
                 "[수치]",
                 size_spec("fill", "hug"),
             ),
@@ -453,7 +453,7 @@ fn dashboard() -> CanvasDocument {
     let sidebar = container(
         "dashboard.sidebar",
         at(0, 0, px(232), px(900)),
-        plain("#0F172A"),
+        plain("#1C1C1C"),
         LayoutSpec {
             mode: "column".into(),
             gap: px(20),
@@ -476,7 +476,7 @@ fn dashboard() -> CanvasDocument {
         at(0, 0, 1, px(40)),
         LayoutSpec { mode: "row".into(), justify: Some(designllm_contracts::Justify::SpaceBetween), align: "center".into(), width_mode: "fill".into(), height_mode: "hug".into(), ..Default::default() },
         vec![
-            leaf("dashboard.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(24), "#0F172A", true, "left"), "대시보드", size_spec("hug", "hug")),
+            leaf("dashboard.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(24), "#1C1C1C", true, "left"), "대시보드", size_spec("hug", "hug")),
             leaf("dashboard.user", NodeKind::Text, at(0, 0, 1, 1), text_style(px(13), "#475569", false, "right"), "[사용자 이름]", size_spec("hug", "hug")),
         ],
     );
@@ -505,7 +505,7 @@ fn dashboard() -> CanvasDocument {
             ..Default::default()
         },
         vec![
-            leaf("dashboard.chart.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#0F172A", true, "left"), "활동 추이", size_spec("fill", "hug")),
+            leaf("dashboard.chart.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#1C1C1C", true, "left"), "활동 추이", size_spec("fill", "hug")),
             container(
                 "dashboard.chart.placeholder",
                 at(0, 0, 1, px(190)),
@@ -529,7 +529,7 @@ fn dashboard() -> CanvasDocument {
             ..Default::default()
         },
         vec![
-            leaf("dashboard.activity.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#0F172A", true, "left"), "최근 활동", size_spec("fill", "hug")),
+            leaf("dashboard.activity.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#1C1C1C", true, "left"), "최근 활동", size_spec("fill", "hug")),
             leaf("dashboard.activity.1", NodeKind::Text, at(0, 0, 1, 1), text_style(px(13), "#475569", false, "left"), "[활동 항목 1] · [날짜]", size_spec("fill", "hug")),
             leaf("dashboard.activity.2", NodeKind::Text, at(0, 0, 1, 1), text_style(px(13), "#475569", false, "left"), "[활동 항목 2] · [날짜]", size_spec("fill", "hug")),
             leaf("dashboard.activity.3", NodeKind::Text, at(0, 0, 1, 1), text_style(px(13), "#475569", false, "left"), "[활동 항목 3] · [날짜]", size_spec("fill", "hug")),
@@ -680,7 +680,7 @@ fn banner(width: i64, height: i64) -> CanvasDocument {
             at(0, 0, if wide { px(120) } else { 1 }, px(48)),
             rounded(plain("#FFFFFF"), px(8)),
             LayoutSpec { mode: "row".into(), justify: Some(designllm_contracts::Justify::Center), align: "center".into(), width_mode: if wide { "fixed" } else { "fill" }.into(), height_mode: "fixed".into(), ..Default::default() },
-            vec![leaf("banner.button.label", NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#1D4ED8", true, "center"), "[행동]", size_spec("hug", "hug"))],
+            vec![leaf("banner.button.label", NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#1C1C1C", true, "center"), "[행동]", size_spec("hug", "hug"))],
         ),
         "button",
     );
@@ -692,7 +692,7 @@ fn banner(width: i64, height: i64) -> CanvasDocument {
     let page = container(
         "banner.page",
         at(0, 0, width, height),
-        graded("#0F172A", "#1E3A8A", 135_000),
+        graded("#1C1C1C", "#3A3A38", 135_000),
         LayoutSpec {
             mode: mode.into(),
             gap: px(16),
@@ -729,7 +729,7 @@ fn mobile_app(width: i64, height: i64) -> CanvasDocument {
                 container(
                     "card.button",
                     at(0, 0, px(160), px(48)),
-                    rounded(plain("#2563EB"), px(12)),
+                    rounded(plain("#1C1C1C"), px(12)),
                     LayoutSpec { mode: "row".into(), justify: Some(designllm_contracts::Justify::Center), align: "center".into(), ..Default::default() },
                     vec![leaf("card.button.label", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#FFFFFF", true, "center"), "[확인]", size_spec("hug", "hug"))],
                 ),
@@ -758,7 +758,7 @@ fn mobile_app(width: i64, height: i64) -> CanvasDocument {
                 ..Default::default()
             },
             vec![
-                leaf(&format!("row-{n}.dot"), NodeKind::Ellipse, px_rect(0, 0, 12, 12), plain("#2563EB"), "", None),
+                leaf(&format!("row-{n}.dot"), NodeKind::Ellipse, px_rect(0, 0, 12, 12), plain("#1C1C1C"), "", None),
                 leaf(&format!("row-{n}.text"), NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#111827", false, "left"), &format!("[항목 {n}]"), size_spec("fill", "hug")),
                 icon(&format!("row-{n}.chevron"), "chevron-right", "#9CA3AF", px(16)),
             ],
@@ -843,7 +843,7 @@ fn landing_page() -> CanvasDocument {
     let hero = container(
         "hero",
         px_rect(0, 72, 1440, 720),
-        graded("#EEF2FF", "#DBEAFE", 135_000),
+        graded("#F6F6F5", "#ECECE9", 135_000),
         LayoutSpec { mode: "column".into(), gap: px(24), justify: Some(designllm_contracts::Justify::Center), align: "center".into(), ..Default::default() },
         vec![
             leaf("hero.title", NodeKind::Text, px_rect(0, 0, 1200, 72), Style { letter_spacing: Some(-PX), ..text_style(px(56), "#111827", true, "center") }, "[핵심 가치 제안]", None),
@@ -852,7 +852,7 @@ fn landing_page() -> CanvasDocument {
                 container(
                     "hero.cta",
                     px_rect(0, 0, 240, 56),
-                    rounded(plain("#2563EB"), px(12)),
+                    rounded(plain("#1C1C1C"), px(12)),
                     LayoutSpec { mode: "row".into(), justify: Some(designllm_contracts::Justify::Center), align: "center".into(), ..Default::default() },
                     vec![leaf("hero.cta.label", NodeKind::Text, at(0, 0, 1, 1), text_style(px(18), "#FFFFFF", true, "center"), "[시작하기]", size_spec("hug", "hug"))],
                 ),
@@ -875,9 +875,9 @@ fn landing_page() -> CanvasDocument {
                     container(
                         &format!("feature-{n}.badge"),
                         px_rect(0, 0, 56, 56),
-                        rounded(plain("#DBEAFE"), px(28)),
+                        rounded(plain("#EFEFED"), px(28)),
                         LayoutSpec { mode: "row".into(), justify: Some(designllm_contracts::Justify::Center), align: "center".into(), ..Default::default() },
-                        vec![icon(&format!("feature-{n}.icon"), glyph, "#1D4ED8", px(28))],
+                        vec![icon(&format!("feature-{n}.icon"), glyph, "#1C1C1C", px(28))],
                     ),
                     leaf(&format!("feature-{n}.title"), NodeKind::Text, px_rect(0, 0, 1, 36), text_style(px(24), "#111827", true, "left"), title, size_spec("fill", "fixed")),
                     leaf(&format!("feature-{n}.body"), NodeKind::Text, px_rect(0, 0, 1, 96), Style { line_height_milli: Some(1500), ..text_style(px(16), "#374151", false, "left") }, body, size_spec("fill", "fixed")),
@@ -895,7 +895,7 @@ fn landing_page() -> CanvasDocument {
     let footer = container(
         "footer",
         px_rect(0, 1312, 1440, 288),
-        plain("#111827"),
+        plain("#1C1C1C"),
         LayoutSpec { mode: "row".into(), justify: Some(designllm_contracts::Justify::Center), align: "center".into(), ..Default::default() },
         vec![leaf("footer.text", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#FFFFFF", false, "center"), "[회사명] · [연락처]", size_spec("hug", "hug"))],
     );
@@ -921,7 +921,7 @@ fn social_post(width: i64, height: i64) -> CanvasDocument {
         at(0, 0, 1, 1),
         LayoutSpec { mode: "column".into(), gap: px(24), align: "start".into(), width_mode: "fill".into(), height_mode: "hug".into(), ..Default::default() },
         vec![
-            leaf("accent", NodeKind::Rectangle, px_rect(0, 0, 160, 12), plain("#F59E0B"), "", None),
+            leaf("accent", NodeKind::Rectangle, px_rect(0, 0, 160, 12), plain("#B4532A"), "", None),
             leaf("title", NodeKind::Text, at(0, 0, 1, 1), Style { letter_spacing: Some(-PX), ..text_style(px(88), "#FFFFFF", true, "left") }, "[캠페인 제목]", size_spec("fill", "hug")),
             leaf("subtitle", NodeKind::Text, at(0, 0, 1, 1), text_style(px(40), "#CBD5E1", false, "left"), "[부제]", size_spec("fill", "hug")),
         ],
@@ -936,7 +936,7 @@ fn social_post(width: i64, height: i64) -> CanvasDocument {
     let bg = container(
         "bg",
         at(0, 0, width, height),
-        graded("#0F172A", "#312E81", 135_000),
+        graded("#202020", "#4A4A47", 135_000),
         LayoutSpec {
             mode: "column".into(),
             justify: Some(designllm_contracts::Justify::SpaceBetween),

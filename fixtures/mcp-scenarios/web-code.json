@@ -1,0 +1,30 @@
+{
+  "task": "web-code",
+  "summary": "A web code project: replace the entry file with a hash-checked source edit, materialize the project folder, check the file on disk against the recorded hash, export a ZIP and a single HTML file.",
+  "steps": [
+    { "id": "workspace", "tool": "workspace_list", "arguments": {}, "bind": { "workspace_id": "/structuredContent/workspace_id" } },
+    { "id": "create", "tool": "artifact_create", "arguments": { "request_id": "$request_id", "actor": "scenario", "kind": "web_code", "title": "P0 web project", "size": null, "template": null }, "bind": { "artifact": "/structuredContent/id", "revision": "/structuredContent/revision" } },
+    { "id": "view0", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "view0", "bind": { "index_sha": "/structuredContent/body/document/files/index.html/sha256" } },
+    { "id": "edit_source", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [ { "op": "replace_web_source", "path": "index.html", "expected_hash": "$index_sha", "content": "<!doctype html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\"><title>P0</title></head>\n<body>\n<h1>P0 web project (edited)</h1>\n<p>Scenario text.</p>\n</body>\n</html>\n" } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "materialize", "tool": "web_materialize", "arguments": { "artifact_id": "$artifact", "expected_revision": "$revision" }, "bind": { "entry_path": "/structuredContent/entry_path" } },
+    { "id": "export_zip", "tool": "artifact_export", "arguments": {
+        "request_id": "$request_id", "options": { "artifact_id": "$artifact", "expected_revision": "$revision", "format": "zip", "required_editability": "none", "allowed_losses": [], "profile": { "dpi": 96, "transparent": false }, "page_indices": null },
+        "target_path": "$scratch/site.zip", "overwrite": false, "expected_target_hash": null
+      } },
+    { "id": "export_html", "tool": "artifact_export", "arguments": {
+        "request_id": "$request_id", "options": { "artifact_id": "$artifact", "expected_revision": "$revision", "format": "html", "required_editability": "none", "allowed_losses": [], "profile": { "dpi": 96, "transparent": false }, "page_indices": null },
+        "target_path": "$scratch/site.html", "overwrite": false, "expected_target_hash": null
+      } },
+    { "id": "final", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "final", "bind": { "final_index_sha": "/structuredContent/body/document/files/index.html/sha256" } }
+  ],
+  "checks": [
+    { "check": "inspect", "pointer": "/structuredContent/body/document/files/index.html/content", "contains": "P0 web project (edited)" },
+    { "check": "file", "path": "$scratch/site.zip", "magic": "PK", "zip_entry": "index.html" },
+    { "check": "file", "path": "$scratch/site.html", "text_contains": "P0 web project (edited)" },
+    { "check": "file", "path": "$entry_path", "sha256": "$final_index_sha" }
+  ]
+}

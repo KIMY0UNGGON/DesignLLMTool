@@ -1807,16 +1807,23 @@ impl DesktopApp {
                     }
                     let standing = self.draft_standing(draft);
                     let when = modified_label(draft.saved_at_ms, now_ms(), local_offset_minutes());
-                    ui.label(RichText::new(format!("{} · {} · {when}", kind_label(&draft.body), self.target_title(draft))).strong());
+                    // The kind and the age are the window's words; the title and the preview are what the person wrote, shown as written.
+                    let header = format!("{} · {} · {}", crate::i18n::tr(&kind_label(&draft.body)), self.target_title(draft), crate::i18n::tr(&when));
+                    ui.label(RichText::new(header).strong());
                     ui.label(preview(&draft.body));
                     let missing = missing_files(&draft.body);
                     if !missing.is_empty() {
                         ui.colored_label(palette.warn, format!("첨부 파일 없음: {}", missing.join(", ")));
                     }
                     if let Some(reason) = standing.reason {
-                        ui.label(RichText::new(reason).color(palette.ink_3));
+                        ui.label(RichText::new(crate::i18n::tr(&reason)).color(palette.ink_3));
                     }
-                    let mut choices = vec![DialogChoice::new("복원", DialogButton::Primary).enabled(standing.ready).human_only()];
+                    // A text-input or PDF-evidence draft can never be restored (its standing says why), so it gets no 복원 button.
+                    let restorable = !matches!(draft.body, Body::Inline { .. } | Body::PdfEvidence { .. });
+                    let mut choices = Vec::new();
+                    if restorable {
+                        choices.push(DialogChoice::new("복원", DialogButton::Primary).enabled(standing.ready).human_only());
+                    }
                     if standing.open.is_some() {
                         choices.push(DialogChoice::new("열기", DialogButton::Plain));
                     }
@@ -1824,10 +1831,11 @@ impl DesktopApp {
                     choices.push(DialogChoice::new("버리기", DialogButton::Danger).enabled(standing.reason != Some(OTHER_OWNER)).human_only());
                     let pressed = dialog_buttons(ui, &palette, &choices);
                     let last = pressed.len() - 1;
-                    if pressed[0].clicked() {
+                    let open_index = usize::from(restorable);
+                    if restorable && pressed[0].clicked() {
                         restore = Some(draft.key.clone());
                     }
-                    if standing.open.is_some() && pressed[1].clicked() {
+                    if standing.open.is_some() && pressed[open_index].clicked() {
                         open = standing.open.clone();
                     }
                     if pressed[last - 1].clicked() {

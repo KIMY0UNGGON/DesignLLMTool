@@ -885,6 +885,11 @@ impl Workspace {
         Ok(store::artifact_row(&self.conn, artifact_id)?.kind)
     }
 
+    /// Title of an existing artifact, without opening its snapshot.
+    pub fn artifact_title(&self, artifact_id: &str) -> DltResult<String> {
+        Ok(store::artifact_row(&self.conn, artifact_id)?.title)
+    }
+
     // ------------------------------------------------------------------ public job/event API
     pub fn job(&self, job_id: &str) -> DltResult<Job> { Ok(store::job_row(&self.conn, job_id)?.job()) }
     /// Stored start request (runtime, model, effort, prompt, sources) for launching the current

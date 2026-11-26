@@ -50,6 +50,8 @@ pub enum Post {
     UiScreenshot,
     /// `templates.preview`: the `asset` PNG is fetched, verified, and returned as image content.
     TemplatePreview,
+    /// `manual.guide`: answered by the bridge from the built-in manual, never sent to the core.
+    Guide,
 }
 
 /// One MCP tool.
@@ -331,6 +333,17 @@ fn schema_reservation() -> Value {
 fn schema_reservation_id() -> Value {
     object(json!({ "reservation_id": string() }), &["reservation_id"], false)
 }
+fn schema_design_guide() -> Value {
+    let topics: Vec<&str> = crate::manual::PAGES.iter().map(|page| page.slug).chain(["shapes-json", crate::manual::PAPER_DIAGRAM_EXAMPLE]).collect();
+    object(
+        json!({
+            "artifact_id": { "type": "string", "description": "Return the mandatory guide for this artifact (its kind and title choose the task guide)." },
+            "topic": { "type": "string", "enum": topics, "description": "Return one manual page: a task guide (paper-diagram, paper-figure, slides ...), glossary, shapes, shapes-json or another reference page." },
+        }),
+        &[],
+        false,
+    )
+}
 fn schema_no_params() -> Value {
     object(json!({}), &[], false)
 }
@@ -539,10 +552,16 @@ fn entry(
     ToolSpec { name, method, title, description, hints, post, schema }
 }
 
+/// Method of the `design_guide` tool. The bridge answers it from [`crate::manual`]; the core has no such method.
+pub const GUIDE_METHOD: &str = "manual.guide";
+/// Methods the bridge answers itself.
+pub const LOCAL_METHODS: &[&str] = &[GUIDE_METHOD];
+
 /// The full catalog. Names are `[a-z_]` only, which every model API accepts as a tool name.
 pub fn catalog() -> Vec<ToolSpec> {
     let t = entry;
     vec![
+        t("design_guide", GUIDE_METHOD, "Design guide", "Returns the mandatory design guide: with artifact_id, the guide for that artifact (shared workflow, the task guide its kind and title call for, design-quality checks and the design glossary); with topic, one manual page (paper-diagram, paper-figure, glossary, shapes, shapes-json ...); with both, the artifact guide followed by that page; with neither, the index and the shared workflow. Call it with the artifact_id before the first change to an artifact: the artifact-bound guide (from this tool, an artifact_create, artifact_open or artifact_inspect result, or a GUIDE_REQUIRED refusal) unlocks changes on this connection to that artifact and to every artifact that takes the same guide (for example every deck); a topic page alone is reference reading and unlocks nothing. The first change to an artifact whose guide this connection has not received is refused with GUIDE_REQUIRED and the guide.", READ, Post::Guide, schema_design_guide),
         t("workspace_list", "workspace.list", "List artifacts", "Lists the artifacts in the open workspace with revision and dirty state. A workspace-scoped response may also include workspace_notices (Diagnostic entries) about migration, backup, or recovery; job-bound responses may omit this workspace-level field.", READ, Post::None, schema_workspace_list),
         t("artifact_create", "artifact.create", "Create artifact", "Creates a new artifact. Repeating the same request_id returns the stored receipt. Size is in EMU; the frame presets are in the designllm://presets resource.", CHANGE, Post::None, schema_create),
         t("artifact_open", "artifact.open", "Open file copy", "Imports a supported file as an artifact. Omit kind to infer Office files or native .designllm files. PDF opens as an editable DOCX copy using Microsoft Word on Windows. Recognized tables remain editable, and conversion may change the layout. The original file is not modified.", CHANGE, Post::None, schema_open),
@@ -607,7 +626,7 @@ pub fn tools_for(scope: Scope) -> Vec<ToolSpec> {
         .into_iter()
         .filter(|tool| match scope {
             Scope::Workspace => true,
-            Scope::JobBound => JOB_SCOPE_METHODS.contains(&tool.method),
+            Scope::JobBound => JOB_SCOPE_METHODS.contains(&tool.method) || LOCAL_METHODS.contains(&tool.method),
         })
         .collect()
 }
@@ -714,7 +733,7 @@ mod tests {
             }
             assert!(distinct.contains(method), "no MCP tool for core method {method}");
         }
-        for method in &distinct {
+        for method in distinct.iter().filter(|method| !LOCAL_METHODS.contains(method)) {
             assert!(CORE_METHODS.contains(method), "tool maps to a method the core does not have: {method}");
         }
     }
@@ -723,7 +742,8 @@ mod tests {
     fn job_bound_scope_exposes_only_scoped_methods_and_never_job_start() {
         let bound = tools_for(Scope::JobBound);
         assert!(bound.iter().any(|t| t.method == "changes.apply"));
-        assert!(bound.iter().all(|t| JOB_SCOPE_METHODS.contains(&t.method)));
+        assert!(bound.iter().all(|t| JOB_SCOPE_METHODS.contains(&t.method) || LOCAL_METHODS.contains(&t.method)));
+        assert!(find(&bound, "design_guide").is_some(), "job agents can read the guides too");
         assert!(bound.iter().all(|t| t.method != "job.start" && t.method != "host.stop"));
         assert!(find(&bound, "job_start").is_none());
         assert!(find(&bound, "figure_render_link").is_some(), "job-bound agents need the explicitly pinned Figure render route");
@@ -921,7 +941,7 @@ mod tests {
         assert_eq!(
             names,
             [
-                "workspace_list", "artifact_create", "artifact_open", "artifact_inspect", "artifact_validate",
+                "design_guide", "workspace_list", "artifact_create", "artifact_open", "artifact_inspect", "artifact_validate",
                 "artifact_save_state", "artifact_save", "artifact_export", "changes_validate", "changes_apply",
                 "design_system_list", "design_themes_search", "design_themes_record", "design_themes_apply", "design_system_publish", "design_system_set",
                 "history_undo", "history_redo", "history_undo_change", "render_get", "render_hit_test", "render_caret_rect",

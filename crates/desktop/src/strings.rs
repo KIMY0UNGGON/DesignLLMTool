@@ -24,6 +24,8 @@ pub fn lint_label(code: &str) -> Option<&'static str> {
         "BACKGROUND_CREAM" => "따뜻한 미색 배경",
         "TEXT_EXTRA_LABEL" => "제목 옆 보조 글",
         "TITLE_LINE_BREAKS" => "제목 줄바꿈",
+        "COLOR_STOCK_DEFAULT" => "AI 기본 색",
+        "ACCENT_BAR" => "가장자리 색 띠",
         "SHADOW_HEAVY" => "짙고 넓은 그림자",
         "LAYOUT_REPEATED_CARDS" => "같은 카드가 줄지어 반복",
         "LAYOUT_ALL_CENTERED" => "글이 모두 가운데 정렬",
@@ -46,7 +48,7 @@ mod tests {
         for code in [
             "TOUCH_TARGET", "CONTRAST", "CLIPPED", "CHILD_OUTSIDE_PARENT", "OUT_OF_PAGE", "TEMPLATE_FIT", "TABLE_OVERFLOW", "ICON_EMOJI",
             "TEXT_PLACEHOLDER", "TEXT_VAGUE_WORDING", "FILL_STOCK_GRADIENT", "SHADOW_HEAVY", "LAYOUT_REPEATED_CARDS", "LAYOUT_ALL_CENTERED",
-            "TEXT_SIZE_SPREAD", "SLIDE_PLAIN_CLOSING", "BACKGROUND_CREAM", "TEXT_EXTRA_LABEL", "TITLE_LINE_BREAKS",
+            "TEXT_SIZE_SPREAD", "SLIDE_PLAIN_CLOSING", "BACKGROUND_CREAM", "TEXT_EXTRA_LABEL", "TITLE_LINE_BREAKS", "COLOR_STOCK_DEFAULT", "ACCENT_BAR",
         ] {
             assert_eq!(lint_label(code), rules[code]["label"].as_str(), "{code}");
         }

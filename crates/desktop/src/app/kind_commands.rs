@@ -246,6 +246,7 @@ impl DesktopApp {
             "web.replace_source" => self.web_replace_source(args),
             "add.icon" => self.add_content_icon(args),
             "add.path" => self.add_path(args),
+            "add.shape" => self.add_library_shape(args),
             "props.path" => self.props_path(args),
             "data.edit_cell" => self.edit_data_cell(args),
             "data.add_column" | "data.add_row" | "data.remove_row" | "data.remove_column" => self.edit_dataset_structure(spec.id, args),

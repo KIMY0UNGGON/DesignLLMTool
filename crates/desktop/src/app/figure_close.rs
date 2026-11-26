@@ -521,7 +521,7 @@ impl DesktopApp {
         use crate::widgets::{DialogButton, DialogChoice};
         let palette = crate::theme::palette(ctx);
         let shown = crate::widgets::dialog_with_choices(ctx, &palette, Id::new("figure-switch-confirmation"), "보류된 변경", crate::widgets::DialogPlace::Modal, |ui| {
-            ui.label(warning);
+            ui.label(crate::i18n::tr(&warning));
             ((), vec![
                 DialogChoice::new("계속 작업", DialogButton::Primary).human_only(),
                 DialogChoice::new("전환", DialogButton::Danger).human_only(),

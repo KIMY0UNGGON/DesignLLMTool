@@ -369,7 +369,8 @@ mod tests {
     fn session(scope: Scope) -> (Arc<Recorder>, McpServer) {
         let recorder = Arc::new(Recorder::default());
         let backend: Arc<dyn ToolBackend> = recorder.clone();
-        let server = McpServer::new(backend, scope);
+        // Engine-exposure behaviour only: the design-guide gate (mcp.rs) is tested on its own.
+        let server = McpServer::new(backend, scope).without_guide_gate();
         let initialize = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": { "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": { "name": "t", "version": "0" } } });
         assert!(matches!(server.route(initialize), Routed::Reply(_)));

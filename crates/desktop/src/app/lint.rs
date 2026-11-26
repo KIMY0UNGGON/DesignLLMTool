@@ -114,7 +114,7 @@ impl DesktopApp {
                 .filter(|warning| warning.node_id.as_deref() == Some(id.as_str()))
                 .filter_map(|warning| strings::lint_label(&warning.code))
                 .collect();
-            let response = ui.interact(rect, egui::Id::new(("lint-marker", id.as_str())), Sense::click()).on_hover_text(labels.join(" · "));
+            let response = ui.interact(rect, egui::Id::new(("lint-marker", id.as_str())), Sense::click()).on_hover_text(crate::i18n::tr(&labels.join(" · ")));
             if response.clicked() {
                 pressed = Some(id);
             }

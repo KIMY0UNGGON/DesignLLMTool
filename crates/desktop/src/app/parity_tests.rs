@@ -156,7 +156,7 @@ fn output_profile_matches_the_mcp_change() {
         patch: designllm_contracts::StylePatch {
             font_size: Some(9 * designllm_contracts::EMU_PER_PT),
             stroke_width: Some(designllm_contracts::EMU_PER_PT),
-            fill: Some("#1F4E79".into()),
+            fill: Some(designllm_contracts::figure_rules::figure_output_profile("double_column").expect("profile").palette[0].into()),
             ..Default::default()
         },
     }];

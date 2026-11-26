@@ -193,11 +193,21 @@ impl DesktopApp {
                     self.notices.info(message, Instant::now());
                 }
             }
-            (PendingAction::FigureProfile { artifact_id, profile_id, dpi }, RpcPayload::Json(value)) => {
-                let view = self.editor_views.entry(artifact_id).or_default();
+            (PendingAction::FigureProfile { artifact_id, profile_id, dpi, kept_legend_items }, RpcPayload::Json(value)) => {
+                let view = self.editor_views.entry(artifact_id.clone()).or_default();
                 view.figure_output_profile = Some(profile_id);
                 view.figure_export_dpi = dpi;
+                self.remember_figure_output(&artifact_id);
                 self.committed(&value);
+                if let Some(message) = super::figure_profile::kept_legend_notice(&kept_legend_items) {
+                    // Home keeps the Figure as the active document: its editor is not on screen, and the notices the window
+                    // shows now are cleared when it opens. The notice waits for that Figure (`show_artifact`).
+                    if self.screen_is_editor() && self.active.as_ref().is_some_and(|active| active.id == artifact_id) {
+                        self.notices.warning(message, Instant::now());
+                    } else {
+                        self.figure_notices.insert(artifact_id, message);
+                    }
+                }
             }
             (PendingAction::PageReorder { token }, RpcPayload::Json(value)) => {
                 if let Some(revision) = value.get("revision").and_then(Value::as_u64) {
@@ -247,7 +257,7 @@ impl DesktopApp {
                 self.save_succeeded(&request_id, &artifact_id);
                 self.refresh_active();
             }
-            (PendingAction::ExportDryRun, RpcPayload::Json(value)) => self.export_dry_run_read(value),
+            (PendingAction::ExportDryRun, RpcPayload::Json(value)) => self.export_dry_run_read(ticket, value),
             (PendingAction::PlayDryRun { request }, RpcPayload::Json(value)) => self.play_dry_run_read(request, value),
             (PendingAction::PlayExport { path }, RpcPayload::Json(value)) => {
                 if let Some(message) = export_warning(&value) {
@@ -273,7 +283,7 @@ impl DesktopApp {
                 }
             }
             (PendingAction::Export, RpcPayload::Json(value)) => {
-                self.pending_export = None;
+                self.pending_exports.remove(&ticket);
                 self.notify_exported(&value);
             }
             (PendingAction::UiExport, RpcPayload::Json(value)) => self.notify_exported(&value),
@@ -361,13 +371,13 @@ impl DesktopApp {
     }
 
     fn apply_created_figure_profile(&mut self, ticket: u64, value: &Value) {
-        if self.pending_figure_create_profile.as_ref().is_some_and(|(pending, _, _)| *pending == ticket) {
-            let (_, profile, dpi) = self.pending_figure_create_profile.take().expect("matching ticket");
+        if let Some((profile, dpi)) = self.pending_figure_create_profiles.remove(&ticket) {
             if let Ok(summary) = ArtifactSummary::deserialize(value) {
                 if summary.kind == ArtifactKind::Figure {
-                    let view = self.editor_views.entry(summary.id).or_default();
+                    let view = self.editor_views.entry(summary.id.clone()).or_default();
                     view.figure_output_profile = profile;
                     view.figure_export_dpi = dpi;
+                    self.remember_figure_output(&summary.id);
                 }
             }
         }
@@ -558,6 +568,7 @@ impl DesktopApp {
                     self.remember_page_size(page);
                 }
                 self.total_pages = scene_total_pages(&snapshot, page_index);
+                self.remember_page_count(&snapshot);
                 if let Some(asset) = snapshot.preview.clone() {
                     self.read_preview_asset(asset, snapshot, page_index);
                 } else {
@@ -578,6 +589,7 @@ impl DesktopApp {
             .first()
             .map_or(self.page_index, |page| page.page_index);
         self.total_pages = scene_total_pages(&snapshot, first_page);
+        self.remember_page_count(&snapshot);
         self.render = Some(snapshot);
     }
 
@@ -748,15 +760,17 @@ impl DesktopApp {
 
     // Export and play.
 
-    fn export_dry_run_read(&mut self, value: Value) {
+    /// The dry run of the export sent with `ticket` is in: its own request goes on (written, or its losses asked about).
+    fn export_dry_run_read(&mut self, ticket: u64, value: Value) {
+        let request = self.pending_exports.remove(&ticket);
         match serde_json::from_value::<ExportDryRun>(value) {
             Ok(dry) => {
-                if let Some(request) = self.pending_export.take() {
+                if let Some(request) = request {
                     let accepted = dry.losses.iter().all(|loss| request.options.allowed_losses.contains(&loss.code));
                     if accepted {
                         self.send_export(request);
                     } else {
-                        self.export_confirmation = Some(ExportConfirmation {
+                        self.ask_export_losses(ExportConfirmation {
                             request,
                             diagnostics: dry.losses,
                             allowed: BTreeSet::new(),
@@ -866,6 +880,15 @@ impl DesktopApp {
 }
 
 /// The page count a render reports, or the pages up to `page_index` when it reports none.
+impl DesktopApp {
+    /// Keeps the page count a render reports, with the document and revision it was rendered at. A render that reports no
+    /// count (the window then guesses one from the page it shows) leaves the count unknown for that revision.
+    pub(super) fn remember_page_count(&mut self, snapshot: &RenderSnapshot) {
+        let reported = snapshot.scene.metadata.get("total_pages").and_then(Value::as_u64).and_then(|total| u32::try_from(total).ok());
+        self.page_count_read = reported.map(|total| (snapshot.artifact_id.clone(), snapshot.revision, total));
+    }
+}
+
 fn scene_total_pages(snapshot: &RenderSnapshot, page_index: u32) -> u32 {
     snapshot
         .scene

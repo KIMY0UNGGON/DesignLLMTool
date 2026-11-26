@@ -1,0 +1,1750 @@
+{
+  "baseline": "p0-v1_1",
+  "capabilities_excluded": true,
+  "cases": {
+    "created.canvas.nested-layout": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "11904142cd8ad11448ad2f74047490a2bc200970b4a9cc7f0f5ed160420b7503",
+        "size": 106
+      },
+      "change/02/result": {
+        "normalized": "uuid",
+        "sha256": "1d42ef6c26ce2d845171f74180bdb0be328668d69a28460e9be51888a9471ad1",
+        "size": 106
+      },
+      "change/03/result": {
+        "normalized": "uuid",
+        "sha256": "929b72a38fac4daeb4df9142bf101da7917f63495824a7b873e45373d9827b84",
+        "size": 106
+      },
+      "change/04/result": {
+        "normalized": "uuid",
+        "sha256": "fc2596d90f9a26a7c550db6091c922334e573ff667b3ae0fffa1b21e6a49c46b",
+        "size": 105
+      },
+      "change/05/result": {
+        "normalized": "uuid",
+        "sha256": "70a75b5672dd4b272070d89c2f7957b9bc13e446b5c231ae7e4b96b7d8f5c753",
+        "size": 104
+      },
+      "change/06/result": {
+        "normalized": "uuid",
+        "sha256": "a9b2c75ef5e5df2bd8280bccf9f8e20288932ff0cdefd5cab162a28bcbf50c73",
+        "size": 104
+      },
+      "change/07/result": {
+        "normalized": "uuid",
+        "sha256": "2bf2c26eb4c856f66c0bfcb7405cb8ac1ee88e5065de85e94550be647702e461",
+        "size": 104
+      },
+      "change/08/result": {
+        "normalized": "uuid",
+        "sha256": "2aa18540b6810d9ec20814d55d5b5c1acb9622d01863c8fee01f3103a08a32a6",
+        "size": 104
+      },
+      "change/09/result": {
+        "normalized": "uuid",
+        "sha256": "04a9a5d141b0e008dd13f171e485e385eb912247f6dcb93497e0836ab44ec61b",
+        "size": 106
+      },
+      "change/10/result": {
+        "normalized": "uuid",
+        "sha256": "425389d86d3e708d2bda835178a67aa2731c768343194bc70ac07230c2064c2a",
+        "size": 108
+      },
+      "change/refused-missing-node/refused": {
+        "normalized": "uuid",
+        "sha256": "5dbd0709f48ec0357882c8f49f9edb1ebaf8cd34fcbcac426131acbe3b72f143",
+        "size": 277
+      },
+      "create": {
+        "normalized": "uuid",
+        "sha256": "428346b3bdff35ad960f4e37e452e839dd8b5e4f850b950fd2f932ff7a357ffc",
+        "size": 117
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "99d4771609a4f5dc1eca3b9732e6370fd5c148c714238bb61c995f32a7f16cb0",
+        "size": 152
+      },
+      "export/html": {
+        "normalized": "uuid",
+        "sha256": "df626d5e7e97cacb1b6d1390e031c4921ce84a31f3e1358ba495f7a7d53960a0",
+        "size": 7341
+      },
+      "export/html/result": {
+        "normalized": "uuid",
+        "sha256": "3635cd9e01df137c574510e797403ead3fa6b7dfd52ea7630fe25b93e63b0a39",
+        "size": 541
+      },
+      "export/pdf": {
+        "sha256": "0bac4a53be5c23b583d50680a54582d64d46db9713a6fb475991e0df121331ea",
+        "size": 12472
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "1f8b676990b2aedb1fe7799f2204e6b40f41c1143fb7fd2d344169028f5716c0",
+        "size": 307
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "dcad79efe9e1aff6a6cad0fc1df0f73b82b9e33be2983c11b297a10576d3e338",
+        "size": 7197889
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "fb8d92c16bcab15b301fbca395bd02663abbf62bcb5509c5d79486f2cdbbc7e8",
+        "size": 379
+      },
+      "export/svg/p1": {
+        "normalized": "uuid",
+        "sha256": "6ee9a2f9669500c960a56d4074dcf3c9990f6e816ed800cebe67a43f680af2fc",
+        "size": 3557667
+      },
+      "export/svg/p1/result": {
+        "normalized": "uuid",
+        "sha256": "625e96f6f88fecf5cf1aa90d190a56f3acf9fca48c7d4373769b4d6bc76e2b06",
+        "size": 359
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "578774165a7ac46c26480650827131eb5a6b2715fa982ae5c0fd9ffbebe086a9",
+        "size": 4140
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "a0be1261466e9d74027855f1d35564f8e3e8a557854a55c13eef57e8010b3052",
+        "size": 3341
+      },
+      "inspect@r10": {
+        "normalized": "uuid",
+        "sha256": "578774165a7ac46c26480650827131eb5a6b2715fa982ae5c0fd9ffbebe086a9",
+        "size": 4140
+      },
+      "inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "ed19e5d2d80fbda2dcaaba2236ac909ec3dceb089545f1b59a61c0acf9c328d0",
+        "size": 3424
+      },
+      "inspect@r3": {
+        "normalized": "uuid",
+        "sha256": "0478cce8a90023d0143068a5a74879377e1649e0fc514af9c7bd83990896f86b",
+        "size": 3570
+      },
+      "inspect@r4": {
+        "normalized": "uuid",
+        "sha256": "910b7e28943756e8af4467eae5db3932c7dd0469a539207e7325b14830dcae67",
+        "size": 4011
+      },
+      "inspect@r5": {
+        "normalized": "uuid",
+        "sha256": "891ed38f2d8bd1fffb28cbb7f131fb52af5360394b4a469bb9eb13cb32c18cb3",
+        "size": 4056
+      },
+      "inspect@r6": {
+        "normalized": "uuid",
+        "sha256": "70b3660cd74ebff124bd813ed87ff0bebd08c3f808edd03c5986be045e524d07",
+        "size": 4104
+      },
+      "inspect@r7": {
+        "normalized": "uuid",
+        "sha256": "6616971381d6cfc032d2a2058cc76258e0a4ad0f9d785141a91397b46e76c68b",
+        "size": 4105
+      },
+      "inspect@r8": {
+        "normalized": "uuid",
+        "sha256": "d7db1fd6d4518d44bb4076bec6c28e924c102087e1371b31a7743e0b4b38b493",
+        "size": 4116
+      },
+      "inspect@r9": {
+        "normalized": "uuid",
+        "sha256": "f85e5c87d52d14e7710ed10786047dbdc76b60c3d23a60e3f40927105ec31680",
+        "size": 4125
+      },
+      "render/p0/png": {
+        "sha256": "16637c7e88f69845671ac23d38cc87669878d79b6ba847d2971edd2f6edf03f1",
+        "size": 23310
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "7daeb6f8963ca04962c30960dbb86ccdcbff1fc10fa4d4e784a00619be0fb9bc",
+        "size": 15936
+      },
+      "render/p1/png": {
+        "sha256": "671a628755a951d6224ae4d23fa07be3f2b6182f3f437eba2d8dfa37cbd78df1",
+        "size": 8604
+      },
+      "render/p1/snapshot": {
+        "normalized": "uuid",
+        "sha256": "f07a645ef90958d740c339f3de62056d578a1c187e39f229d6f94e9841f9a457",
+        "size": 4370
+      },
+      "save/canvasproject": {
+        "normalized": "uuid",
+        "sha256": "202503223738998fd45368a4e04bcd01868d95924f6387a8671c497ef6754962",
+        "size": 9331
+      },
+      "save/canvasproject/result": {
+        "normalized": "uuid",
+        "sha256": "83fc92ed68309a8509d145e26ad5236b93af8cc7b7b58c5086e623d2e9b435f9",
+        "size": 203
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "34c70a449f22cf65107873c67bfb88741df1064976b1053394f979a3f328aaf9",
+        "size": 57
+      }
+    },
+    "created.docx.document": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "3c1eeacbe281f35aa44e128b23446601dc03eb856965f5ad54c064c3f06e0dd2",
+        "size": 580
+      },
+      "change/02/result": {
+        "normalized": "uuid",
+        "sha256": "5c7e48e6a3895f9056fd01d4171256d7389b9465c200c7d3f605cc6c2a8abf9c",
+        "size": 107
+      },
+      "change/03/result": {
+        "normalized": "uuid",
+        "sha256": "fc9cf0fb0c314f8416f76bbc3940533e285ebebdd62b8d81eafacb29fe2f99b0",
+        "size": 122
+      },
+      "create": {
+        "normalized": "uuid",
+        "sha256": "18fe9497e1e474c1cb74acc7ab632a81df2d756c0bd5cea1999b061076d650df",
+        "size": 108
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "3c736d32ad5930a6c1a41f538b5d0b658e6a9542ea1cac28bb26ba32fe51147f",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "6d72a501c7157f5e0a196ac6815f89e3ea57f4105e787c19e035050ae35480ea",
+        "size": 14208
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "700097d824d47e7f909aaf33285b316e286087c2658890dd79017769ab059bd5",
+        "size": 299
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "2d94b518d140c7ce4209fa70ebf784ddd4674f03b645ed8545177a6533f4ac8c",
+        "size": 7198650
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "beca11d8f2027d702f1b830a080b6c9eb2d2d1f431c59f1eae7584ca75383d38",
+        "size": 371
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "46b91d18277651f660a78cfbb8b2ae1ac58effd7fbe7a4a07f362d167dbc426e",
+        "size": 4415
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "0482ffdb40d8b4e5e6c69215964c4061ebf730eb5ee993c4aff11c3e61c7dfb3",
+        "size": 4404
+      },
+      "inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "fbd2fd5c9af3d7e46473726c22d58ab10c8c95f878024d3c7aefc82f5cd6deeb",
+        "size": 4407
+      },
+      "inspect@r3": {
+        "normalized": "uuid",
+        "sha256": "46b91d18277651f660a78cfbb8b2ae1ac58effd7fbe7a4a07f362d167dbc426e",
+        "size": 4415
+      },
+      "render/p0/png": {
+        "sha256": "75c761b5566355963bcce28c24d1f043c21cf213d7a39b1d662e5531fa93660c",
+        "size": 14366
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "c2947b02977951a3cdfd3579be2edb46be5d6ddbc7e68cd6e793c81db606a1cb",
+        "size": 32293
+      },
+      "save/docx": {
+        "sha256": "adfc813f46e71cb0e1ea2f45125b219a9fd7a17d73d13918e18d7912b951b5c8",
+        "size": 3215
+      },
+      "save/docx/result": {
+        "normalized": "uuid",
+        "sha256": "182d118fa51f0d11b4cb8946859cb07a8efce3c45614eafb1d81ef9ae026704c",
+        "size": 257
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "5c2c56b09e6cf6f44e3dc84f8fec5288141c0a50afcdbeb8fc265478909e67a7",
+        "size": 56
+      }
+    },
+    "created.figure.mixed": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "75eb60b892a51a6a44f4882cb9436a2822f5588e64b174887f298df5882e02a5",
+        "size": 180
+      },
+      "change/02/result": {
+        "normalized": "uuid",
+        "sha256": "082ecb6fdb6abbc72d00b6e651c4177578f9ef4ab3c02a51937bab6eae73fe0f",
+        "size": 106
+      },
+      "change/03/result": {
+        "normalized": "uuid",
+        "sha256": "8a3835824f3e2e30d18a6c20682fd10e7551d60f25e8651b5eef75092614b81b",
+        "size": 106
+      },
+      "change/04/result": {
+        "normalized": "uuid",
+        "sha256": "9548f867e84b333834b379872c6180ecaaa7d5869115512ea8b3017234f3ee3e",
+        "size": 106
+      },
+      "change/05/result": {
+        "normalized": "uuid",
+        "sha256": "faacc29992e1484ab335de08efbd6b087e5d667d1e4b11772f58ef87bba87248",
+        "size": 130
+      },
+      "create": {
+        "normalized": "uuid",
+        "sha256": "5f263323b7f4745659729ae0ea90ef0c2a98cabbd6c8f16f5e30cc1c9ef529ad",
+        "size": 117
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "e2bf8edcdcfc4c44423480db413e505c65f4ef2012e42150559104502b4cff2d",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "fb357ef92f4e8442b0bd9deedb08f71b90d9d70614ed95178df47ebc7bca124b",
+        "size": 17540
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "397b2b5bdce9b1636c507ff6a145ee2563fdeaec95f8d656033eb2d5a4a07544",
+        "size": 298
+      },
+      "export/png": {
+        "sha256": "d9ba56ddbcda8b273a929255f09eb1acae9d05fa8c06fb3b010abe4608b09dd9",
+        "size": 20068
+      },
+      "export/png/result": {
+        "normalized": "uuid",
+        "sha256": "6026a4837fdc8570cf5f03cd7eb86cb9821dfbee8feedcafd734097a6315d8c1",
+        "size": 290
+      },
+      "export/pptx": {
+        "sha256": "e9164a3a52fbc50a6c7dc3eb19e6449b3c8f94884c62a2ba6dff0baa2129f985",
+        "size": 8155
+      },
+      "export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "48d996eb331f79f540ca94fe1b3fc2070e4e1d06453be7c78408ef17b418e558",
+        "size": 527
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "6e8f29a4b79ff931938ff70cc98960e10b8ad8c0f9554352628cc2391395b767",
+        "size": 7203742
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "a378f2caf3c3b3eb463dce704e8553a77b5c3c552723cd3c8a7dbbd30ee42368",
+        "size": 370
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "5566f4af27b4642db8d21d59afdd4b5a6f5d9c43e09f691fb2a10315b700c3f4",
+        "size": 5197
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "f221f7dfe892b387c02f64025bbfd979d2e7f39172b5a9090fe55f62d2a7ae21",
+        "size": 4979
+      },
+      "inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "0d44e542f7d0f5d47abba6c556321916882121b29e6b39837019187f985de49a",
+        "size": 4979
+      },
+      "inspect@r3": {
+        "normalized": "uuid",
+        "sha256": "c5307937aa3f7e3aea9a583c85216da4ce28cc370675b24c4338d58e91a7c5bf",
+        "size": 4985
+      },
+      "inspect@r4": {
+        "normalized": "uuid",
+        "sha256": "6e9d6f60cb68e376c16d11529a6e23d56ab9e5e4555b016a8eb121b5c0737295",
+        "size": 4985
+      },
+      "inspect@r5": {
+        "normalized": "uuid",
+        "sha256": "5566f4af27b4642db8d21d59afdd4b5a6f5d9c43e09f691fb2a10315b700c3f4",
+        "size": 5197
+      },
+      "render/p0/png": {
+        "sha256": "d9ba56ddbcda8b273a929255f09eb1acae9d05fa8c06fb3b010abe4608b09dd9",
+        "size": 20068
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "4d4c51a17c21970d05827f54bb4d304e7437666503956d2d97be97985d55a0c3",
+        "size": 53016
+      },
+      "save/figureproject": {
+        "normalized": "uuid",
+        "sha256": "a53894d5c15dada9e0367c76d8faf446b7dc934ec7bb7798241619601b887f2d",
+        "size": 11439
+      },
+      "save/figureproject/result": {
+        "normalized": "uuid",
+        "sha256": "52d9008c37d6b75f274abea0105660fd6a9c69e306e46a1d4eab4416203f4243",
+        "size": 193
+      },
+      "source/csv": {
+        "normalized": "uuid",
+        "sha256": "fb7397e648dc44537bbfba590b4f591c866407aa6200ea516941c0f5400f460b",
+        "size": 1660
+      },
+      "source/extract": {
+        "normalized": "uuid",
+        "sha256": "fc54b202238b610d97bcf814840572e5ebd17f2b1021726d0d8e3011b511c2b9",
+        "size": 1241
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "282b03f901037525b6ef5facf58d54241cb118308b79952c6a9f3b6ce00b7f02",
+        "size": 56
+      }
+    },
+    "created.slides.deck": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "7c809bd757a226f559151792e770396e7b5c675b2fa5e5e33b896351512b5a4e",
+        "size": 128
+      },
+      "change/02/result": {
+        "normalized": "uuid",
+        "sha256": "dc891d1add566fbb785ab55c005e1a30144f8936fb3d2ea5006f8b8610b14ed9",
+        "size": 112
+      },
+      "change/03/result": {
+        "normalized": "uuid",
+        "sha256": "01e7642f324cec9a73125c0214074c1c084bb7ce4f54f59343360aaee73fadba",
+        "size": 108
+      },
+      "change/04/result": {
+        "normalized": "uuid",
+        "sha256": "d4733b2815eae22243d01ff3abf93fb2c63f2ffbc5fabd3b69fe50303c09229b",
+        "size": 102
+      },
+      "change/05/result": {
+        "normalized": "uuid",
+        "sha256": "d9341d7fccca417aa8dca0954a797b97ae36f7ab6c89911fb4ec8b886e8aa210",
+        "size": 108
+      },
+      "change/06/result": {
+        "normalized": "uuid",
+        "sha256": "f12fddf9aa3374e4d8856fdd893faa4a9d5b1e17c7f35a48560c2382f23d62d1",
+        "size": 102
+      },
+      "create": {
+        "normalized": "uuid",
+        "sha256": "5e044368f5be614f704bfea9c35493c796bcf4c2b91ff2cf50233b54c48b3cea",
+        "size": 106
+      },
+      "digest/refused": {
+        "normalized": "uuid",
+        "sha256": "7fe3235d9290a6568941eb4c22bb7942217a6620d9b829473d477be9b175ee9e",
+        "size": 162
+      },
+      "export/pdf": {
+        "sha256": "0e65c034220aba9acc709e35f7002efa31342cdf3a0912c061fc4d4c71b4dfdb",
+        "size": 10509
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "f2eee550e40b9ce7f4f7b55c1cfae89a1682d251aae68657112a3d8fed0aff07",
+        "size": 424
+      },
+      "export/pptx": {
+        "sha256": "93f113efa006877b9f20aeb696079553ee98eb11ad1e695bbf2621bef58790ae",
+        "size": 12686
+      },
+      "export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "5a8ec7638a643034cb400a2454b863947b2cd013380fb9fcad1a2da67b72784a",
+        "size": 359
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "0fc764f6ca041b14ef56c91f0c528dadf91974a37952101a7bbac8892e6e3d51",
+        "size": 3558872
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "09edf148cd0ff3e6b92ddb230120dee577bfc1a0c18e6294e78dae9914d0e0e0",
+        "size": 477
+      },
+      "export/svg/p1": {
+        "normalized": "uuid",
+        "sha256": "04f5c38bab39ff83c35177ec528e1d89dd411befe3a617dc0ca8583711182ff0",
+        "size": 3639936
+      },
+      "export/svg/p1/result": {
+        "normalized": "uuid",
+        "sha256": "d26047344f5525073efd8586af80adf1491f023d93581c0c76afbcd0ac751a0a",
+        "size": 352
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "5e51bf029a33ba24c575fe9afbd89163b3187136785059f9bfacea4fb548e172",
+        "size": 2344
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "3a4207edfe92a04041ca769ae2cbc340c14229e269033bb150dc248ae575ff76",
+        "size": 2196
+      },
+      "inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "f0cd1a7b2650d5ce33f841a87d43e0877e453186e499dc73601c1936655f269e",
+        "size": 2659
+      },
+      "inspect@r3": {
+        "normalized": "uuid",
+        "sha256": "530396524ce51bcfdefc7a30a7204c15846a0979df16ea2cb08868b200373fb4",
+        "size": 2678
+      },
+      "inspect@r4": {
+        "normalized": "uuid",
+        "sha256": "706121835e7bfd73c10a5a3a56276e8a7e44458fda1def546f45e6b5d9fc6b77",
+        "size": 2687
+      },
+      "inspect@r5": {
+        "normalized": "uuid",
+        "sha256": "b42fbfaef8620d5e07f751b758ebb251f0cc2e25b9c17919f8054ef965ea3bbb",
+        "size": 2687
+      },
+      "inspect@r6": {
+        "normalized": "uuid",
+        "sha256": "5e51bf029a33ba24c575fe9afbd89163b3187136785059f9bfacea4fb548e172",
+        "size": 2344
+      },
+      "render/p0/png": {
+        "sha256": "26509238dad29f02fc4ede191ea2158840d23b14460f6b4e5f032657f871cc77",
+        "size": 24525
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "3708b33604f6475e05cc6be3f3637ce04eaa5289361067037bb8b6895ef68390",
+        "size": 9444
+      },
+      "render/p1/png": {
+        "sha256": "32688071e8b11965bc861cc0bb6faf51b187aadda58d18a6ed2b5618ee6453fd",
+        "size": 8020
+      },
+      "render/p1/snapshot": {
+        "normalized": "uuid",
+        "sha256": "6e0abe7fa9a69ae469a16fcd9f9e938d10cf59b47897dd436545657749c7b5be",
+        "size": 5701
+      },
+      "save/pptx": {
+        "sha256": "93f113efa006877b9f20aeb696079553ee98eb11ad1e695bbf2621bef58790ae",
+        "size": 12686
+      },
+      "save/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "f94f062a776b8a12921bc1db9c83ba898bc0d1152a7c983ecfd5551476087da9",
+        "size": 255
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "644b4c5219762441d450520ae6d1cefe9820284b5f63b7f2d63acb6dfe23004d",
+        "size": 56
+      }
+    },
+    "created.web.project": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "e56cfef901983c0d6b2d53ea07288262609f6b14bd96a3088573e9dceae33b78",
+        "size": 109
+      },
+      "create": {
+        "normalized": "uuid",
+        "sha256": "e17b132a4daa6ea18c893497a2bbdac84ebfc053b7cab29c1c9a8f0a78240528",
+        "size": 114
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "0c8c014d29ec51ac2beb81735aa0b91871d2175936d076aa44e5fa38763c0f86",
+        "size": 152
+      },
+      "export/html": {
+        "normalized": "uuid",
+        "sha256": "f92264f557e36c1b9fe8c8c754a44887f1b82523747895e99594710d0a540e64",
+        "size": 164
+      },
+      "export/html/result": {
+        "normalized": "uuid",
+        "sha256": "c1bd238e73860050d4c99342ad170acd716ddd979fcc9adf90a527b5e8f48c9f",
+        "size": 236
+      },
+      "export/zip": {
+        "sha256": "30b2b323fb6d71c55685a2d62f5a5ecacfeeb3fd16ada602c34d694259082cdd",
+        "size": 249
+      },
+      "export/zip/result": {
+        "normalized": "uuid",
+        "sha256": "f94d62d6d6ac140384c2a005d392e4389997260c45ebad432322bbade84a28bf",
+        "size": 300
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "be1c53074bab2b9c86ca2ec28cb29164ec0390d2ad6050f28c2250d44b82fe34",
+        "size": 539
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "be1c53074bab2b9c86ca2ec28cb29164ec0390d2ad6050f28c2250d44b82fe34",
+        "size": 539
+      },
+      "save/webproject": {
+        "normalized": "uuid",
+        "sha256": "8f2262b4ab883c904f5072dd59038a6a85819061423af1d5416729130ebb32fe",
+        "size": 5050
+      },
+      "save/webproject/result": {
+        "normalized": "uuid",
+        "sha256": "3a6d2e66ff3358394b42edb635fafd01ff9c9f536439508a4fa59fc61605f245",
+        "size": 186
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "3861f33fcf79b7e202b1fbd35fce202134f49ea7ad67fa43eaafe5c5908a4c54",
+        "size": 56
+      }
+    },
+    "fixture.csv.invalid-cases": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "ad68d709676601835647207defe2843cdc595d365e397ed6031955f6a94d3df4",
+        "size": 120
+      },
+      "change/02/result": {
+        "normalized": "uuid",
+        "sha256": "a589f6bd3c1b0176a34d986687338d16dd62a03811b1185e5e35430994130284",
+        "size": 120
+      },
+      "create": {
+        "normalized": "uuid",
+        "sha256": "f50eb2042d3e867c245f35a1eba71489ed7f1f4663b65204ffa30cee7cf880e7",
+        "size": 118
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "da87170060b224e72678b440382051a96e60eb33515bb1a9cd1bfdd9e2decd1a",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "80c497e1d8508557378df2d7148fff3aef0931c732142b9a9ee13aae70781103",
+        "size": 668
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "4340a425c2429a2f5ed234b13347746a0e2137428aadbde19f45e3a69bb51b1f",
+        "size": 301
+      },
+      "export/png": {
+        "sha256": "bdb7d5199bd3ff3e6e31ef7ee9f52833d0f8f412b41c662016da0026d5672577",
+        "size": 6004
+      },
+      "export/png/result": {
+        "normalized": "uuid",
+        "sha256": "7ca221cdf6d1d9767ab8e20d92567b7827cc7ad535ceb08c2613fada05fe78a6",
+        "size": 294
+      },
+      "export/pptx": {
+        "sha256": "2027efab7c3153d92b5f3f12cfc42f67d6eb2cfebc0fc0faccd743180919aa16",
+        "size": 6593
+      },
+      "export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "c5ea9ac4553db706c2823a28c471ac192c8bfa4dcd903978e7a5dc5e00cd9a31",
+        "size": 364
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "ab6d12e24282de2779ced24f1b93490df5894804d0088b506cf58cfdb1e2f7c0",
+        "size": 227
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "d883a73261f522b2a55583843bc70c28bc554690e847fde88d21468b22df3cf4",
+        "size": 227
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "def13f1985e2abea1bbf2ec88dd7c37492b69112ee4ab019c147770ac33d5071",
+        "size": 8446
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "6ab897f55b70dc91564d9d1779797c1503cbd61dc9c2881a1342a4ebcf97d47b",
+        "size": 8234
+      },
+      "inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "def13f1985e2abea1bbf2ec88dd7c37492b69112ee4ab019c147770ac33d5071",
+        "size": 8446
+      },
+      "render/p0/png": {
+        "sha256": "bdb7d5199bd3ff3e6e31ef7ee9f52833d0f8f412b41c662016da0026d5672577",
+        "size": 6004
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "9d60c23b636b2d28d579ae27929a1fc20c3195d848cdbc8b6fd6fc4c804ebaa3",
+        "size": 1039
+      },
+      "save/figureproject": {
+        "normalized": "uuid",
+        "sha256": "b941286da52429837b40fd95a58db73cdf0d7e34fd853d51919259cfd668c25f",
+        "size": 9190
+      },
+      "save/figureproject/result": {
+        "normalized": "uuid",
+        "sha256": "a737ff948089f3e41393cc7d3893a8f34688b8f576f0a37bd16a7ea6b612983d",
+        "size": 198
+      },
+      "source/csv": {
+        "normalized": "uuid",
+        "sha256": "fcd622efce9cf54883e448cac9c5bfc30db33a51efdf62f158ff3c4f9c9841a1",
+        "size": 7889
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "34eae859ebce23d13cb6c65f69031b0221e730bf63c9e3f1fa11421d6f231cb9",
+        "size": 56
+      }
+    },
+    "fixture.csv.known-sd": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "bf8cd95c9cf72d74bf8c9866633cc8ae6212f66923917eb41d0fd47297271c6f",
+        "size": 130
+      },
+      "change/02/result": {
+        "normalized": "uuid",
+        "sha256": "4d4f76eca2f08d90a921cce7363317ca1f2291e3244f6b98435ca3a904cdb4c9",
+        "size": 130
+      },
+      "create": {
+        "normalized": "uuid",
+        "sha256": "c24be88e41ca39257088b4ce42ed6db6591da0b87b599813371d2c0b6eb79053",
+        "size": 113
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "92bcadf808b90f45829bf07fc6551df17b3622e7055bd116241ef97db2327749",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "1e0d0e98817927430006d71a477fbcf681dd1b0859432366ae6ff3850ddec21a",
+        "size": 15741
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "7638da8892ba4b4864789112f3af5762e47f78140173040d8384e0e97b08f5e5",
+        "size": 298
+      },
+      "export/png": {
+        "sha256": "ed516953c1eeea32e0f5e91e12ef944fa9bafcfad129af73e6ac9c13a9d0c528",
+        "size": 18341
+      },
+      "export/png/result": {
+        "normalized": "uuid",
+        "sha256": "8d409b4aec99eb0f897984b73ba9b4b8f081753da52a9acca079fd57e66db2d0",
+        "size": 290
+      },
+      "export/pptx": {
+        "sha256": "f9f7207e9f93f852dbea4e81e64c42f826843dfd9d617bfcbe45b1eb4e5db463",
+        "size": 7902
+      },
+      "export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "e49d110d2abcb74e120b96027c74bf7d8501a9eea8bd90b0cf4cbcb076447ddc",
+        "size": 527
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "761c8103c02899ca1be58bfbdbf72e339823041a604915df000f20e0f9e20163",
+        "size": 7202567
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "0700962ea5baf421730536eec79f47d7be87e26fca28a72e2797f1dedc7170ba",
+        "size": 370
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "2b58f79a7b3626c479c62a043190c49d7b05a809f282119251ca94732f498f20",
+        "size": 3023
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "7acc079293ae8f24b577b622a016f44399ea3d639bce057ef0a78b23ab058401",
+        "size": 2811
+      },
+      "inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "2b58f79a7b3626c479c62a043190c49d7b05a809f282119251ca94732f498f20",
+        "size": 3023
+      },
+      "render/p0/png": {
+        "sha256": "ed516953c1eeea32e0f5e91e12ef944fa9bafcfad129af73e6ac9c13a9d0c528",
+        "size": 18341
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "16e9f570e8ce76af6af513f217e18d6cfb688afba6de5dcaa14c0b662f222eaf",
+        "size": 45203
+      },
+      "save/figureproject": {
+        "normalized": "uuid",
+        "sha256": "77b5c4869b14ea477187783e73d5775e09bd34a4b7e4604ec64d054f3c30c2cc",
+        "size": 3160
+      },
+      "save/figureproject/result": {
+        "normalized": "uuid",
+        "sha256": "5469c59a4ccbd3529cc3a7d0c1b79c3d2bf29c4c637beedd803569a2611d7770",
+        "size": 193
+      },
+      "source/csv": {
+        "normalized": "uuid",
+        "sha256": "fb7397e648dc44537bbfba590b4f591c866407aa6200ea516941c0f5400f460b",
+        "size": 1660
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "34eae859ebce23d13cb6c65f69031b0221e730bf63c9e3f1fa11421d6f231cb9",
+        "size": 56
+      }
+    },
+    "fixture.docx.basic-preserve": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "52719ded45e1028357002e4455f903774fbf56430f63fbd6ef250dd6063f110c",
+        "size": 430
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "b28920e6bfe51dd26abe699dc39674c30dec1c8b6f7938d69764996d4321995b",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "2f9a5bf627d4e248c6623081b665807a4f776bbcc226611bd60eb198c2a5c556",
+        "size": 14014
+      },
+      "export/pdf/refused": {
+        "normalized": "uuid",
+        "sha256": "c49d9a7480f9a82e203298a2824a7ec1a7d765af4e9597c343fe2eca7f7c056b",
+        "size": 371
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "732b4ede14ec157aa918a92b7330c7d4d2152b5c08bef9b4f3225ddca3bb25bd",
+        "size": 753
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "e733b6075d171ad22418d5ed6c6bf2609272f0228523986699409576d6d5d794",
+        "size": 7198710
+      },
+      "export/svg/p0/refused": {
+        "normalized": "uuid",
+        "sha256": "c49d9a7480f9a82e203298a2824a7ec1a7d765af4e9597c343fe2eca7f7c056b",
+        "size": 371
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "0123217ddf5e3844a5461e4fad7eff2bf9481a333f42529e4101a1fa1be4f198",
+        "size": 826
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "65ad42f5a31ea3bda3beb8a1e9794c9098089bbb2c694b05a392412952449b04",
+        "size": 4368
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "65ad42f5a31ea3bda3beb8a1e9794c9098089bbb2c694b05a392412952449b04",
+        "size": 4368
+      },
+      "open": {
+        "normalized": "uuid",
+        "sha256": "61861408e3deb557b4698a57de1558ab43c649f297a04c478072f537e4a01688",
+        "size": 112
+      },
+      "render/p0/png": {
+        "sha256": "7c6786934a2c07e54b09c4b288e9af3c335725c2862cbc053401546c7b7461e1",
+        "size": 14246
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "b5f1ee4ada7308e597498d10a1545dd0e0c7813c3aa291d8968e3fdcc1920649",
+        "size": 22715
+      },
+      "save/docx": {
+        "sha256": "a06cc6d255480b610c71dd02228599e96887ed33caed5d0a48390f579c617ccb",
+        "size": 4786
+      },
+      "save/docx/result": {
+        "normalized": "uuid",
+        "sha256": "4eaed69fd79e2bf045d0a52909db165c20695aaef566682cae874691f744ee49",
+        "size": 264
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "4711a143bc9ec0530dcaaf67bfcdf832bbba4fbca3a0a5fa64299b1439c8ec31",
+        "size": 367
+      }
+    },
+    "fixture.hwp.binary-source": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "f3b269b932b9117a00c2fd1e940179073abafbd3b75ecb26758b9e5a2395e067",
+        "size": 370
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "f4541193ff071cbbbe09f8efe18b9cf65930387a06b7337edaf311f80e5e5d78",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "75ea093d964706ab48a4ad5241183bb6fbbc4682f00ee352ddac6f3501542601",
+        "size": 9649
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "c2e30aee4689b99801b330317384cc8c96c05b40687aa28497d768235acfdd12",
+        "size": 706
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "db10cdbaf54a6f5f79a99d13abc9edcbfc0dca716c80929a2e6e09dec6562b89",
+        "size": 3659876
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "99a4b54e66182ed2a9d6b5a70d7ff8149af71459da6201df28d893397ef3f006",
+        "size": 763
+      },
+      "export/svg/p1": {
+        "normalized": "uuid",
+        "sha256": "d661b3456627b969da7c60c61f063306ff6483268e1c02e503935f66890395a0",
+        "size": 3644787
+      },
+      "export/svg/p1/result": {
+        "normalized": "uuid",
+        "sha256": "4146001f19875abf1600bdbe8e8e7a123b58de69019d4c4f6d284dde3d581a6d",
+        "size": 763
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "322b1ae1204159a53ae3469a0542f01a6cf2a3e8dae2dc7b96acc08351093697",
+        "size": 5040
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "322b1ae1204159a53ae3469a0542f01a6cf2a3e8dae2dc7b96acc08351093697",
+        "size": 5040
+      },
+      "open": {
+        "normalized": "uuid",
+        "sha256": "f648c6667d498ba0b3e3410edb849ba997cea1a0547dc247a0103ccfc7de07e6",
+        "size": 106
+      },
+      "render/p0/png": {
+        "sha256": "0361e119e2d0d58580e0b2a9b9d6f0bed93fff82299784e65ad257926fcc4b66",
+        "size": 35004
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "4d64fdd90df87fa52cf4e217e717fc0074da10d750126f2e6103e2cabb744f54",
+        "size": 9237
+      },
+      "render/p1/png": {
+        "sha256": "db939ed132eb0644e9caccb9824c11d7a96a10beae87f0e548c25eeffdd18f8d",
+        "size": 14270
+      },
+      "render/p1/snapshot": {
+        "normalized": "uuid",
+        "sha256": "c336a449f1ab77fd0acebca7b5afba4210a444b9164bc782f2fc816de0d9c993",
+        "size": 6135
+      },
+      "save/hwp": {
+        "sha256": "3449337af7427d42715492bfe3118343e5ab13cda2b9560294a80d326c0f123a",
+        "size": 43520
+      },
+      "save/hwp/result": {
+        "normalized": "uuid",
+        "sha256": "3eec4d12103e1a8951e85809886e28ec03e62efaf4cba6e58105299a5ba65bf1",
+        "size": 259
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "67777e1c21e9957b9a46c3864858d38dc4871be83242ab24fa88463a3c8151a8",
+        "size": 178
+      }
+    },
+    "fixture.hwpx.image-and-opaque-preserve": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "19e3357a6421ac789b178b6a479483b07318559c3ea7de7f286c7a846abb9ce0",
+        "size": 665
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "768509aa0a57d45501c054653f0c51fed18e935bc95bb1e96b5880e2cbf848c0",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "0ea4c4bd1a011210174565d2941c34f3c3c40f454d2f0706c74130b9ff0128c3",
+        "size": 6755
+      },
+      "export/pdf/refused": {
+        "normalized": "uuid",
+        "sha256": "eba4eafb571c572d83e86fbc1e29f85b5033e3efe7b06c2f0244d89222dd2fcd",
+        "size": 780
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "cbe432768f041371594231f227305c36f0e5bfd45731f1a05a16bec6f4ca8525",
+        "size": 1492
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "474c2b09e5f8402e9589e5fb7429767ea7018f2162af20fb62389599ed7cebea",
+        "size": 3640882
+      },
+      "export/svg/p0/refused": {
+        "normalized": "uuid",
+        "sha256": "eba4eafb571c572d83e86fbc1e29f85b5033e3efe7b06c2f0244d89222dd2fcd",
+        "size": 780
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "4883a321cf5bd3c682a14172cf8d43c79f1fa812310d1487fe1ff433e2b3d127",
+        "size": 1549
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "b3c340485612e93d5ca7d7428dca93b62bac79602e23ac7b96f813961fefde23",
+        "size": 7629
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "b3c340485612e93d5ca7d7428dca93b62bac79602e23ac7b96f813961fefde23",
+        "size": 7629
+      },
+      "open": {
+        "normalized": "uuid",
+        "sha256": "44bd1c8dc50a4e2e5ecb90b1fab7ae44a34bb177f8bb4910351f5f43cf4ed6dc",
+        "size": 109
+      },
+      "render/p0/png": {
+        "sha256": "063197be79b70c145ce438d6a1278b28aed5294e3ede93cc681281f47cf7a09c",
+        "size": 8216
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "a7507297c57353f2a396a3ff0b5c62a02dd4fdf930ddcefc5ddb7704a502130e",
+        "size": 14008
+      },
+      "save/hwpx": {
+        "sha256": "460bb3221052879aa21e26c33a2056b521b763ef61dc655c6e67a225f61226b0",
+        "size": 10919
+      },
+      "save/hwpx/result": {
+        "normalized": "uuid",
+        "sha256": "db5054912fd1f73d5aeb4ee3fc33256e059724aa2a7867b7c71f36e05d5a66a4",
+        "size": 274
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "2401de89c141e7359259d657ea61d47c8c41740648c96b3b6bd27b0052fa6534",
+        "size": 520
+      }
+    },
+    "fixture.pdf.evidence-p12": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "7d4439d57305c4d9a65eee80c2927dc60cd0174c024b058af6264b34d5da3ca8",
+        "size": 127
+      },
+      "change/02/result": {
+        "normalized": "uuid",
+        "sha256": "16bfd3ad61d73d55367fefc03eba4c4cb9fe980d40090bd66d56cebabd0fedd5",
+        "size": 105
+      },
+      "create": {
+        "normalized": "uuid",
+        "sha256": "45dfb09e729fc904bad5beb73d392a5100a5a9a7ed5793bdd6f17e9f406eb65a",
+        "size": 113
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "294c4c9ab05ee0c1d69549f1b239c841c582a8a78e94f3e9ee7e1b23913b1b88",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "80c497e1d8508557378df2d7148fff3aef0931c732142b9a9ee13aae70781103",
+        "size": 668
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "6f2c0f6a5cbf928b80459ec25ab3df88398e0789da6a1adc9dc03261c0929fef",
+        "size": 300
+      },
+      "export/png": {
+        "sha256": "bdb7d5199bd3ff3e6e31ef7ee9f52833d0f8f412b41c662016da0026d5672577",
+        "size": 6004
+      },
+      "export/png/result": {
+        "normalized": "uuid",
+        "sha256": "a19c852fd44ca5190167962263cd5f149ade94cdb1bb95308a066323cc146989",
+        "size": 293
+      },
+      "export/pptx": {
+        "sha256": "1ddc66cf23d2f66e8b9000d5b64a4de775ce3c9e39e65fc440f9596f2f0634ce",
+        "size": 6590
+      },
+      "export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "d293675fbc2d3502f80015a4dae40e295a694cf96df1e134d5bfadfffcc43eac",
+        "size": 363
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "ab6d12e24282de2779ced24f1b93490df5894804d0088b506cf58cfdb1e2f7c0",
+        "size": 227
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "b349e39a834813c935f46a3267682539c7e4f1f6bbc001e32f5530a419291d00",
+        "size": 226
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "b9838f3e3c6819f6bf66df997941b5eab1ea0082ce5be11605a7c8227f81492d",
+        "size": 1011
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "df53b9b549d2697bccc5320a7c95650605fd2d79004ba1658e7a9a2e123db604",
+        "size": 992
+      },
+      "inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "b9838f3e3c6819f6bf66df997941b5eab1ea0082ce5be11605a7c8227f81492d",
+        "size": 1011
+      },
+      "render/p0/png": {
+        "sha256": "bdb7d5199bd3ff3e6e31ef7ee9f52833d0f8f412b41c662016da0026d5672577",
+        "size": 6004
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "13b18b5d44892188b5a845ba4947b6c67dc1ce4033238940f90f0a247441f770",
+        "size": 968
+      },
+      "save/figureproject": {
+        "normalized": "uuid",
+        "sha256": "c4ca161b5dfaea61faba488514fd79c9a6132dc1ed73a5c8e9bf5495720cfe7e",
+        "size": 6992
+      },
+      "save/figureproject/result": {
+        "normalized": "uuid",
+        "sha256": "30387f8cb6d9ff566cd978fa640d359066a82f3573035d425d5df31b30aea381",
+        "size": 197
+      },
+      "source/extract": {
+        "normalized": "uuid",
+        "sha256": "fc54b202238b610d97bcf814840572e5ebd17f2b1021726d0d8e3011b511c2b9",
+        "size": 1241
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "34eae859ebce23d13cb6c65f69031b0221e730bf63c9e3f1fa11421d6f231cb9",
+        "size": 56
+      }
+    },
+    "fixture.pdf.evidence-p12-userunit2": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "66cad53fb3803ef73ce5843372d5249149371035d028ab63d013af00e285e7a2",
+        "size": 127
+      },
+      "change/02/result": {
+        "normalized": "uuid",
+        "sha256": "16bfd3ad61d73d55367fefc03eba4c4cb9fe980d40090bd66d56cebabd0fedd5",
+        "size": 105
+      },
+      "create": {
+        "normalized": "uuid",
+        "sha256": "45dfb09e729fc904bad5beb73d392a5100a5a9a7ed5793bdd6f17e9f406eb65a",
+        "size": 113
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "253babdfde7d83fb572bd2d289e74f141ab958dbe88ac317150348d91970c206",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "80c497e1d8508557378df2d7148fff3aef0931c732142b9a9ee13aae70781103",
+        "size": 668
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "9cea71fd47ec2bbfe6151bf0ea6017732b1953f87b30a09cbd8629c9751cc0c6",
+        "size": 310
+      },
+      "export/png": {
+        "sha256": "bdb7d5199bd3ff3e6e31ef7ee9f52833d0f8f412b41c662016da0026d5672577",
+        "size": 6004
+      },
+      "export/png/result": {
+        "normalized": "uuid",
+        "sha256": "a37202cac9f7f806a539c8573cf229f4d6620e9eca17bcc9549f5c99b5a0268a",
+        "size": 303
+      },
+      "export/pptx": {
+        "sha256": "1ddc66cf23d2f66e8b9000d5b64a4de775ce3c9e39e65fc440f9596f2f0634ce",
+        "size": 6590
+      },
+      "export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "05f14081322b59b47e527c72b9e5863f50d77e023c9857d486241045c7baa688",
+        "size": 373
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "ab6d12e24282de2779ced24f1b93490df5894804d0088b506cf58cfdb1e2f7c0",
+        "size": 227
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "73747bc9d6907001a7091838b64bc39423962ebe5e6f20f4b4636c122167ef1d",
+        "size": 236
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "07fe34447c585edb55ef1a393c25c9f27c01d9f7e57afbd87618e33e5964424a",
+        "size": 1016
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "00d9124bbc13b7956a6f60f4f08d1db89a0c2f76a196123174bb79d8d9a414d4",
+        "size": 997
+      },
+      "inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "07fe34447c585edb55ef1a393c25c9f27c01d9f7e57afbd87618e33e5964424a",
+        "size": 1016
+      },
+      "render/p0/png": {
+        "sha256": "bdb7d5199bd3ff3e6e31ef7ee9f52833d0f8f412b41c662016da0026d5672577",
+        "size": 6004
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "5a863e4bcbf00b600a16f71ef6934ca966149bbe8caf721d71d57e05ae41a6ce",
+        "size": 968
+      },
+      "save/figureproject": {
+        "normalized": "uuid",
+        "sha256": "3ba25cb8e9dd0f012592ba26d731d2491595acd7131412d34b7b5de495bd4f3a",
+        "size": 6997
+      },
+      "save/figureproject/result": {
+        "normalized": "uuid",
+        "sha256": "4e15c2c165c20dbccb4a56aaed98836f9587c7bd7832e28f49989b6626474cba",
+        "size": 207
+      },
+      "source/extract": {
+        "normalized": "uuid",
+        "sha256": "6196af651d8cb7abb033377aaa431dc11f868651c51e4c10f61f03ea5a8f5a50",
+        "size": 1251
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "34eae859ebce23d13cb6c65f69031b0221e730bf63c9e3f1fa11421d6f231cb9",
+        "size": 56
+      }
+    },
+    "fixture.pptx.basic-preserve": {
+      "change/01/result": {
+        "normalized": "uuid",
+        "sha256": "113ac60c7c87af44c314963f64411c24b3e76ada0f720661285d626fa0bd9223",
+        "size": 110
+      },
+      "digest/refused": {
+        "normalized": "uuid",
+        "sha256": "7fe3235d9290a6568941eb4c22bb7942217a6620d9b829473d477be9b175ee9e",
+        "size": 162
+      },
+      "export/pdf": {
+        "sha256": "3ace317c47e98440f3c98c8d85fe0c2f666b6722c2538fae540e7285d39ca48a",
+        "size": 5206
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "4aa84a3a455f0bd809d866149c10ab99c36ea684ef7a395ea6eb7a9107ba3b13",
+        "size": 447
+      },
+      "export/pptx": {
+        "sha256": "2636703283a9d544bb21c4ad67add1f2d15a5ef61e960ec29b1c79f5efb562d2",
+        "size": 10344
+      },
+      "export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "28d1c56ee1ceddec8c67696fd4377abbd8551b38b812e6f92d25288d01b63c95",
+        "size": 367
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "ba61b489a54be7ceabaca2b914e94346cd2bc9711eefa0de3e44e67c225022c1",
+        "size": 3558624
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "d69bc273f4225f7c6266891cecae0a917ae0535aa52859e0658b4b18b3007437",
+        "size": 501
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "2d2007ab6bd9b9387df0f228f39be6f5c9d5ad85b51cf27175626e56a377acf1",
+        "size": 1366
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "2d2007ab6bd9b9387df0f228f39be6f5c9d5ad85b51cf27175626e56a377acf1",
+        "size": 1366
+      },
+      "open": {
+        "normalized": "uuid",
+        "sha256": "ed43d580793910f86d7fae82798a0f6e4caf05d5c3f28a9c52cf98773fa376c2",
+        "size": 114
+      },
+      "render/p0/png": {
+        "sha256": "6dea5fe73a701bb9a7b22521b8316605b0aa34896769fe372d26d27e97be4e21",
+        "size": 7646
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "21f7fcda8a0cf1a31071d717c3aa5cde73712f58c915ce4caf9587003d0c3d9d",
+        "size": 6790
+      },
+      "save/pptx": {
+        "sha256": "2636703283a9d544bb21c4ad67add1f2d15a5ef61e960ec29b1c79f5efb562d2",
+        "size": 10344
+      },
+      "save/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "5cb066c659df9bfd750011524e079d2a4057d30d70714b8898c23096231f8edc",
+        "size": 263
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "3861f33fcf79b7e202b1fbd35fce202134f49ea7ad67fa43eaafe5c5908a4c54",
+        "size": 56
+      }
+    },
+    "linked.docx.figure-link": {
+      "change/03/result": {
+        "normalized": "uuid",
+        "sha256": "92e85067aaad77480fa5d17b4a8ef39fadf603e3d2a388fe39e4c490a8a007db",
+        "size": 434
+      },
+      "digest": {
+        "normalized": "uuid",
+        "sha256": "bf5ae1b6fbbbb272854f6db1335a9c4e3925b75a33e1325c523c60413c94acde",
+        "size": 152
+      },
+      "export/pdf": {
+        "sha256": "83edafcc1b2b9905c6906e07b408859e624ccb79d100e93c5a66fbcbac76d3bb",
+        "size": 25500
+      },
+      "export/pdf/refused": {
+        "normalized": "uuid",
+        "sha256": "c49d9a7480f9a82e203298a2824a7ec1a7d765af4e9597c343fe2eca7f7c056b",
+        "size": 371
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "41ad8db763a4c9627c877daf7ab08d65886df335f7a03fcf7090ae14d57b0c04",
+        "size": 749
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "9c23834c2d5a433f6fe689e11ccc2cab961d4395dc5422ffae73e9dec2d7d3a2",
+        "size": 7223311
+      },
+      "export/svg/p0/refused": {
+        "normalized": "uuid",
+        "sha256": "c49d9a7480f9a82e203298a2824a7ec1a7d765af4e9597c343fe2eca7f7c056b",
+        "size": 371
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "43cf5c31e1d5b0a9306360072e525cd4917daf7cad002ebd8051f67405859aea",
+        "size": 822
+      },
+      "figure/change/01/result": {
+        "normalized": "uuid",
+        "sha256": "bf8cd95c9cf72d74bf8c9866633cc8ae6212f66923917eb41d0fd47297271c6f",
+        "size": 130
+      },
+      "figure/change/02/result": {
+        "normalized": "uuid",
+        "sha256": "4d4f76eca2f08d90a921cce7363317ca1f2291e3244f6b98435ca3a904cdb4c9",
+        "size": 130
+      },
+      "figure/create": {
+        "normalized": "uuid",
+        "sha256": "9bd677cff8085661213abb762a0ef79c7a16d4ee5dd199c79a1f59c831e4d121",
+        "size": 118
+      },
+      "figure/digest": {
+        "normalized": "uuid",
+        "sha256": "92bcadf808b90f45829bf07fc6551df17b3622e7055bd116241ef97db2327749",
+        "size": 152
+      },
+      "figure/export/pdf": {
+        "sha256": "1e0d0e98817927430006d71a477fbcf681dd1b0859432366ae6ff3850ddec21a",
+        "size": 15741
+      },
+      "figure/export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "02ccae109b485919b7140d4c35da8f95e01185b29220f2fca216d552f58ad364",
+        "size": 308
+      },
+      "figure/export/png": {
+        "sha256": "ed516953c1eeea32e0f5e91e12ef944fa9bafcfad129af73e6ac9c13a9d0c528",
+        "size": 18341
+      },
+      "figure/export/png/result": {
+        "normalized": "uuid",
+        "sha256": "d85ca86d130e552e22208e20b16ce23f699f85d848cd6bc4485517c22d8a466b",
+        "size": 300
+      },
+      "figure/export/pptx": {
+        "sha256": "8ce337e41e38ed7d4ed7cd56f65109e5cefcad29a252a705a3f232f0ed89caeb",
+        "size": 7904
+      },
+      "figure/export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "30662ea5fafb4a23e1821151d759433ed32a7723b527379820c17ca75080d896",
+        "size": 537
+      },
+      "figure/export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "761c8103c02899ca1be58bfbdbf72e339823041a604915df000f20e0f9e20163",
+        "size": 7202567
+      },
+      "figure/export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "955256194cc4ceeee51d8170e93d2e9f7d32cc4cc1bddb1e50c6af34590a8ce2",
+        "size": 380
+      },
+      "figure/inspect": {
+        "normalized": "uuid",
+        "sha256": "2b0be61399c28231a2f1022326363568f64c187e5f70dde925b4f2b072962ef7",
+        "size": 3028
+      },
+      "figure/inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "cd4642b1b3d974d4b284be3c40a92ff79de55ec34bec17e3bedafdd09249ec4d",
+        "size": 2816
+      },
+      "figure/inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "2b0be61399c28231a2f1022326363568f64c187e5f70dde925b4f2b072962ef7",
+        "size": 3028
+      },
+      "figure/render/p0/png": {
+        "sha256": "ed516953c1eeea32e0f5e91e12ef944fa9bafcfad129af73e6ac9c13a9d0c528",
+        "size": 18341
+      },
+      "figure/render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "16e9f570e8ce76af6af513f217e18d6cfb688afba6de5dcaa14c0b662f222eaf",
+        "size": 45203
+      },
+      "figure/render_link": {
+        "normalized": "uuid",
+        "sha256": "41c590a92bede3b3cff74704491b043f97b8445c42fcf4b6847f8634345c1cb4",
+        "size": 305
+      },
+      "figure/render_link/png": {
+        "sha256": "ed516953c1eeea32e0f5e91e12ef944fa9bafcfad129af73e6ac9c13a9d0c528",
+        "size": 18341
+      },
+      "figure/save/figureproject": {
+        "normalized": "uuid",
+        "sha256": "77b5c4869b14ea477187783e73d5775e09bd34a4b7e4604ec64d054f3c30c2cc",
+        "size": 3160
+      },
+      "figure/save/figureproject/result": {
+        "normalized": "uuid",
+        "sha256": "e92285eeae29aec9428e3c63a03fed7c96563560339d911b38301af9a56a14d2",
+        "size": 203
+      },
+      "figure/source/csv": {
+        "normalized": "uuid",
+        "sha256": "fb7397e648dc44537bbfba590b4f591c866407aa6200ea516941c0f5400f460b",
+        "size": 1660
+      },
+      "figure/validate": {
+        "normalized": "uuid",
+        "sha256": "34eae859ebce23d13cb6c65f69031b0221e730bf63c9e3f1fa11421d6f231cb9",
+        "size": 56
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "342856b9cb4c9de6203e41db25045f4c6838b6ac325b809604d6feca63b4eb76",
+        "size": 5025
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "342856b9cb4c9de6203e41db25045f4c6838b6ac325b809604d6feca63b4eb76",
+        "size": 5025
+      },
+      "open": {
+        "normalized": "uuid",
+        "sha256": "61861408e3deb557b4698a57de1558ab43c649f297a04c478072f537e4a01688",
+        "size": 112
+      },
+      "render/p0/png": {
+        "sha256": "d4509be2f5ee88ff3650e92e5805fe79ccc6fac8778fda8be30795ab8ac06bce",
+        "size": 20376
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "202670362f31cb09ac3095ef5f8485fe7b66d129606baacf1a3ecd0577f396a7",
+        "size": 22309
+      },
+      "save/docx": {
+        "sha256": "756d9b7d253e99ac7116904cd433f412275ee879b98e140de7750bcf7fb3efac",
+        "size": 18011
+      },
+      "save/docx/result": {
+        "normalized": "uuid",
+        "sha256": "e2f909a79c73b139a5182fb0ff23a60311f8e75a55fc3d28a55ca19df317246c",
+        "size": 260
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "612384edc2f3e80e2b2c69fe77a93150f0708d22c17daff5fc7b53ebf89ae36b",
+        "size": 367
+      }
+    },
+    "linked.pptx.figure-link": {
+      "change/03/result": {
+        "normalized": "uuid",
+        "sha256": "2d2fd10c744f3e5c627f3fbb9a166a30cb27f1be8a5ea6a95572e5a456a7dc20",
+        "size": 110
+      },
+      "digest/refused": {
+        "normalized": "uuid",
+        "sha256": "7fe3235d9290a6568941eb4c22bb7942217a6620d9b829473d477be9b175ee9e",
+        "size": 162
+      },
+      "export/pdf": {
+        "sha256": "6fc9f9a4df4888851e44b33d45a0fde36618b1399e0c45f923e984f640893a44",
+        "size": 16615
+      },
+      "export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "045d3c15ae1f68a2db0de5955767a668a978ad2e6d87ae0c1707ab3b362ed255",
+        "size": 444
+      },
+      "export/pptx": {
+        "sha256": "b8f34d51be96929c95027e128626303d16b9b995a332a73e480304a28ab8517a",
+        "size": 23616
+      },
+      "export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "e52b82259150b02928a38bf96a6ecfe3ee58b9e068ce320897a3f7ff3387876b",
+        "size": 363
+      },
+      "export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "4b8d059d41e398a7c2d0be9075e4ac7ab4f38d37aebbeee3241a64eeb56061c6",
+        "size": 3583637
+      },
+      "export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "0d96fb62e2b8bf8aa041810331827e881fa4b626cadadfafbf25a737eb791291",
+        "size": 497
+      },
+      "figure/change/01/result": {
+        "normalized": "uuid",
+        "sha256": "bf8cd95c9cf72d74bf8c9866633cc8ae6212f66923917eb41d0fd47297271c6f",
+        "size": 130
+      },
+      "figure/change/02/result": {
+        "normalized": "uuid",
+        "sha256": "4d4f76eca2f08d90a921cce7363317ca1f2291e3244f6b98435ca3a904cdb4c9",
+        "size": 130
+      },
+      "figure/create": {
+        "normalized": "uuid",
+        "sha256": "9bd677cff8085661213abb762a0ef79c7a16d4ee5dd199c79a1f59c831e4d121",
+        "size": 118
+      },
+      "figure/digest": {
+        "normalized": "uuid",
+        "sha256": "92bcadf808b90f45829bf07fc6551df17b3622e7055bd116241ef97db2327749",
+        "size": 152
+      },
+      "figure/export/pdf": {
+        "sha256": "1e0d0e98817927430006d71a477fbcf681dd1b0859432366ae6ff3850ddec21a",
+        "size": 15741
+      },
+      "figure/export/pdf/result": {
+        "normalized": "uuid",
+        "sha256": "b6075476da3baa16f1601a551d92e545a95f14848f3116ffa08c965653f6d925",
+        "size": 308
+      },
+      "figure/export/png": {
+        "sha256": "ed516953c1eeea32e0f5e91e12ef944fa9bafcfad129af73e6ac9c13a9d0c528",
+        "size": 18341
+      },
+      "figure/export/png/result": {
+        "normalized": "uuid",
+        "sha256": "81ce8558199e625e3538977294c2dc86476565792be3e1e5801e22dde7d1c73e",
+        "size": 300
+      },
+      "figure/export/pptx": {
+        "sha256": "8ce337e41e38ed7d4ed7cd56f65109e5cefcad29a252a705a3f232f0ed89caeb",
+        "size": 7904
+      },
+      "figure/export/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "608e536c00c3329c98034bfd6ed6793dacd3e935c7c8b11e04ebc3c608317153",
+        "size": 537
+      },
+      "figure/export/svg/p0": {
+        "normalized": "uuid",
+        "sha256": "761c8103c02899ca1be58bfbdbf72e339823041a604915df000f20e0f9e20163",
+        "size": 7202567
+      },
+      "figure/export/svg/p0/result": {
+        "normalized": "uuid",
+        "sha256": "f40a465a307a621761241cff07c51f45146e57660b3a96b64f1cc6b4c6f9269d",
+        "size": 380
+      },
+      "figure/inspect": {
+        "normalized": "uuid",
+        "sha256": "2b0be61399c28231a2f1022326363568f64c187e5f70dde925b4f2b072962ef7",
+        "size": 3028
+      },
+      "figure/inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "cd4642b1b3d974d4b284be3c40a92ff79de55ec34bec17e3bedafdd09249ec4d",
+        "size": 2816
+      },
+      "figure/inspect@r2": {
+        "normalized": "uuid",
+        "sha256": "2b0be61399c28231a2f1022326363568f64c187e5f70dde925b4f2b072962ef7",
+        "size": 3028
+      },
+      "figure/render/p0/png": {
+        "sha256": "ed516953c1eeea32e0f5e91e12ef944fa9bafcfad129af73e6ac9c13a9d0c528",
+        "size": 18341
+      },
+      "figure/render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "16e9f570e8ce76af6af513f217e18d6cfb688afba6de5dcaa14c0b662f222eaf",
+        "size": 45203
+      },
+      "figure/render_link": {
+        "normalized": "uuid",
+        "sha256": "41c590a92bede3b3cff74704491b043f97b8445c42fcf4b6847f8634345c1cb4",
+        "size": 305
+      },
+      "figure/render_link/png": {
+        "sha256": "ed516953c1eeea32e0f5e91e12ef944fa9bafcfad129af73e6ac9c13a9d0c528",
+        "size": 18341
+      },
+      "figure/save/figureproject": {
+        "normalized": "uuid",
+        "sha256": "77b5c4869b14ea477187783e73d5775e09bd34a4b7e4604ec64d054f3c30c2cc",
+        "size": 3160
+      },
+      "figure/save/figureproject/result": {
+        "normalized": "uuid",
+        "sha256": "e80a294f53c6727053653bc8f57c1dda46ed04288107f275d0621f72871b801f",
+        "size": 203
+      },
+      "figure/source/csv": {
+        "normalized": "uuid",
+        "sha256": "fb7397e648dc44537bbfba590b4f591c866407aa6200ea516941c0f5400f460b",
+        "size": 1660
+      },
+      "figure/validate": {
+        "normalized": "uuid",
+        "sha256": "34eae859ebce23d13cb6c65f69031b0221e730bf63c9e3f1fa11421d6f231cb9",
+        "size": 56
+      },
+      "inspect": {
+        "normalized": "uuid",
+        "sha256": "6ca308827c40a6753926e4dd892eb6a3726d80071bc6ac6d0353c9dc33439d32",
+        "size": 2014
+      },
+      "inspect@r1": {
+        "normalized": "uuid",
+        "sha256": "6ca308827c40a6753926e4dd892eb6a3726d80071bc6ac6d0353c9dc33439d32",
+        "size": 2014
+      },
+      "open": {
+        "normalized": "uuid",
+        "sha256": "ed43d580793910f86d7fae82798a0f6e4caf05d5c3f28a9c52cf98773fa376c2",
+        "size": 114
+      },
+      "render/p0/png": {
+        "sha256": "377946b86f150ba7730c0ddd96defd1d1ebc86cc51c43eb24bf9ff517f7981b2",
+        "size": 12699
+      },
+      "render/p0/snapshot": {
+        "normalized": "uuid",
+        "sha256": "aca65a4f12d568b725babb3650fe352a7fb3f0ff9133da4d2f68aa25d4107359",
+        "size": 7781
+      },
+      "save/pptx": {
+        "sha256": "b8f34d51be96929c95027e128626303d16b9b995a332a73e480304a28ab8517a",
+        "size": 23616
+      },
+      "save/pptx/result": {
+        "normalized": "uuid",
+        "sha256": "2f917b15f8d9b2c5c66f2b99616f407581307dc327e8eaf09466f2a7548289c5",
+        "size": 259
+      },
+      "validate": {
+        "normalized": "uuid",
+        "sha256": "7024e68c2fe964ec7319a69263fd7b406337e49074ce59153f22d7e2e8232736",
+        "size": 56
+      }
+    }
+  },
+  "generator": "tests/integration/tests/p0_baseline.rs",
+  "normalization": "artifact and result JSON without top-level capabilities; every UUID (values and keys) -> <uuid-N>, numbered from each artifact's JSON first; run root -> <RUN>; keys sorted after normalization; export/save results of text formats without the raw-byte sha256/target_hash; content digest computed on the id-normalized document; text outputs marked normalized, binary outputs raw"
+}

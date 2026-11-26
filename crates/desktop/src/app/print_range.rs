@@ -16,7 +16,15 @@ pub(super) enum PageRangeError {
     OutOfRange { count: usize },
     Unordered { page: u64 },
     Repeated { page: u64 },
+    /// More pages than one export names (`MAX_RANGE_PAGES`): the whole document is `all`.
+    TooMany { limit: usize },
 }
+
+/// The most pages a range names in one export.
+pub(super) const MAX_RANGE_PAGES: usize = 10_000;
+
+/// The count a range is checked against while the document's page count is not known: any page a request can name.
+pub(super) const UNKNOWN_PAGE_COUNT: usize = u32::MAX as usize;
 
 impl fmt::Display for PageRangeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -26,9 +34,11 @@ impl fmt::Display for PageRangeError {
             Self::Malformed => f.write_str("쪽 번호 형식이 맞지 않습니다 (예: 1, 3-5)"),
             Self::Zero => f.write_str("쪽 번호는 1부터 시작합니다"),
             Self::ReversedSpan { start, end } => write!(f, "{start}-{end}은 거꾸로 된 범위입니다"),
+            Self::OutOfRange { count } if count >= UNKNOWN_PAGE_COUNT => f.write_str("쪽 번호가 너무 큽니다"),
             Self::OutOfRange { count } => write!(f, "이 문서는 {count}쪽입니다"),
             Self::Unordered { page } => write!(f, "{page}쪽은 앞에 적은 쪽보다 앞입니다. 작은 쪽부터 적으세요"),
             Self::Repeated { page } => write!(f, "{page}쪽이 두 번 적혔습니다"),
+            Self::TooMany { limit } => write!(f, "쪽 범위는 한 번에 {limit}쪽까지 내보낼 수 있습니다"),
         }
     }
 }
@@ -59,6 +69,19 @@ fn ascii_separator(c: char) -> char {
 /// separated by commas; an item is one page or a span `a-b` (spaces allowed). A page named twice, a span that runs
 /// backwards and an item that comes before the item preceding it are refused, as are empty items, non-digits and pages past `count`.
 pub(super) fn parse_page_range(text: &str, count: usize) -> Result<Vec<u32>, PageRangeError> {
+    let spans = page_spans(text, count)?;
+    Ok(spans.iter().flat_map(|&(start, end)| (start..=end).map(|page| (page - 1) as u32)).collect())
+}
+
+/// `parse_page_range` without building the indices: the number of pages the text names, for the field's check on every frame.
+pub(super) fn validate_page_range(text: &str, count: usize) -> Result<usize, PageRangeError> {
+    let spans = page_spans(text, count)?;
+    Ok(spans.iter().map(|&(start, end)| (end - start + 1) as usize).sum())
+}
+
+/// The spans the text names, checked: pages inside the document, ascending, named once, and at most `MAX_RANGE_PAGES` in
+/// all. The spans are counted, never expanded, so a mistyped endpoint costs nothing.
+fn page_spans(text: &str, count: usize) -> Result<Vec<(u64, u64)>, PageRangeError> {
     let normalized: String = text.chars().map(ascii_separator).collect();
     let text = normalized.trim();
     if text.is_empty() {
@@ -82,7 +105,11 @@ pub(super) fn parse_page_range(text: &str, count: usize) -> Result<Vec<u32>, Pag
         }
         spans.push((start, end));
     }
-    Ok(spans.iter().flat_map(|&(start, end)| (start..=end).map(|page| (page - 1) as u32)).collect())
+    let named = spans.iter().fold(0u64, |total, &(start, end)| total.saturating_add(end - start + 1));
+    if named > MAX_RANGE_PAGES as u64 {
+        return Err(PageRangeError::TooMany { limit: MAX_RANGE_PAGES });
+    }
+    Ok(spans)
 }
 
 /// One item: a page `n` or a span `a-b`, as page numbers counted from 1 that lie inside the document.

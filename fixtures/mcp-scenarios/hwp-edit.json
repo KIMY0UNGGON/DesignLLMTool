@@ -1,0 +1,28 @@
+{
+  "task": "hwp-edit",
+  "summary": "Open the shared HWP 5 fixture, append text to the end of its first non-empty paragraph (HWP refuses insertion beside an inline object), save a native HWP file and render the first page.",
+  "steps": [
+    { "id": "workspace", "tool": "workspace_list", "arguments": {}, "bind": { "workspace_id": "/structuredContent/workspace_id" } },
+    { "id": "open", "tool": "artifact_open", "arguments": { "request_id": "$request_id", "actor": "scenario", "path": "$fixture:hwp.binary-source", "kind": "hwp" }, "bind": { "artifact": "/structuredContent/id", "revision": "/structuredContent/revision" } },
+    { "id": "view0", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "view0" },
+    { "select": { "from": "view0", "pointer": "/structuredContent/body/document/sections", "where": { "has_key": ["runs"], "text_min_len": 1 }, "field": "id" }, "as": "paragraph" },
+    { "select": { "from": "view0", "pointer": "/structuredContent/body/document/sections", "where": { "has_key": ["runs"], "text_min_len": 1 }, "field": "@text_len" }, "as": "paragraph_length" },
+    { "select": { "from": "view0", "pointer": "/structuredContent/body/document/sections", "where": { "has_key": ["runs"], "text_min_len": 1 }, "field": "@text" }, "as": "paragraph_before" },
+    { "id": "append_text", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [ { "op": "replace_text", "range": { "paragraph_id": "$paragraph", "start": "$paragraph_length", "end": "$paragraph_length" }, "text": " P0" } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "save_hwp", "tool": "artifact_save", "arguments": {
+        "request_id": "$request_id", "artifact_id": "$artifact", "expected_revision": "$revision",
+        "target_path": "$scratch/edited.hwp", "overwrite": false, "expected_target_hash": null
+      }, "bind": { "saved_hash": "/structuredContent/target_hash" } },
+    { "id": "final", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "final" },
+    { "select": { "from": "final", "pointer": "/structuredContent/body/document/sections", "where": { "key_equals": { "id": "$paragraph" } }, "field": "@text" }, "as": "paragraph_after" }
+  ],
+  "checks": [
+    { "check": "text_suffix", "before": "paragraph_before", "after": "paragraph_after", "text": " P0" },
+    { "check": "render", "page": 0 },
+    { "check": "file", "path": "$scratch/edited.hwp", "magic_hex": "D0CF11E0A1B11AE1", "sha256": "$saved_hash" }
+  ]
+}

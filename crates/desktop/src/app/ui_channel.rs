@@ -127,6 +127,9 @@ pub(super) struct UiChannel {
     /// The artifact context the last published registry enables.
     commands_kind: Option<ArtifactKind>,
     commands_enabled: Option<Vec<bool>>,
+    /// Whether the open figure had a common legend when the registry was last sent: `figure.output_profile` then also needs
+    /// the content intent (`command_intents`).
+    commands_legend: bool,
     /// The items the user chose on the open document, as (view id, artifact id, node ids in the order chosen). Only the user's own
     /// selection sets it, never a reload that re-applies the window's selection or an agent's run; an AI request names these items.
     pub user_selection: Option<(String, String, Vec<String>)>,
@@ -154,6 +157,7 @@ impl Default for UiChannel {
             commands_sent: false,
             commands_kind: None,
             commands_enabled: None,
+            commands_legend: false,
             user_selection: None,
             restoring_selection: false,
             agent_commits: VecDeque::new(),
@@ -218,29 +222,31 @@ fn command_scope(id: &str) -> Option<CommandScope> {
             | "view.zoom_in" | "view.zoom_out" | "view.zoom_100" | "view.zoom_fit" | "view.zoom_selection"
             | "view.zoom_set" | "view.zoom_page" | "view.toggle_guides" | "view.toggle_snap"
             | "select.node" | "select.many" | "select.clear" | "select.next" | "select.previous" | "layer.find"
-            | "layer.find.next" | "layer.find.previous" | "edit.undo" | "edit.redo" | "edit.delete" | "edit.rename"
+            | "layer.find.next" | "layer.find.previous" | "edit.undo" | "edit.redo" | "edit.delete"
             | "add.arrow" | "add.pen" | "add.pencil" | "add.memo" | "add.image" | "add.figure_link"
             | "ai.request" | "ai.cancel" | "ai.retry"
             | "ai.undo_change" | "ai.toggle_intent" | "ai.deliver_as" | "proposal.select" | "proposal.apply"
             | "proposal.discard" | "file.save" | "file.save_as" | "file.export" | "file.overwrite"
             | "file.dismiss_loss" | "figure.update_link" | "figure.open_source" | "canvas.design_system.list" => Some(CommandScope::Editor),
-        "edit.copy" | "edit.paste" | "edit.duplicate" | "edit.order_forward" | "edit.order_backward"
-            | "edit.order_front" | "edit.order_back" | "edit.nudge" | "add.text" | "add.rect" | "add.oval"
+        "edit.copy" | "edit.paste" | "edit.duplicate" | "edit.nudge" | "add.text" | "add.rect" | "add.oval"
             | "add.line" | "add.frame" | "add.page" | "add.slide" | "add.icon" | "props.position" | "props.size" | "props.align"
-            | "props.distribute" | "layer.move_to" | "fix.grow_to_min" | "fix.darken_text" | "fix.grow_box"
+            | "props.distribute" | "fix.grow_to_min" | "fix.darken_text" | "fix.grow_box"
             | "fix.shrink_text" | "fix.grow_parent" | "fix.move_into_page" | "page.remove" | "page.reorder"
-            | "page.notes" | "layer.move" | "props.page_size" | "props.rename_page"
-            | "props.shadow" | "props.shadow_remove" | "design_theme.apply" => Some(CommandScope::CanvasSlides),
+            | "page.notes" | "props.shadow" | "props.shadow_remove" | "design_theme.apply" => Some(CommandScope::CanvasSlides),
         "edit.copy_properties" | "edit.paste_properties" | "props.fill" | "props.fill_remove" | "props.stroke"
             | "props.stroke_width" | "props.stroke_remove" | "props.text_align" => Some(CommandScope::CanvasSlidesFigure),
         "props.opacity" | "props.corner_radius" | "props.line_height" | "props.letter_spacing"
             | "props.vertical_align" | "props.stroke_style" => Some(CommandScope::CanvasFigure),
         "text.set" => Some(CommandScope::TextSetSupported),
         "props.text_style" => Some(CommandScope::TextStyleSupported),
-        "edit.group" | "edit.ungroup" | "edit.stack" | "edit.lock" | "edit.unlock" | "edit.hide" | "edit.show"
+        // The slides engine refuses SetZOrder, MoveNode, SetPageSize, RenamePage and SetNodeInfo (slides guard.rs), and every
+        // other engine but the canvas refuses them too: stacking order, layer moves, page size and names are Canvas only.
+        "edit.order_forward" | "edit.order_backward" | "edit.order_front" | "edit.order_back" | "layer.move"
+            | "layer.move_to" | "props.page_size" | "props.rename_page" | "edit.rename"
+            | "edit.group" | "edit.ungroup" | "edit.stack" | "edit.lock" | "edit.unlock" | "edit.hide" | "edit.show"
             | "canvas.table.add" | "canvas.table.add_row" | "canvas.table.remove_row" | "canvas.table.add_column"
             | "canvas.table.remove_column" | "canvas.table.set_header" | "canvas.table.set_column_widths"
-            | "table.merge_cells" | "table.unmerge_cell" | "add.path" | "props.size_mode"
+            | "table.merge_cells" | "table.unmerge_cell" | "add.path" | "add.shape" | "props.size_mode"
             | "props.gradient" | "props.gradient_remove"
             | "props.image_fit" | "props.image_alt" | "props.path" | "canvas.token.put" | "canvas.token.remove"
             | "canvas.token.mode" | "canvas.token.bind" | "canvas.token.unbind"
@@ -522,6 +528,21 @@ impl DesktopApp {
             && self.context.as_ref().is_some_and(|context| same_selection(&self.local_ui_selection(), &context.selection))
     }
 
+    /// Whether the open document is a figure with a common legend (an output profile may then recolour it).
+    fn figure_has_common_legend(&self) -> bool {
+        matches!(self.artifact.as_ref().map(|artifact| &artifact.body), Some(designllm_contracts::ArtifactBody::Figure(figure)) if figure.common_legend.is_some())
+    }
+
+    /// The intents a run of `spec` needs on the open document: the registry's for its kind, but an output profile names content
+    /// only when the figure has a common legend it may recolour (an agent granting design alone can restyle a figure without one).
+    pub(super) fn command_intents(&self, spec: &commands::CommandSpec, kind: ArtifactKind) -> BTreeSet<Intent> {
+        let mut intents = commands::ui_intents_for(spec, kind);
+        if spec.id == "figure.output_profile" && !self.figure_has_common_legend() {
+            intents.remove(&Intent::Content);
+        }
+        intents
+    }
+
     /// The whole command registry. `enabled` reflects both wiring and the current artifact kind.
     pub(super) fn ui_commands(&self) -> Vec<UiCommand> {
         let kind = self.active.as_ref().map_or(ArtifactKind::Canvas, |active| active.kind);
@@ -531,7 +552,7 @@ impl DesktopApp {
                 id: spec.id.into(),
                 label: spec.label.into(),
                 args_schema: serde_json::from_str(spec.args).unwrap_or_else(|_| json!({ "type": "object" })),
-                intents: commands::ui_intents_for(spec, kind),
+                intents: self.command_intents(spec, kind),
                 permission: commands::ui_permission(spec),
                 enabled: commands::available(spec.id) && self.ui_command_enabled_for_current_kind(spec.id) && ui_run_supported(spec.id),
                 shortcut: (!spec.shortcut.is_empty()).then(|| spec.shortcut.to_owned()),
@@ -549,9 +570,11 @@ impl DesktopApp {
         let fingerprint = serde_json::to_string(&state).unwrap_or_default();
         let command_kind = if self.screen_is_editor() { self.active.as_ref().map(|active| active.kind) } else { None };
         let commands_enabled: Vec<bool> = commands::COMMANDS.iter().map(|spec| self.ui_command_enabled_for_current_kind(spec.id)).collect();
+        let legend = self.figure_has_common_legend();
         let registry_changed = !self.ui.commands_sent
             || self.ui.commands_kind != command_kind
-            || self.ui.commands_enabled.as_ref() != Some(&commands_enabled);
+            || self.ui.commands_enabled.as_ref() != Some(&commands_enabled)
+            || self.ui.commands_legend != legend;
         let due = self.ui.last_publish.is_none_or(|at| at.elapsed() >= REPUBLISH);
         if !due && !registry_changed && self.ui.last_state.as_deref() == Some(fingerprint.as_str()) {
             return;
@@ -570,6 +593,7 @@ impl DesktopApp {
         self.ui.commands_sent = true;
         self.ui.commands_kind = command_kind;
         self.ui.commands_enabled = Some(commands_enabled);
+        self.ui.commands_legend = legend;
         if let Ok(params) = serde_json::to_value(request) {
             self.call("ui.state.publish", params, PendingAction::UiPublish);
         }
@@ -645,7 +669,7 @@ impl DesktopApp {
             return Some(error);
         }
         let kind = self.active.as_ref().map_or(ArtifactKind::Canvas, |active| active.kind);
-        if !commands::ui_intents_for(spec, kind).is_subset(&run.allowed_intents) {
+        if !self.command_intents(spec, kind).is_subset(&run.allowed_intents) {
             return Some(DltError::new(ErrorCode::ContentLocked, format!("{}: 허용되지 않은 변경 종류입니다", spec.id)));
         }
         // A cell's text edited in place is not stored yet: the merge would leave it out (the window's own merge waits for it).
@@ -828,6 +852,11 @@ impl DesktopApp {
             self.execute_ui_test_run(run);
             return;
         }
+        // An export's outcome is reported to the agent whatever it is, the window's own refusal too
+        // (`complete_ui_run_ticket` keeps the report until the host has it).
+        if matches!(run.command_id.as_str(), "file.export" | "file.export_selection") {
+            self.export_runs.insert(run.run_id.clone());
+        }
         if let Some(error) = self.ui_run_refusal(&run) {
             self.complete_ui_run(&run.run_id, None, Some(error));
             return;
@@ -877,9 +906,10 @@ impl DesktopApp {
         let shown = crate::widgets::dialog_with_choices(ctx, &palette, egui::Id::new("agent-home-create"), "에이전트의 모델 실행 요청", crate::widgets::DialogPlace::Modal, |ui| {
             ui.label(format!("{} · {} · {}", arg("runtime"), arg("model"), arg("effort")));
             let tile = super::home::TILES.iter().find(|item| item.0 == arg("tile")).map_or(arg("tile"), |item| item.1);
-            ui.label(format!("새 작업물 · {tile}"));
+            ui.label(crate::i18n::tr(&format!("새 작업물 · {tile}")));
             // A long request scrolls in the dialog's body (`widgets::dialog_with_choices`); a scroll area of its own inside it
             // would size itself to the body's last height.
+            // The request is the agent's own words, shown as sent: a person approves exactly what the model will get.
             ui.label(arg("prompt"));
             ((), vec![
                 DialogChoice::new("거절", DialogButton::Plain).human_only(),
@@ -945,8 +975,13 @@ impl DesktopApp {
 
     /// Reports a run's outcome with the view token.
     pub(super) fn complete_ui_run(&mut self, run_id: &str, result: Option<Value>, error: Option<DltError>) {
+        let _ = self.complete_ui_run_ticket(run_id, result, error);
+    }
+
+    /// `complete_ui_run`, returning the ticket of the report when it went out.
+    pub(super) fn complete_ui_run_ticket(&mut self, run_id: &str, result: Option<Value>, error: Option<DltError>) -> Option<u64> {
         let Some(token) = self.ui.token.clone() else {
-            return;
+            return None;
         };
         let request = UiCompleteRequest {
             view_id: self.ui.view_id.clone(),
@@ -955,8 +990,52 @@ impl DesktopApp {
             result,
             error,
         };
-        if let Ok(params) = serde_json::to_value(request) {
-            self.call("ui.command.complete", params, PendingAction::UiComplete);
+        let params = serde_json::to_value(request).ok()?;
+        let ticket = self.call("ui.command.complete", params.clone(), PendingAction::UiComplete);
+        // The outcome of an agent's export (its write, or the window's refusal) is close work until the host has it: the file
+        // may be written already, and the agent would not learn it otherwise (`export_in_flight`).
+        if self.export_runs.remove(run_id) {
+            match ticket {
+                Some(ticket) => {
+                    self.export_completions.insert(ticket, (params, 1));
+                }
+                // Not sent (the link is lost): it waits for the host, and no send is counted.
+                None => self.export_reports_waiting.push((params, 0)),
+            }
+        }
+        ticket
+    }
+
+    /// The answer to a report of an agent's export. A report that did not reach the host (the transport failed: the host not
+    /// running, or the pipe's own IO failure) waits and is sent again once the host answers, at most
+    /// `EXPORT_COMPLETION_ATTEMPTS` sends in all. Any answer of the host itself ends it: its acceptance, or its refusal, an
+    /// expired view's `Unavailable` among them (the same report would meet it again).
+    pub(super) fn retry_export_completion(&mut self, ticket: u64, result: &Result<crate::rpc::RpcPayload, DltError>) {
+        let Some((params, sends)) = self.export_completions.remove(&ticket) else {
+            return;
+        };
+        let Err(error) = result else {
+            return;
+        };
+        let transport = error.code == ErrorCode::HostNotRunning || (error.code == ErrorCode::Io && error.retryable);
+        if transport && sends < EXPORT_COMPLETION_ATTEMPTS {
+            self.export_reports_waiting.push((params, sends));
+        }
+    }
+
+    /// Sends the waiting reports of agents' exports while the host answers: not while the link is lost or its check is on
+    /// its way (a send then would fail too and use up an attempt). Only a send that went out is counted.
+    pub(super) fn send_waiting_export_reports(&mut self) {
+        if self.export_reports_waiting.is_empty() || self.host_lost() || self.host_link.probe.is_some() {
+            return;
+        }
+        for (params, sends) in std::mem::take(&mut self.export_reports_waiting) {
+            match self.call("ui.command.complete", params.clone(), PendingAction::UiComplete) {
+                Some(ticket) => {
+                    self.export_completions.insert(ticket, (params, sends + 1));
+                }
+                None => self.export_reports_waiting.push((params, sends)),
+            }
         }
     }
 
@@ -1556,7 +1635,8 @@ mod tests {
     /// One MCP tool call through the protocol, with its error result kept (the shared helper fails the test on one).
     fn mcp_tool(backend: std::sync::Arc<crate::app::test_support::HostBackend>, name: &str, arguments: serde_json::Value) -> serde_json::Value {
         use designllm_bridge::{catalog::Scope, mcp::{McpServer, Routed}};
-        let server = McpServer::new(backend, Scope::Workspace);
+        // A parity check of one call, as `test_support::Mcp` does: the guide gate (bridge) is not what it compares.
+        let server = McpServer::new(backend, Scope::Workspace).without_guide_gate();
         let initialize = json!({
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": { "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": { "name": "desktop-parity", "version": "1" } }
@@ -1917,3 +1997,6 @@ mod tests {
         assert!(!app.ui.take_agent_commit(ticket), "the refused commit's ticket is gone");
     }
 }
+
+/// How many times the outcome of an agent's export is sent before the window gives up on it.
+const EXPORT_COMPLETION_ATTEMPTS: u32 = 3;

@@ -65,13 +65,13 @@ const INDEX: Page = Page {
     title: "DesignLLMTool: how to use this server",
     description: "Start here. Lists the task pages, the common procedure, and the rules that apply to every task.",
     task: false,
-    tools: &[
+    tools: &["design_guide", "artifact_save", "history_undo",
         "workspace_list", "changes_validate", "changes_apply", "history_undo_change", "artifact_validate", "render_get", "asset_lookup", "asset_read",
         "artifact_export",
     ],
     steps: &[
-        "For design work, start with the design-workflow page and the task guide. Every task prompt includes the shared design workflow.",
-        "Read the page for your task before you call tools. Task pages: mobile-screen, landing-page, social-post, poster, slides, document-edit, paper-figure, web-code. Shared Canvas design systems have a procedure on the design-system page.",
+        "For design work, start with the design-workflow page and the task guide. Every task prompt includes the shared design workflow. The design_guide tool returns the same guides for clients that do not read MCP resources or prompts. The first change to an artifact is refused with GUIDE_REQUIRED until its guide has been delivered on this connection; the refusal carries the guide, so read it and send the call again.",
+        "Read the page for your task before you call tools. Task pages: mobile-screen, landing-page, social-post, poster, slides, document-edit, paper-diagram (model architecture, pipeline, method overview), paper-figure (data plots), web-code. Shared Canvas design systems have a procedure on the design-system page; non-rectangular shapes are on the shapes page.",
         "Call workspace_list first. It returns workspace_id and each artifact with its current revision. A workspace-scoped response may include project_folder, artifacts_folder, and workspace_notices about migration, backup, or recovery. Read notices when present.",
         "For local project work, start DesignLLMTool with --project <existing folder>; a workspace MCP client adds --mcp. Each committed revision is stored in the project's .designllm folder and can be opened again through the workspace from any MCP client. When the user wants a native file, use artifact_save without target_path to save or update the managed copy in the project's artifacts folder.",
         "When another owner holds a node, a change to it is refused with TARGET_BUSY. The collaboration page explains reservations and job scope.",
@@ -186,7 +186,7 @@ const AI_JOBS: Page = Page {
     title: "AI jobs",
     description: "A job runs a Claude or Codex CLI on one artifact. The job's agent changes the artifact through MCP.",
     task: false,
-    tools: &[
+    tools: &["targets_list", "changes_apply",
         "job_start", "job_get", "job_cancel", "job_resume", "events_poll", "targets_reserve", "history_undo", "figure_render_link",
         "proposal_create", "proposal_get", "proposal_preview", "proposal_apply",
     ],
@@ -429,16 +429,149 @@ const DOCUMENT_EDIT: Page = Page {
     ],
 };
 
-const PAPER_FIGURE: Page = Page {
-    slug: "paper-figure",
-    title: "Paper figure (CSV data, diagram, PDF evidence)",
-    description: "A figure for a paper: a dataset from CSV, panels with plots, diagrams, and evidence from a PDF.",
+/// Print-size rules shared by the two paper pages.
+const FIGURE_PRINT: &str = "Size the figure for print rather than a screen, and draw it at 1:1 scale. Make single-column figures 84 to 89 mm wide (IEEE 88.9 mm, Nature 89 mm, ACL 77 mm) and double-column figures 175 to 183 mm wide, with height determined by the content. Use 7 to 9 pt for labels and 8 to 10 pt for block or panel names, never go under 6 pt, and use at most three text sizes and one sans-serif font family. If the user names a venue, follow its rules instead (Nature 5 to 7 pt figure text, IEEE about 9 to 10 pt). Set line weights to 0.5 to 1 pt. Unit conversions: 1 mm = 36000 EMU, 1 pt = 12700 EMU.";
+
+/// What a good paper figure leaves out. Shared by the two paper pages.
+const FIGURE_NO_EXTRA_TEXT: &str = "Make a paper figure understandable from its layout without auxiliary text. Do not put a title, subtitle, section headers, a source line, or explanatory sentences inside the figure; the caption below the figure in the paper provides the title and explanation. Never write labels such as Overall flow, Inside X, Step 1, Input/Output headers, or Legend when position, grouping, and arrows already show that meaning.";
+
+/// Functional palette for diagrams and categorical palette for data, both away from stock framework colours.
+const FIGURE_PALETTE: &str = "Use colour only to encode function or category, never for decoration. Use these diagram roles with a soft fill, a matching stroke, and dark #1C1C1C text: attention or mixing #FCE3C7 / #C77A2B; feed-forward or MLP #D6E6EF / #4F7CA8; normalization #F6EDB8 / #A8922E; embedding or input encoding #E5DDF0 / #7A5C99; output head or loss #D8EBD9 / #4E8A56; the paper's new component (use once) #F7D9D4 / #B4532A; plain operations and data white / #3A3A3A; frames and guides #BDBDBD. For data series, use the colour-blind-safe Okabe-Ito palette (#E69F00, #56B4E9, #009E73, #F0E442, #0072B2, #D55E00, #CC79A7, #000000), use one sequential ramp for ordered values, draw baselines in grey, and give the proposed method the strongest colour. In a Figure artifact the first series takes the panel's fill (set_style) and later series take the renderer's palette; choosing an output profile (the figure.output_profile GUI command) sets the panel fills from Okabe-Ito. Never use stock framework colours (COLOR_STOCK_DEFAULT).";
+
+const PAPER_DIAGRAM: Page = Page {
+    slug: "paper-diagram",
+    title: "Paper diagram (model architecture, pipeline, method overview)",
+    description: "An architecture, pipeline, or method-overview figure in the style of Transformer, ViT, ResNet, U-Net, or VAE figures: blocks, typed shapes, orthogonal arrows, residual joins, and repeated stacks, readable at print size without auxiliary text.",
     task: true,
     tools: &[
-        "asset_import", "source_import_csv", "source_extract_pdf", "artifact_create", "changes_validate", "changes_apply",
+        "design_guide", "artifact_create", "artifact_inspect", "changes_validate", "changes_apply", "artifact_validate", "render_get", "artifact_export",
+    ],
+    steps: &[
+        "Draw an architecture or pipeline figure on a Canvas artifact; Canvas provides vector paths (trapezoids, cylinders, circled operators), Line arrows with arrowheads and dashes, and groups. A Figure artifact draws only rectangles, ellipses and math formulas, with straight connectors, in its diagrams, so use it for data plots (paper-figure page).",
+        FIGURE_PRINT,
+        "Plan before drawing, and state the plan in your progress text: list the blocks, the data passed between them, and one reading direction. Use bottom-to-top (the Transformer) for a layer stack, and left-to-right for a pipeline. Place inputs at the start edge and outputs at the far edge along one main axis; use side branches only for skip connections, conditioning, or losses.",
+        FIGURE_NO_EXTRA_TEXT,
+        "Align blocks on a grid: give blocks of the same role identical width and height, keep gaps equal (8 to 16 px between blocks, 24 to 32 px between groups), place centres on the flow axis, and align parallel branches edge to edge. Make a one-line block about 1.8 times its font size tall, and add about 1.1 times the font size for each extra line. Leave at least 12 px of margin around the drawing. Do not add a page background panel or a card behind the whole figure, and nest containers at most two levels deep.",
+        "Label every block with its name only, in 1 to 3 words (Multi-Head Attention, Add & Norm, Feed Forward, Patch Embedding, Encoder). Do not place sentences, parameter lists, or model sizes inside or under blocks; put those in the caption or paper text. Format math symbols (x, z, Q, K, V, h_t) in italic. Size each block's text box so its longest label fits on one line with at least 4 px padding on every side.",
+        "Label an arrow only when the data on it is not obvious from its two ends. Limit the label to 1 or 2 words or a symbol. Place it beside the arrow with at least 4 px clearance, never over a line or a block, in a text box wide enough to prevent clipping.",
+        FIGURE_PALETTE,
+        "Use shape to indicate kind (see the recipe ids on the shapes page; their path JSON is design_guide topic shapes-json): rounded rectangle for a layer or module (corners as specified below); trapezoid for an encoder (narrowing along the flow) or a decoder (widening); parallelogram for data or a latent z; cylinder for a memory, cache, database, or codebook; circle_plus for addition and residual joins; circle_times for multiplication or gating; cuboid for a tensor or feature map; diamond for routing or a decision; hexagon for a frozen module or a loss. Add a node of kind path whose path field (on the node itself) holds the recipe's path, with bounds set to the box you want. A Path holds no text, so place a Text node with the same bounds on top of it (align center, vertical_align middle).",
+        "Draw arrows as Line nodes in the ink colour, 1 px wide (0.75 to 1 pt), with stroke_end filled for the arrowhead. A Line runs from its top-left corner to its bottom-right corner (width and height are never negative), so draw an arrow pointing up or left downward or rightward and set stroke_start instead. Route orthogonally: build an elbow from two or three Lines meeting at right angles, with an arrowhead on the last segment only. Do not draw diagonal arrows or crossings; reroute around blocks instead. Start and end arrows exactly on block edges.",
+        "Route residual and skip connections out of the main path, run them parallel to it at a fixed offset (12 to 20 px), and rejoin the main axis at a circle_plus (16 to 20 px, white fill, ink stroke), as in the ResNet and ViT figures, or enter the side of a combined Add & Norm block when addition and normalization are one block, as in the Transformer figure. Bring conditioning inputs in from the side with a dashed Line (stroke_dash dashed).",
+        "Show a repeated stack once: draw one copy of the block group inside a frame (stroke only, #BDBDBD, corner radius 6 to 8 px, no fill) and place N× (or L×) beside the frame's left or right edge. Show a zoomed detail or variant either as a separate panel beside the overview labelled (a), (b) in bold at its top-left, or by linking a block to its detail with a dashed outline; do not nest explanations inside blocks.",
+        "Use flat styling only: no shadows, gradients, glass, glow, emoji, or icons inside blocks. Use one corner radius for blocks and one corner radius for frames. Use dark text on light fills; never place text on a saturated or dark fill.",
+        "Engine facts: a named block is a single rectangle node with text (align center, vertical_align middle), so no separate text node is needed. Set no fill as fill #FFFFFF00 (an empty string is rejected). Always set stroke and stroke_width on blocks, frames, and lines; the defaults produce a blue-grey 1 pt stroke. A complete worked example (a Transformer encoder as one changes_apply) is in design_guide topic paper-diagram-example; adapt its coordinates and names instead of starting from scratch.",
+        "Use corners to distinguish process from data: give a module or operation rounded corners (radius about 15 to 20 % of its height, at most 8 px), and give a data block, tensor, or matrix sharp corners. Draw the main flow between modules at the regular line weight; links inside a zoomed detail may be thinner. Spend emphasis in one place only: give the strongest colour only to the component the figure is about.",
+        "Keep the figure readable by using at most about 30 connections and 40 labels; if more are needed, move part of the figure into a detail panel. Label a tensor with its shape only where the shape is the point, placing channels above the block and spatial size at its lower left (as in U-Net).",
+        "Review in rounds: render with render_get, write a named list of defects (for example \"label Positional Encoding touches its arrow\", \"arrow-5 enters Add & Norm from the wrong side\"), fix each defect with a small targeted changes_apply, and render again; three or four rounds are usually enough. Do not redraw the whole figure to fix one defect. Because visual review misses wrong connections, check the structure as well: list every edge as from block -> to block and confirm each Line starts and ends on the intended blocks. Last, remove one element that does not carry the message.",
+        "Check the final render at 100 %: verify every label is legible at print size, nothing is clipped or overlapping, all gaps are equal, arrows touch edges, and there is one reading direction. Then call artifact_validate and fix every design-quality warning not required by the request (COLOR_STOCK_DEFAULT, TEXT_EXTRA_LABEL, TEXT_SIZE_SPREAD, SHADOW_HEAVY, TITLE_LINE_BREAKS). Export PDF or SVG (vector) for the paper.",
+    ],
+    examples: &[
+        (
+            "artifact_create",
+            r##"{"request_id":"<new UUID>","actor":"agent","kind":"canvas","title":"Model architecture","size":{"width":6300000,"height":4320000}}"##,
+        ),
+        (
+            "changes_apply",
+            r##"{"request_id":"<new UUID>","actor":"agent","workspace_id":"<workspace_id>","artifact_id":"<artifact_id>","base_revision":0,"allowed_intents":["content","design"],"operations":[{"op":"add_node","page_id":"<page_id>","parent_id":null,"node":{"id":"encoder","kind":"path","bounds":{"x":457200,"y":914400,"width":1143000,"height":1371600},"style":{"fill":"#E5DDF0","stroke":"#7A5C99","stroke_width":12700},"path":{"view_box":{"x":0,"y":0,"width":1000,"height":1000},"fill_rule":"nonzero","commands":[{"type":"move_to","x":0,"y":0},{"type":"line_to","x":1000,"y":200},{"type":"line_to","x":1000,"y":800},{"type":"line_to","x":0,"y":1000},{"type":"close"}]}}},{"op":"add_node","page_id":"<page_id>","parent_id":null,"node":{"id":"encoder.label","kind":"text","bounds":{"x":457200,"y":914400,"width":1143000,"height":1371600},"text":"Encoder","style":{"font_size":114300,"color":"#1C1C1C","align":"center","vertical_align":"middle"}}},{"op":"add_node","page_id":"<page_id>","parent_id":null,"node":{"id":"arrow-1","kind":"line","bounds":{"x":1600200,"y":1600200,"width":304800,"height":0},"style":{"stroke":"#1C1C1C","stroke_width":12700,"stroke_end":"filled"}}}]}"##,
+        ),
+        (
+            "artifact_export",
+            r##"{"request_id":"<new UUID>","options":{"artifact_id":"<artifact_id>","expected_revision":1,"format":"pdf","required_editability":"vector","allowed_losses":[]},"target_path":"<absolute path>.pdf","overwrite":false}"##,
+        ),
+    ],
+};
+
+/// Measurable meanings of the design words the guides use, so every model reads them the same way.
+const GLOSSARY: Page = Page {
+    slug: "glossary",
+    title: "Design glossary",
+    description: "Exact meanings of the design terms used by every guide (with the Korean words users write). When a guide or a request uses one of these words, apply this definition, not a looser one.",
+    task: false,
+    tools: &["design_guide"],
+    steps: &[
+        "Auxiliary label (보조 레이블, 보조 글): text that names, introduces, or explains something the layout already shows. Examples: an eyebrow above a title, a section header such as Overview, Inputs, Step 1, or Inside X, a subtitle that repeats the title, an explanatory sentence placed below each item, a legend for a single series, a Source line inside a figure, or an arrow label that repeats the name of the block it points to. Test: remove the text. If a reader still understands what each element is and how elements connect, the text is auxiliary. Do not include auxiliary labels.",
+        "Necessary label (필요한 레이블): the shortest text that identifies an element that no other cue identifies. Examples: a block or module name (1 to 3 words), an axis quantity with its unit, a symbol on an arrow (x, z, Q, K, V), a panel letter (a), or a button's action. Keep necessary labels.",
+        "Eyebrow or kicker (아이브로우): a line of text smaller than the heading and placed above it, often in upper-case or coloured text. Never use an eyebrow or kicker.",
+        "Heading (제목): the largest text of a page, a section, or a panel. A figure for a paper has no heading inside it.",
+        "Layout explains the structure (레이아웃으로 설명): show which items belong together, their order, and their hierarchy level using four cues only. Grouping: set the gap inside a group to at most half the gap between groups. Alignment: align related items to a shared edge or centre line. Position: place items in order along the reading direction. Size: make an element at a higher hierarchy level at least 1.2 times the size of the next lower level.",
+        "Reading direction or flow axis (읽는 방향, 흐름 축): the single direction in which data or attention moves through the design: left to right, top to bottom, or bottom to top for a layer stack. Place inputs at the start of this axis and outputs at the end.",
+        "Main path (주 경로): the chain of blocks along the flow axis from the first input to the final output.",
+        "Grid (격자): set every position, width, height, and gap to a multiple of 4 px. This rule does not apply to line widths or font sizes. Make all gaps with the same structural role equal.",
+        "Generous whitespace (여백): set outer margins to at least twice the gap between neighbouring items. Ensure no element touches the frame edge.",
+        "Padding and clearance (안쪽 여백, 간격): leave at least 4 px between text and any box edge, line, or other text. Size every text box so that no text is clipped.",
+        "Hierarchy (위계): use three or four text sizes. Make each size level at least 1.2 times the size of the level below it. Change font weight only for names or headings.",
+        "Visual direction (시각 방향): define one palette family, three or four text sizes, one alignment logic, and one corner radius before making the first edit, and keep them unchanged across the entire artifact.",
+        "Neutral (무채색): a grey with chroma under 5 %. Near-black ink means colours in the range #1C1C1C to #2B2B2B.",
+        "Chroma (채도 폭): (max(R, G, B) - min(R, G, B)) / 255, computed from the 0-255 channel values. 0 % is a pure grey.",
+        "Navy (남색): a colour with a blue hue between 205 and 250 degrees, HSL lightness at most 32 %, HSL saturation at least 25 %, and a chroma of at least 5 %, for example #0F172A, #1E293B, #111827, or #172033. Never use navy as a surface. Use a near-black neutral instead.",
+        "Stock colour (AI 기본 색): a colour within RGB distance 12 of a framework or assistant default: Tailwind blue, indigo, violet, purple, emerald, green, teal, sky, red, or rose (400 to 900 and 100 steps; not every hue has every step), Bootstrap or Material primaries, Google blue, green, or red, ChatGPT green, Claude orange, or Gemini violet. The lint check reports this as COLOR_STOCK_DEFAULT.",
+        "RGB distance (RGB 거리): the Euclidean distance between two colours' 0-255 R, G, and B values: sqrt(dR² + dG² + dB²). The maximum is 441.",
+        "Accent (강조색): the single saturated colour of a design, chosen to match the subject. Limit its coverage to at most 10 % of the area and use it only where the reader must look first.",
+        "Saturated (채도가 높은): a colour with HSL saturation at least 40 % and HSL lightness between 25 % and 75 %.",
+        "Soft fill (연한 채움): a light tint with HSL lightness at least 85 % placed behind dark text. Use soft fills to distinguish diagram blocks by their role.",
+        "Dark text (진한 글자): text with HSL lightness at most 25 % and a contrast ratio of at least 4.5:1 against the fill behind it.",
+        "Surface (면): any filled shape that covers at least 1 % of the page: a background, a panel, a card, or a block.",
+        "Hairline (가는 선): a 1 px (0.75 pt) line drawn in a neutral grey.",
+        "Card (카드): a rounded rectangle with its own fill, border, or shadow that encloses one item. A card grid is three or more cards of equal size in a row. Do not use a card grid unless the items are parallel peers at the same level.",
+        "Accent bar (가장자리 색 띠, velog식 색 띠): a thin coloured stripe along the top or left edge of a card or box. It sits inside the card or box or touches it, and covers at least half of that edge. It is at most 8 px thick, is at least four times as long as it is thick, and uses a clearly chromatic colour. Do not use an accent bar unless the user asks for it. Show emphasis with type size, weight, or position instead. The lint reports it as ACCENT_BAR.",
+        "Frame (프레임): a rectangle with an outline stroke (#BDBDBD, 1 px) and no fill that groups blocks; set its corner radius to 6 to 8 px.",
+        "Hero panel (히어로 패널): a large filled rectangle at the top of a page that holds the title, usually dark. Never use one in a figure; avoid it elsewhere unless the user asks.",
+        "Pill badge (필 배지): a small rectangle with fully rounded ends (corner radius equal to half its height) holding a 1 to 3 word tag. Do not use one.",
+        "Drop shadow (그림자): any shadow drawn behind a shape. Figures use no shadows. Elsewhere, a shadow with a blur of 32 px or more at 0.25 opacity or more is heavy (SHADOW_HEAVY).",
+        "Big title inside a figure (그림 안의 큰 제목): any text inside a figure that names the whole figure, or any text larger than the block labels. Never draw one; the caption carries the title.",
+        "Slop or generic look (슬롭, 뻔한 AI 디자인): default patterns that generated designs fall back on. The patterns are card grids with soft drop shadows, a dark navy hero panel, purple or indigo gradients, glass or blur effects, emoji used as icons, pill badges, accent bars on box edges, eyebrows, all text centred, stock colours, filler adjectives, and a big title inside a figure. Do not use any of these patterns unless the user explicitly asks for them.",
+        "Paper figure (논문 피규어): a figure placed in a paper with a caption below it. Follow the paper-diagram rules for architecture, pipeline, and method-overview figures. Follow the paper-figure rules for data plots.",
+        "Caption (캡션): the text placed under a figure in a paper. Because the caption carries the figure's title and explanation, do not put a title or explanation inside the figure artifact itself.",
+        "Print size, single and double column (인쇄 크기, 단): the figure's width when printed: 84 mm (3.3 in) for single column and 175 mm (6.9 in) for double column. Measure text sizes at this printed width: set labels to 7 to 9 pt, and use no text smaller than 6 pt.",
+        "Block (블록): one shape representing one module, layer, or operation. Label each block with its name only.",
+        "Typed shape (도형 종류): a shape whose outline indicates its component type: trapezoid for encoder or decoder, parallelogram for data or latent, cylinder for store, circle_plus for addition, circle_times for gating, cuboid for tensor, diamond for routing, and hexagon for frozen module or loss. Shape recipes are on the shapes page.",
+        "Orthogonal routing (직각 연결): draw connectors using only horizontal and vertical segments that meet at right angles. Do not draw diagonal segments or crossing lines.",
+        "Residual or skip connection (잔차, 스킵 연결): a line that branches from the main path, runs parallel to it at a fixed offset, and rejoins it at a circle_plus or at the side of a combined Add & Norm block.",
+        "Repeat frame, N× (반복 표기): draw one copy of a repeated stack inside a frame with an outline stroke and no fill, and do not draw every copy. Place N× (or L×) outside the frame, beside its left edge, vertically centred on the frame.",
+        "Panel and panel label (패널, 패널 기호): a panel is one sub-figure of a multi-part figure; its panel label is a bold marker such as (a) or (b). Place the label inside the panel's area at the panel's top-left corner: align the label's left edge with the panel's left edge and the label's top with the panel's top edge.",
+        "Direct label (직접 레이블): a series name placed directly at the end of its line or beside its bars. Use direct labels instead of a legend where the tool can place them (charts drawn on a Canvas); a Figure plot with several series gets its legend from the renderer.",
+        "Legend (범례): a key that maps colours or markers to series names. Use a legend only when two or more series share a panel and direct labels would overlap.",
+        "Series (계열): one set of data points drawn with one colour or marker, such as one method's results.",
+        "Placeholder copy and filler words (자리표시 글, 빈 수사): lorem ipsum, invented names or numbers, and promotional filler words such as seamless, cutting-edge, or 혁신적인. Use only the user's content and real data. When a value is unknown, leave a visible gap: put an em dash (—) in place of the unknown value and add a sentence in your reply that names the missing value.",
+        "Artifact (작업물): the DesignLLMTool document being edited: a canvas, a slide deck, a figure, a DOCX, HWPX, or HWP document, or web code.",
+    ],
+    examples: &[],
+};
+
+const SHAPES_PAGE: Page = Page {
+    slug: "shapes",
+    title: "Shape library",
+    description: "Vector shapes beyond rectangles and ellipses for Canvas diagrams: trapezoid encoders and decoders, parallelograms, cylinders, circled plus and times, diamonds, hexagons, cuboids, triangles, block arrows and documents.",
+    task: false,
+    tools: &["design_guide", "changes_apply", "render_get"],
+    steps: &[
+        "Every recipe is a Canvas path in a 1000 x 1000 view box. A Path node stretches its view box to fit its bounds, so set bounds to the box you want; the same recipe produces a tall or a wide trapezoid. Set fill, stroke, and stroke_width as on a rectangle.",
+        "Add the shape using add_node (content) with kind path and the node's path field = the recipe's path (view_box, fill_rule nonzero, commands). The JSON for every recipe is in the designllm://shapes resource and in design_guide topic shapes-json.",
+        "A Path holds no text. Place a Text node with the same bounds on top of it (align center, vertical_align middle), and keep both nodes in one Group so they move together.",
+        "Orient each trapezoid along the reading direction: narrowing for an encoder, widening for a decoder. Size circle_plus and circle_times to 16 to 20 px; scale cuboids to show relative tensor sizes.",
+        "The circle of circle_plus and circle_times spans 10 to 90 % of its box. End any arrow that meets circle_plus or circle_times 10 % of the box inside the box edge, not on the box edge. The plain circle fills its whole box.",
+        "Recipes (id: use):",
+    ],
+    examples: &[],
+};
+
+const PAPER_FIGURE: Page = Page {
+    slug: "paper-figure",
+    title: "Paper figure (CSV data, plots, PDF evidence)",
+    description: "A data figure for a paper: a dataset from CSV, panels with plots, evidence from a PDF, at print size and without auxiliary text. Architecture and pipeline diagrams use the paper-diagram page.",
+    task: true,
+    tools: &["artifact_validate",
+        "design_guide", "asset_import", "source_import_csv", "source_extract_pdf", "artifact_create", "changes_validate", "changes_apply",
         "figure_dataset_edit", "figure_render_link", "render_get", "artifact_export",
     ],
     steps: &[
+        "Use this page for data plots. For a model architecture, pipeline, or method overview (the Transformer kind of figure), follow the paper-diagram page on a Canvas artifact instead.",
+        FIGURE_PRINT,
+        FIGURE_NO_EXTRA_TEXT,
+        "Show one message per panel. Give panels compared with each other the same axis ranges, tick steps, series colours, and marker styles. Label panels (a), (b) with set_panel_label, and place them on one grid with arrange_panels. The renderer draws a legend for a plot with several series. Limit each plot to the few series the message needs, and use set_common_legend when panels share series. Because a series gets its colour from its position in the plot's y columns, list shared series in the same order in every panel. A single series needs no legend.",
+        "Axis labels name the quantity with its unit in parentheses (Accuracy (%), Latency (ms)); ticks are round numbers; no chart title inside a panel, the caption states the claim. Light grey gridlines only when values must be read, no 3D, shadows, gradients or background panels. Show the error statistic with set_plot_display (error_key) when error bars are drawn.",
+        FIGURE_PALETTE,
         "asset_import each file (the CSV and the PDF). It returns sha256, mime and bytes.",
         "source_import_csv with the CSV sha256 and optional columns: name, data_type (category, numeric, count or text) and unit. Columns that are not declared are text. The result is a dataset with its version_hash.",
         "source_extract_pdf with the PDF sha256 returns evidence (page, region and text) for the pages you name (0-based), or for every page when pages is empty; a document over 4096 pages needs a page list. Check document_complete: it is true only when read_pages covers every page of the document. After a request for some pages it is false, so say which pages were read (read_pages) and do not describe the rest of the PDF as read. page_reports lists non-blocking diagnostics for content that was not interpreted, such as images. Use it for the figure's evidence.",
@@ -475,7 +608,7 @@ const GUI: Page = Page {
     title: "Operating the GUI",
     description: "Read the app's view, list its commands, run one the way a person would, and check the result with a screenshot.",
     task: false,
-    tools: &[
+    tools: &["changes_apply", "render_get", "artifact_save", "artifact_export", "job_start",
         "ui_state_read", "ui_command_list", "ui_command_run", "ui_command_get", "ui_screenshot", "context_read", "render_hit_test",
         "render_caret_rect", "render_selection_rects", "selection_set", "view_transform_set",
     ],
@@ -554,9 +687,12 @@ const CANVAS_COMPONENTS: Page = Page {
 };
 
 /// Default visual direction for new AI designs without a user-provided style.
-pub const DEFAULT_DESIGN_STYLE: &str = "For a new design or a requested redesign with no specified palette, theme, or visual reference, use a modern black-and-white palette by default. Use black and white for primary surfaces and text, neutral grays for secondary text and borders, and clear contrast. Use typography, generous spacing and alignment to establish hierarchy. Follow the user's palette or reference when provided. Preserve the established palette for targeted edits that do not request a restyle.";
+pub const DEFAULT_DESIGN_STYLE: &str = "For a new design or a requested redesign without a specified palette, theme, or visual reference, start from neutrals: near-black ink (#1C1C1C to #2B2B2B, not navy), a white or light neutral grey surface, mid greys for secondary text and hairlines, and clear contrast. Add at most one accent suited to the subject (for example terracotta #B4532A, ochre #A8741A, moss #5B6B3A, deep teal #2F5D62, plum #6B3E5E, or steel #4A5D73) and use it only where the reader must look first. Never use stock framework or assistant colours: Tailwind blue, indigo, violet, emerald, green, teal, or red (#2563EB, #4F46E5, #7C3AED, #10B981, #22C55E, #EF4444 and similar shades), Bootstrap or Material primaries, Google blue, ChatGPT green, Claude orange, Gemini violet, or dark navy surfaces (#0F172A, #1E293B, #111827); the linter reports them as COLOR_STOCK_DEFAULT. Establish hierarchy using typography, spacing, and alignment. Follow the user's palette or visual reference when provided. Preserve the established palette for targeted edits that do not request a restyle.";
 
-const LAYOUT_HIERARCHY: &str = "Build the hierarchy with grouping, alignment, spacing, position and type size. Keep auxiliary labels to a minimum. Omit decorative numbering, repeated headings and explanatory text that repeats what the layout shows. Retain labels readers need to interpret the design or act.";
+const LAYOUT_HIERARCHY: &str = "Let the layout show the structure instead of adding extra words. Build hierarchy using grouping, alignment, spacing, position, and type size. Keep auxiliary labels to a minimum: omit eyebrow or kicker text above titles, section headers that repeat what the layout already shows (Overview, Inputs, Step 1, Inside X), decorative numbering, explanatory sentences under every item, and legends for a single series. Keep only labels that readers need to identify an item, interpret the design, or act. If removing a label loses no information, remove it.";
+
+/// The habits that make generated work read as a default template. Shared by every task prompt and job guidance.
+const ANTI_SLOP: &str = "Avoid generic default patterns: rows of identical rounded cards with soft shadows, dark navy hero panels, purple or indigo gradients, glass or blur effects, emoji used as icons, pill badges, a coloured bar along the top or left edge of a card or box (the blog-callout look), centring all text, a big title inside a figure or diagram, placeholder copy, and filler adjectives. Prefer flat fills, 1 px hairlines, one uniform corner radius (0 to 8 px), aligned edges, and generous whitespace.";
 
 const DOCUMENT_LAYOUT: &str = "Keep report text and tables editable. Use native heading hierarchy, consistent margins, table columns and deliberate page breaks to show structure. Render every page and check heading placement, wrapping, table breaks and Korean glyphs before saving.";
 
@@ -566,11 +702,12 @@ const DESIGN_WORKFLOW: Page = Page {
     title: "Design workflow",
     description: "Choose and apply the built-in design guidance for a DesignLLMTool artifact.",
     task: true,
-    tools: &["artifact_inspect", "artifact_validate", "changes_validate", "render_get"],
+    tools: &["design_guide", "proposal_preview", "artifact_inspect", "artifact_validate", "changes_validate", "render_get"],
     steps: &[
-        "Identify the artifact kind and the intended reader or use. Inspect the target and its capabilities before designing. Follow the matching task guide, plus design-quality for visual review, design-theme when a look is requested, and design-system or templates when reusing one is relevant. The manual index lists the guides.",
+        "Identify the artifact kind and the intended reader or use. Inspect the target and its capabilities before designing. Follow the matching task guide, plus design-quality for visual review, design-theme when a look is requested, and design-system or templates when reusing one is relevant. A paper figure is a task of its own: paper-diagram for architectures, pipelines and method overviews, paper-figure for data plots. The manual index lists the guides; the design_guide tool returns any of them.",
         DEFAULT_DESIGN_STYLE,
         LAYOUT_HIERARCHY,
+        ANTI_SLOP,
         "Use editable native objects for the core content when the format supports them. Match the layout to the target size, choose one consistent visual direction, and preserve the user's requested content and constraints.",
         "Validate the changes, use the delivery mode assigned to the job, and inspect the rendered result. For proposals, use proposal_preview to review without committing. Correct avoidable layout defects and supported design-quality warnings within the request. When the user wants to follow the work live, use the GUI guide and the MCP UI commands to show the relevant view.",
     ],
@@ -592,9 +729,11 @@ const DESIGN_QUALITY: Page = Page {
         "BACKGROUND_CREAM: a large visible rectangle has a warm off-white fill. Avoid cream, beige and ivory backgrounds. TEXT_EXTRA_LABEL: a short, much smaller label near the title repeats title words or is a generic category above it. Keep auxiliary labels minimal; use grouping, alignment, spacing and size to show structure. TITLE_LINE_BREAKS: a short title has an explicit line break and is estimated to fit on one line. Keep titles on one line where width allows, widening the box if needed.",
         "LAYOUT_REPEATED_CARDS: three or more rectangles of the same size, with a shadow at least 0.02 opaque and a corner radius of 12 to 24 px, sit in one row without overlap. LAYOUT_ALL_CENTERED: four or more text nodes on a page are all centred and one of them is a body paragraph (three or more lines, or 120 characters or more). TEXT_SIZE_SPREAD: a page uses seven or more text node sizes, counted in whole points. The last two rules exclude text inside shapes.",
         "SLIDE_PLAIN_CLOSING (slide decks only): the text of the last slide is nothing but a closing line (Thank you, 감사합니다, Q&A or 질문).",
+        "COLOR_STOCK_DEFAULT: a solid shape fill or a text colour within a small distance of a stock framework or assistant default (Tailwind blue, indigo, violet, purple, emerald, green, teal, sky, red or rose; Bootstrap and Material primaries; Google blue, green and red; ChatGPT green; Claude orange; Gemini violet), or a shape of at least 1 % of the page filled with dark navy (blue hue, lightness at most 0.32). Pick colours from a palette chosen for the subject; use near-black neutrals (#1C1C1C) instead of navy.",
+        "ACCENT_BAR: a thin rectangle (at most 8 px thick and at least four times as long) or a line of 3 px or more. It uses a colour with a chroma of at least 15 %, lies along the top or left edge of a filled or outlined rectangle, sits just inside that rectangle or touches it, and covers at least half of that edge. This is the coloured stripe of a blog callout. Remove it unless the user asked for it. Show emphasis with type size, weight, or position.",
         "The warnings do not refuse an edit. Fix them where the request allows, and keep a choice that the request asks for.",
         "Check the result: after the last change, call artifact_validate on the Canvas artifact or the deck. Its diagnostics list each design-quality warning with its node_id. Keep choices explicitly requested by the user and fix the other warnings with changes_validate and changes_apply, then call artifact_validate again. Look at the page with render_get.",
-        "A Canvas gets the warnings only when it uses v1.2 values (a shadow, gradient, corner radius, opacity or another v1.2 field); a Canvas with v1.1 values only gets none. A deck gets them whatever its values. Figure gets none yet, so check its look with render_get.",
+        "A Canvas gets the warnings only when it uses v1.2 values (a shadow, gradient, corner radius, opacity or another v1.2 field); a Canvas with v1.1 values only gets none. A deck gets them whatever its values. Figure gets none yet, so check its look with render_get against the paper-figure rules.",
     ],
     examples: &[("artifact_validate", r#"{"artifact_id":"<artifact_id>"}"#)],
 };
@@ -623,26 +762,229 @@ const DESIGN_THEME: Page = Page {
 /// Every manual page, in listing order.
 pub const PAGES: &[Page] = &[
     INDEX, REFUSALS, INTENTS, DESIGN_SYSTEM, PRESETS, AI_JOBS, COLLABORATION, TEMPLATES, MOBILE_SCREEN, LANDING_PAGE, SOCIAL_POST, POSTER, SLIDES, DOCUMENT_EDIT,
-    PAPER_FIGURE, WEB_CODE, CANVAS_COMPONENTS, DESIGN_WORKFLOW, DESIGN_QUALITY, DESIGN_THEME, GUI,
+    PAPER_DIAGRAM, PAPER_FIGURE, SHAPES_PAGE, WEB_CODE, CANVAS_COMPONENTS, DESIGN_WORKFLOW, DESIGN_QUALITY, DESIGN_THEME, GLOSSARY, GUI,
 ];
 
-/// The app supplies this guidance directly to a managed agent, including clients that do not expose MCP resources.
-pub fn job_design_guidance(kind: ArtifactKind) -> String {
-    let task_page = match kind {
+/// URI of the shape library resource (JSON).
+pub const SHAPES_URI: &str = "designllm://shapes";
+
+/// The design-quality warning codes (contracts `design_quality`), as the guides and the MCP server name them.
+pub const DESIGN_QUALITY_CODES: &[&str] = &[
+    "ICON_EMOJI", "TEXT_PLACEHOLDER", "TEXT_VAGUE_WORDING", "FILL_STOCK_GRADIENT", "SHADOW_HEAVY", "LAYOUT_REPEATED_CARDS", "LAYOUT_ALL_CENTERED",
+    "TEXT_SIZE_SPREAD", "SLIDE_PLAIN_CLOSING", "BACKGROUND_CREAM", "TEXT_EXTRA_LABEL", "TITLE_LINE_BREAKS", "COLOR_STOCK_DEFAULT", "ACCENT_BAR",
+];
+
+/// English words and phrases that mark a title or a request as a paper figure (an architecture, a pipeline, a method
+/// overview). They match as whole words, so "configure" does not match "figure".
+const PAPER_WORDS: &[&str] = &[
+    "paper", "figure", "fig", "architecture", "diagram", "pipeline", "model structure", "method overview", "overview figure", "encoder",
+    "decoder", "transformer", "vae", "u-net", "unet", "diffusion model",
+];
+/// Korean words for the same, matched anywhere (Korean attaches particles to words).
+const PAPER_WORDS_KO: &[&str] = &[
+    "논문", "피규어", "구조도", "아키텍처", "모델 구조", "파이프라인", "다이어그램", "개요도", "흐름도", "모식도", "네트워크 구조", "인코더",
+    "디코더", "트랜스포머", "방법론 개요",
+];
+/// The words among those that name a diagram rather than a plot: a Figure artifact with them also gets the diagram rules.
+const DIAGRAM_WORDS: &[&str] = &["architecture", "diagram", "pipeline", "model structure", "method overview", "encoder", "decoder", "transformer"];
+const DIAGRAM_WORDS_KO: &[&str] = &[
+    "구조도", "아키텍처", "모델 구조", "파이프라인", "다이어그램", "개요도", "흐름도", "모식도", "네트워크 구조", "방법론 개요", "인코더", "디코더", "트랜스포머",
+];
+
+/// Whether `phrase` occurs in `lower` (already lower case) bounded by non-alphanumeric characters on both sides.
+fn has_word(lower: &str, phrase: &str) -> bool {
+    lower.match_indices(phrase).any(|(start, _)| {
+        let before = lower[..start].chars().next_back();
+        let after = lower[start + phrase.len()..].chars().next();
+        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+    })
+}
+
+fn mentions(text: &str, words: &[&str], korean: &[&str]) -> bool {
+    let lower = text.to_lowercase();
+    words.iter().any(|word| has_word(&lower, word)) || korean.iter().any(|word| lower.contains(word))
+}
+
+/// Whether a title or a request names a paper figure (architecture, pipeline, method overview).
+pub fn mentions_paper_figure(text: &str) -> bool {
+    mentions(text, PAPER_WORDS, PAPER_WORDS_KO)
+}
+
+/// Whether a title or a request names a diagram (not only a plot).
+fn mentions_diagram(text: &str) -> bool {
+    mentions(text, DIAGRAM_WORDS, DIAGRAM_WORDS_KO)
+}
+
+/// The task page that guides work on an artifact of `kind`, given its title or the user's request. Canvas work that names a
+/// paper figure follows paper-diagram; other Canvas work has no single page (the workflow names the Canvas guides).
+pub fn task_page_for(kind: ArtifactKind, hint: &str) -> Option<&'static Page> {
+    match kind {
+        ArtifactKind::Canvas if mentions_paper_figure(hint) => Some(&PAPER_DIAGRAM),
         ArtifactKind::Canvas => None,
         ArtifactKind::Slides => Some(&SLIDES),
         ArtifactKind::Docx | ArtifactKind::Hwpx | ArtifactKind::Hwp => Some(&DOCUMENT_EDIT),
         ArtifactKind::Figure => Some(&PAPER_FIGURE),
         ArtifactKind::WebCode => Some(&WEB_CODE),
-    };
-    let mut guidance = page_body(&DESIGN_WORKFLOW);
-    guidance.push_str("\nThe job's scope, intent and delivery rules take precedence over workspace-level actions described in the guides.\n");
-    if let Some(page) = task_page {
-        guidance.push_str(&format!("\nFormat guide ({}):\n\n", page_uri(page)));
-        guidance.push_str(&page_body(page));
-    } else {
-        guidance.push_str("\nFor Canvas, choose the closest task guide from designllm://manual/index: mobile-screen, landing-page, social-post or poster. Use the shared workflow for general Canvas work.\n");
     }
+}
+
+/// What a Figure diagram can draw, added before the paper-diagram rules in a Figure guide.
+pub const FIGURE_DIAGRAM_NOTE: &str = "This Figure shows a diagram. Use only rectangle, ellipse, and math-formula text nodes in a Figure diagram; do not use path shapes or Line nodes. Each connector (edge) is one straight segment from the centre of one node towards the centre of the other, with no elbows and no bypass routes. Place connected nodes on the same centre row or column so every edge runs straight horizontally or vertically. Follow the layout, label, colour, and review rules of the paper-diagram guide below. Where that guide builds elbows from Line nodes or draws typed shapes, follow these Figure diagram limits instead. Suggest a Canvas to the user when the diagram needs elbows, residual bypasses, encoder trapezoids, cylinders, or circled operators.";
+
+/// Key of a Figure guide that also carries the diagram rules.
+const FIGURE_DIAGRAM_KEY: &str = "paper-figure+diagram";
+
+/// The name of the guide `guide_for` gives, without building its text (the guide gate checks it on every change).
+pub fn guide_key(kind: ArtifactKind, hint: &str) -> &'static str {
+    match (kind, task_page_for(kind, hint).map(|page| page.slug)) {
+        (ArtifactKind::Figure, _) if mentions_diagram(hint) => FIGURE_DIAGRAM_KEY,
+        (_, Some(slug)) => slug,
+        (ArtifactKind::Canvas, None) => "canvas",
+        (_, None) => "design-workflow",
+    }
+}
+
+/// The guide an agent must follow for an artifact of `kind`: the shared workflow, the task page (with the shape library for
+/// a paper diagram), and the design-quality checks for the kinds the lint covers. `key` names the bundle, so a connection
+/// delivers each one once.
+pub struct Guide {
+    pub key: &'static str,
+    pub text: String,
+}
+
+pub fn guide_for(kind: ArtifactKind, hint: &str) -> Guide {
+    let task = task_page_for(kind, hint);
+    let key = guide_key(kind, hint);
+    let mut text = String::from(
+        "DesignLLMTool design guide. These rules are mandatory for this artifact: apply them to every change, and check the rendered result against them before you finish. The user's explicit instructions take precedence over a rule they contradict.\n\n",
+    );
+    text.push_str(&page_body(&DESIGN_WORKFLOW));
+    match task {
+        Some(page) => {
+            text.push_str(&format!("\nTask guide ({}):\n\n", page_uri(page)));
+            text.push_str(&page_body(page));
+        }
+        None => text.push_str("\nCanvas task guides: mobile-screen, landing-page, social-post, poster; paper-diagram for an architecture, pipeline or method figure. Call design_guide with the topic that fits before building.\n"),
+    }
+    if key == FIGURE_DIAGRAM_KEY {
+        // A Figure's diagrams draw rectangles, ellipses and formulas only, but the layout, label, colour and review rules hold.
+        text.push_str(&format!("\n{FIGURE_DIAGRAM_NOTE}\n\n"));
+        text.push_str(&page_body(&PAPER_DIAGRAM));
+    }
+    if task.is_some_and(|page| page.slug == PAPER_DIAGRAM.slug) {
+        text.push('\n');
+        text.push_str(&page_body(&SHAPES_PAGE));
+    }
+    if matches!(kind, ArtifactKind::Canvas | ArtifactKind::Slides) {
+        text.push('\n');
+        text.push_str(&page_body(&DESIGN_QUALITY));
+    }
+    text.push('\n');
+    text.push_str(&page_body(&GLOSSARY));
+    Guide { key, text }
+}
+
+/// The topics `design_guide` answers: every manual page slug, `shapes-json` for the raw recipes and
+/// `paper-diagram-example` for a complete worked figure.
+pub fn guide_topic(topic: &str) -> Option<String> {
+    match topic {
+        "shapes-json" => serde_json::to_string_pretty(&shapes_json()).ok(),
+        PAPER_DIAGRAM_EXAMPLE => Some(paper_diagram_example_text()),
+        _ => PAGES.iter().find(|page| page.slug == topic).map(page_body),
+    }
+}
+
+/// Topic of the worked paper-diagram example.
+pub const PAPER_DIAGRAM_EXAMPLE: &str = "paper-diagram-example";
+
+/// A Transformer encoder drawn by the paper-diagram rules: 84 mm single column, bottom to top, a repeat frame with N×,
+/// residual connections, a circle_plus join and the functional palette. `page_id` fills every add_node.
+pub fn paper_diagram_example_operations(page_id: &str) -> Value {
+    // Positions in tenths of a millimetre.
+    let emu = |tenths: i64| tenths * 3600;
+    let bounds = |x: i64, y: i64, w: i64, h: i64| json!({ "x": emu(x), "y": emu(y), "width": emu(w), "height": emu(h) });
+    // Block radius 5 px is about 17 % of a 6 to 8 mm block; the frame takes 7 px.
+    let (pt8, pt9, hairline, radius_block, radius_frame) = (101_600, 114_300, 9_525, 47_625, 66_675);
+    let add = |node: Value| json!({ "op": "add_node", "page_id": page_id, "parent_id": null, "node": node });
+    let block = |id: &str, x, y, w, h, fill: &str, stroke: &str, text: &str| add(json!({
+        "id": id, "kind": "rectangle", "bounds": bounds(x, y, w, h), "text": text,
+        "style": { "fill": fill, "stroke": stroke, "stroke_width": hairline, "corner_radius": radius_block, "color": "#1C1C1C",
+                   "font_size": pt8, "align": "center", "vertical_align": "middle" },
+    }));
+    let label = |id: &str, x, y, w, h, text: &str, align: &str, size: i64| add(json!({
+        "id": id, "kind": "text", "bounds": bounds(x, y, w, h), "text": text,
+        "style": { "color": "#1C1C1C", "font_size": size, "align": align, "vertical_align": "middle" },
+    }));
+    // An arrow pointing up is drawn downward from its tip, so its head is stroke_start.
+    let line = |id: &str, x, y, w, h, head: Option<&str>| {
+        let mut style = json!({ "stroke": "#1C1C1C", "stroke_width": hairline });
+        if let Some(end) = head {
+            style[end] = json!("filled");
+        }
+        add(json!({ "id": id, "kind": "line", "bounds": bounds(x, y, w, h), "style": style }))
+    };
+    let up = |id: &str, y, h| line(id, 420, y, 0, h, Some("stroke_start"));
+    let circle_plus = designllm_contracts::shape_library::shape("circle_plus").map(|recipe| recipe.path());
+    vec![
+        label("inputs", 220, 1110, 400, 50, "Inputs", "center", pt8),
+        up("arrow-0", 1040, 70),
+        block("embedding", 240, 960, 360, 80, "#E5DDF0", "#7A5C99", "Input Embedding"),
+        // A circled operator's circle spans 10 to 90 % of its box: the arrows touching it end 0.4 mm inside the 4 mm box.
+        up("arrow-1", 916, 44),
+        add(json!({ "id": "position.add", "kind": "path", "bounds": bounds(400, 880, 40, 40),
+                    "style": { "fill": "#FFFFFF", "stroke": "#1C1C1C", "stroke_width": hairline }, "path": circle_plus })),
+        label("position.label", 20, 870, 320, 60, "Positional Encoding", "right", pt8),
+        line("position.arrow", 350, 900, 54, 0, Some("stroke_end")),
+        up("arrow-2", 820, 64),
+        add(json!({ "id": "repeat.frame", "kind": "rectangle", "bounds": bounds(180, 300, 480, 520),
+                    "style": { "fill": "#FFFFFF00", "stroke": "#BDBDBD", "stroke_width": hairline, "corner_radius": radius_frame } })),
+        label("repeat.count", 60, 520, 110, 80, "N×", "right", pt9),
+        block("attention", 240, 680, 360, 80, "#FCE3C7", "#C77A2B", "Multi-Head Attention"),
+        up("arrow-3", 760, 60),
+        line("residual-1.out", 200, 790, 220, 0, None),
+        line("residual-1.up", 200, 610, 0, 180, None),
+        line("residual-1.in", 200, 610, 40, 0, Some("stroke_end")),
+        block("norm-1", 240, 580, 360, 60, "#F6EDB8", "#A8922E", "Add & Norm"),
+        up("arrow-4", 640, 40),
+        block("feed-forward", 240, 440, 360, 80, "#D6E6EF", "#4F7CA8", "Feed Forward"),
+        up("arrow-5", 520, 60),
+        line("residual-2.out", 200, 550, 220, 0, None),
+        line("residual-2.up", 200, 370, 0, 180, None),
+        line("residual-2.in", 200, 370, 40, 0, Some("stroke_end")),
+        block("norm-2", 240, 340, 360, 60, "#F6EDB8", "#A8922E", "Add & Norm"),
+        up("arrow-6", 400, 40),
+        up("arrow-7", 240, 100),
+        block("linear", 240, 180, 360, 60, "#FFFFFF", "#3A3A3A", "Linear"),
+        up("arrow-8", 140, 40),
+        block("softmax", 240, 80, 360, 60, "#D8EBD9", "#4E8A56", "Softmax"),
+        up("arrow-9", 50, 30),
+        label("outputs", 140, 0, 560, 50, "Output Probabilities", "center", pt8),
+    ]
+    .into()
+}
+
+fn paper_diagram_example_text() -> String {
+    let operations = serde_json::to_string_pretty(&paper_diagram_example_operations("<page_id>")).unwrap_or_default();
+    format!(
+        "# Worked example: Transformer encoder (paper-diagram)\n\nCreate a Canvas of 84 x 120 mm (size {{\"width\":3024000,\"height\":4320000}}), read its page id with artifact_inspect, then send these operations in one changes_apply with allowed_intents [\"content\", \"design\"]. Positions are multiples of 0.1 mm (3600 EMU). The figure reads bottom to top; the residual connections branch from the main arrow, run up the left side and enter each Add & Norm block; the repeated layer sits once inside a stroke-only frame with N× beside it; there is no title, no section header and no explanatory text. Adapt names, colours by role and positions to the model you draw; keep the rules.\n\n```json\n{operations}\n```\n"
+    )
+}
+
+/// The shape recipes as JSON: id, use and the Canvas path that add_node takes under `path`.
+pub fn shapes_json() -> Value {
+    Value::Array(
+        designllm_contracts::shape_library::SHAPES
+            .iter()
+            .map(|recipe| json!({ "id": recipe.id, "use_for": recipe.use_for, "path": recipe.path() }))
+            .collect(),
+    )
+}
+
+/// The app supplies this guidance directly to a managed agent, including clients that do not expose MCP resources. `prompt`
+/// is the user's request: a Canvas request that names a paper figure gets the paper-diagram guide and the shape library.
+pub fn job_design_guidance(kind: ArtifactKind, prompt: &str) -> String {
+    let mut guidance = guide_for(kind, prompt).text;
+    guidance.push_str("\nThe job's scope, intent and delivery rules take precedence over workspace-level actions described in the guides.\n");
     guidance
 }
 
@@ -720,7 +1062,13 @@ pub fn page_body(page: &Page) -> String {
             for task in PAGES.iter().filter(|page| page.task) {
                 out.push_str(&format!("- {} ({})\n", task.title, page_uri(task)));
             }
-            out.push_str(&format!("\nReference pages: refusals, intents, presets, ai-jobs, gui. Presets JSON: {PRESETS_URI}\n"));
+            out.push_str(&format!("\nReference pages: glossary, refusals, intents, presets, shapes, design-quality, design-theme, ai-jobs, gui. Presets JSON: {PRESETS_URI}. Shapes JSON: {SHAPES_URI}\n"));
+        }
+        "shapes" => {
+            for recipe in designllm_contracts::shape_library::SHAPES {
+                out.push_str(&format!("   - {}: {}\n", recipe.id, recipe.use_for));
+            }
+            out.push_str(&format!("   The path JSON of each recipe: {SHAPES_URI}, or design_guide with topic shapes-json.\n"));
         }
         _ => {}
     }
@@ -754,6 +1102,13 @@ pub fn resources_result() -> Value {
         "description": "Every frame preset: id, family, natural size and unit, and the EMU size that artifact_create takes.",
         "mimeType": JSON_MIME,
     }));
+    resources.push(json!({
+        "uri": SHAPES_URI,
+        "name": "shapes-json",
+        "title": "Shape library (JSON)",
+        "description": "Canvas path recipes (1000 x 1000 view box) for trapezoids, parallelograms, cylinders, circled operators, diamonds, hexagons, cuboids and more.",
+        "mimeType": JSON_MIME,
+    }));
     json!({ "resources": resources })
 }
 
@@ -761,6 +1116,10 @@ pub fn resources_result() -> Value {
 pub fn read_resource(uri: &str) -> Option<Value> {
     if uri == PRESETS_URI {
         let text = serde_json::to_string_pretty(&presets_json()).ok()?;
+        return Some(json!({ "uri": uri, "mimeType": JSON_MIME, "text": text }));
+    }
+    if uri == SHAPES_URI {
+        let text = serde_json::to_string_pretty(&shapes_json()).ok()?;
         return Some(json!({ "uri": uri, "mimeType": JSON_MIME, "text": text }));
     }
     let slug = uri.strip_prefix(MANUAL_PREFIX)?;
@@ -798,6 +1157,8 @@ pub fn get_prompt(name: &str, arguments: Option<&Value>) -> Option<Value> {
         text.push('\n');
         text.push_str(&page_body(&DESIGN_WORKFLOW));
     }
+    text.push('\n');
+    text.push_str(&page_body(&GLOSSARY));
     if let Some(artifact_id) = arguments.and_then(|a| a.get("artifact_id")).and_then(Value::as_str) {
         text.push_str(&format!("\nTarget artifact: {artifact_id}. Use it wherever the examples show <artifact_id>.\n"));
     }
@@ -827,7 +1188,137 @@ mod tests {
         names.sort();
         names.dedup();
         assert_eq!(names.len(), count);
-        assert_eq!(count, 9, "eight task prompts and the general workflow");
+        assert_eq!(count, 10, "nine task prompts and the general workflow");
+    }
+
+    #[test]
+    fn paper_work_gets_the_paper_guides_with_the_shape_library_and_the_stock_colour_rule() {
+        for hint in ["MiniMax H3 구조도", "Transformer architecture figure", "논문 피규어", "VAE encoder/decoder"] {
+            let guide = guide_for(ArtifactKind::Canvas, hint);
+            assert_eq!(guide.key, "paper-diagram", "{hint}");
+            for fragment in [FIGURE_NO_EXTRA_TEXT, FIGURE_PRINT, FIGURE_PALETTE, ANTI_SLOP, "circle_plus", "trapezoid_narrowing_right", "COLOR_STOCK_DEFAULT", "N×"] {
+                assert!(guide.text.contains(fragment), "{hint}: the guide omits {fragment}");
+            }
+        }
+        assert_eq!(guide_key(ArtifactKind::Canvas, "Configure account settings"), "canvas", "configure is not figure");
+        assert_eq!(guide_key(ArtifactKind::Canvas, "Method overview"), "paper-diagram");
+        assert_eq!(guide_key(ArtifactKind::Canvas, "Fig. 2"), "paper-diagram");
+        assert_eq!(guide_key(ArtifactKind::Figure, "Accuracy plot"), "paper-figure");
+        let figure_diagram = guide_for(ArtifactKind::Figure, "Transformer architecture");
+        assert_eq!(figure_diagram.key, "paper-figure+diagram");
+        for hint in ["트랜스포머", "인코더-디코더 구조", "Transformer", "VAE decoder"] {
+            assert_eq!(guide_key(ArtifactKind::Figure, hint), "paper-figure+diagram", "{hint}: English and Korean titles route alike");
+        }
+        assert!(figure_diagram.text.contains(FIGURE_DIAGRAM_NOTE) && FIGURE_DIAGRAM_NOTE.contains("math"), "a Figure diagram is told its own node and connector limits");
+        assert!(figure_diagram.text.contains("manual/paper-figure"));
+        for (kind, hint) in [(ArtifactKind::Canvas, "x"), (ArtifactKind::Canvas, "구조도"), (ArtifactKind::Figure, "pipeline"), (ArtifactKind::Slides, "")] {
+            assert_eq!(guide_key(kind, hint), guide_for(kind, hint).key, "the cheap key matches the guide");
+        }
+        let landing = guide_for(ArtifactKind::Canvas, "Landing page");
+        assert_eq!(landing.key, "canvas");
+        assert!(landing.text.contains("paper-diagram") && !landing.text.contains(FIGURE_PALETTE));
+        let figure = guide_for(ArtifactKind::Figure, "");
+        assert_eq!(figure.key, "paper-figure");
+        assert!(figure.text.contains(FIGURE_PALETTE) && figure.text.contains("Okabe-Ito"));
+        assert_eq!(guide_for(ArtifactKind::Slides, "").key, "slides");
+        assert!(job_design_guidance(ArtifactKind::Canvas, "논문용 모델 구조도를 그려줘").contains("paper-diagram"));
+        assert!(DEFAULT_DESIGN_STYLE.contains("#2563EB") && DEFAULT_DESIGN_STYLE.contains("COLOR_STOCK_DEFAULT"));
+    }
+
+    #[test]
+    fn the_shape_library_is_a_resource_a_guide_topic_and_a_page() {
+        let resource = read_resource(SHAPES_URI).expect("shapes resource");
+        let shapes: Value = serde_json::from_str(resource["text"].as_str().expect("text")).expect("json");
+        let ids: Vec<&str> = shapes.as_array().expect("array").iter().filter_map(|s| s["id"].as_str()).collect();
+        for id in ["trapezoid_narrowing_right", "parallelogram", "cylinder", "circle_plus", "circle_times", "cuboid", "diamond"] {
+            assert!(ids.contains(&id), "{id}");
+        }
+        let path: designllm_contracts::PathSpec = serde_json::from_value(shapes[0]["path"].clone()).expect("a Canvas path");
+        assert_eq!(path.view_box.width, 1000);
+        assert!(resources_result()["resources"].as_array().unwrap().iter().any(|r| r["uri"] == SHAPES_URI));
+        assert!(guide_topic("shapes-json").is_some() && guide_topic("shapes").unwrap().contains("cylinder"));
+        assert!(guide_topic("paper-diagram").is_some() && guide_topic("nope").is_none());
+    }
+
+    #[test]
+    fn the_worked_paper_diagram_example_is_a_valid_change_set_that_keeps_the_rules() {
+        let operations: Vec<designllm_contracts::Operation> =
+            serde_json::from_value(paper_diagram_example_operations("page")).expect("every example operation parses");
+        assert!(operations.len() >= 25);
+        let text = serde_json::to_string(&paper_diagram_example_operations("page")).unwrap();
+        // The arrows into and out of the circle_plus meet its painted circle (10 to 90 % of the box), not its box.
+        let ops = paper_diagram_example_operations("page");
+        let rect = |id: &str| -> (i64, i64, i64, i64) {
+            let b = &ops.as_array().unwrap().iter().find(|op| op["node"]["id"] == id).unwrap_or_else(|| panic!("{id}"))["node"]["bounds"];
+            (b["x"].as_i64().unwrap(), b["y"].as_i64().unwrap(), b["width"].as_i64().unwrap(), b["height"].as_i64().unwrap())
+        };
+        let (cx, cy, cw, ch) = rect("position.add");
+        let (_, below_y, _, _) = rect("arrow-1");
+        let (_, above_y, _, above_h) = rect("arrow-2");
+        let (side_x, _, side_w, _) = rect("position.arrow");
+        assert_eq!(below_y, cy + ch * 9 / 10, "the arrow from below ends on the circle's bottom");
+        assert_eq!(above_y + above_h, cy + ch / 10, "the arrow above starts at the circle's top");
+        assert_eq!(side_x + side_w, cx + cw / 10, "the positional arrow ends on the circle's left");
+        for fragment in ["\"N×\"", "\"stroke_start\":\"filled\"", "\"kind\":\"path\"", "#FFFFFF00", "Multi-Head Attention", "#FCE3C7"] {
+            assert!(text.contains(fragment), "the example omits {fragment}");
+        }
+        for (index, _) in text.match_indices('#') {
+            let hex = &text[index..(index + 7).min(text.len())];
+            assert!(designllm_contracts::design_quality::stock_color(hex).is_none(), "the example uses the stock colour {hex}");
+            assert!(!designllm_contracts::design_quality::navy(hex), "the example uses navy {hex}");
+        }
+        let topic = guide_topic(PAPER_DIAGRAM_EXAMPLE).expect("example topic");
+        assert!(topic.contains("3024000") && topic.contains("<page_id>"));
+        assert!(page_body(&PAPER_DIAGRAM).contains(PAPER_DIAGRAM_EXAMPLE));
+    }
+
+    #[test]
+    fn every_tool_a_page_names_is_a_served_tool() {
+        let names: Vec<&str> = crate::catalog::catalog().iter().map(|tool| tool.name).collect();
+        for page in PAGES {
+            for tool in page.tools {
+                assert!(names.contains(tool), "{} names the unknown tool {tool}", page.slug);
+            }
+        }
+    }
+
+    #[test]
+    fn every_tool_a_page_tells_the_agent_to_call_is_in_its_tool_list() {
+        let names: Vec<&str> = crate::catalog::catalog().iter().map(|tool| tool.name).collect();
+        let mut missing = Vec::new();
+        for page in PAGES {
+            let mut text = format!("{}
+{}", page.description, page.steps.join("
+"));
+            for (tool, arguments) in page.examples {
+                text.push_str(&format!("
+{tool}
+{arguments}"));
+            }
+            // Tools a page names only to say they are refused for some state.
+            let refused: &[&str] = if page.slug == "paper-figure" { &["history_undo", "history_redo", "history_undo_change"] } else { &[] };
+            for name in &names {
+                if has_word(&text, name) && !page.tools.contains(name) && !refused.contains(name) {
+                    missing.push(format!("{}: {name}", page.slug));
+                }
+            }
+        }
+        assert!(missing.is_empty(), "pages that use a tool their list omits: {missing:?}");
+    }
+
+    #[test]
+    fn every_guide_and_prompt_carries_the_glossary_of_its_design_words() {
+        let glossary = page_body(&GLOSSARY);
+        for term in ["Auxiliary label (보조 레이블", "Navy (남색)", "Stock colour (AI 기본 색)", "Slop or generic look", "Orthogonal routing", "Repeat frame, N×", "Caption (캡션)"] {
+            assert!(glossary.contains(term), "the glossary omits {term}");
+        }
+        for kind in [ArtifactKind::Canvas, ArtifactKind::Slides, ArtifactKind::Figure, ArtifactKind::Docx, ArtifactKind::WebCode] {
+            assert!(guide_for(kind, "").text.contains(&glossary), "{kind:?}");
+        }
+        for page in PAGES.iter().filter(|page| page.task) {
+            let prompt = get_prompt(&prompt_name(page), None).expect("prompt");
+            assert!(prompt["messages"][0]["content"]["text"].as_str().unwrap().contains(&glossary), "{}", page.slug);
+        }
     }
 
     #[test]
@@ -839,7 +1330,7 @@ mod tests {
             assert_eq!(text.matches(DEFAULT_DESIGN_STYLE).count(), 1, "{}", page.slug);
         }
         for kind in [ArtifactKind::Docx, ArtifactKind::Hwpx, ArtifactKind::Hwp] {
-            let guidance = job_design_guidance(kind);
+            let guidance = job_design_guidance(kind, "");
             assert!(guidance.contains(LAYOUT_HIERARCHY));
             assert!(guidance.contains(DEFAULT_DESIGN_STYLE));
             assert!(guidance.contains(DOCUMENT_LAYOUT));
@@ -851,7 +1342,7 @@ mod tests {
             (ArtifactKind::Figure, "paper-figure"),
             (ArtifactKind::WebCode, "web-code"),
         ] {
-            let guidance = job_design_guidance(kind);
+            let guidance = job_design_guidance(kind, "");
             assert!(guidance.contains(LAYOUT_HIERARCHY));
             assert!(guidance.contains(DEFAULT_DESIGN_STYLE));
             assert!(guidance.contains(guide));
@@ -877,6 +1368,7 @@ mod tests {
         for code in [
             "ICON_EMOJI", "TEXT_PLACEHOLDER", "TEXT_VAGUE_WORDING", "FILL_STOCK_GRADIENT", "SHADOW_HEAVY", "LAYOUT_REPEATED_CARDS",
             "LAYOUT_ALL_CENTERED", "TEXT_SIZE_SPREAD", "SLIDE_PLAIN_CLOSING", "BACKGROUND_CREAM", "TEXT_EXTRA_LABEL", "TITLE_LINE_BREAKS",
+            "COLOR_STOCK_DEFAULT",
         ] {
             assert!(body.contains(code), "the design-quality page omits {code}");
         }

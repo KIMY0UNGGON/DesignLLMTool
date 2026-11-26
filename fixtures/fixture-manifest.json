@@ -1,0 +1,593 @@
+{
+    "schemaVersion":  1,
+    "coordinateContract":  {
+                               "pdfPhysicalPageIndexBase":  0,
+                               "viewerPageNumberBase":  1,
+                               "printedPageLabel":  "independent label; never used as array index",
+                               "pdfArea":  "cropbox top-left, unrotated, x right/y down, signed i64 EMU",
+                               "emuPerPdfPoint":  12700,
+                               "evidence":  {
+                                                "physicalPageIndex":  11,
+                                                "viewerPageNumber":  12,
+                                                "printedPageLabel":  "9",
+                                                "mediaBoxPdfPoints":  [
+                                                                          0,
+                                                                          0,
+                                                                          612,
+                                                                          792
+                                                                      ],
+                                                "cropBoxPdfPoints":  [
+                                                                         18,
+                                                                         20,
+                                                                         594,
+                                                                         760
+                                                                     ],
+                                                "rotationDegrees":  0,
+                                                "text":  "Evidence: A causes B in this controlled fixture.",
+                                                "source_bbox_emu_xywh":  [
+                                                                             914400,
+                                                                             762000,
+                                                                             3302000,
+                                                                             254000
+                                                                         ],
+                                                "media_box_pdf_user_space_emu_xyxy":  [
+                                                                                          0,
+                                                                                          0,
+                                                                                          7772400,
+                                                                                          10058400
+                                                                                      ],
+                                                "crop_box_pdf_user_space_emu_xyxy":  [
+                                                                                         228600,
+                                                                                         254000,
+                                                                                         7543800,
+                                                                                         9652000
+                                                                                     ]
+                                            }
+                           },
+    "publicSources":  [
+                          {
+                              "license":  "MIT; see fixtures/_sources/rhwp/LICENSE",
+                              "commit":  "bc38ff55a7e8acb65aebebe237dca0542480d381",
+                              "repository":  "https://github.com/edwardkim/rhwp"
+                          }
+                      ],
+    "fixtures":  [
+                     {
+                         "id":  "pptx.basic-preserve",
+                         "path":  "office/basic-preserve.pptx",
+                         "format":  "pptx",
+                         "origin":  "author-created",
+                         "license":  "Directly authored for this test suite; CC0-1.0.",
+                         "sha256":  "af002aad99dc240664563928bdf56b2417837a4076bda1f8f80b782f7a6c8f1a",
+                         "checks":  [
+                                        {
+                                            "id":  "native-image-payload",
+                                            "part":  "ppt/media/pixel.png",
+                                            "sha256":  "a230990dec0049d50501bcbe1fb830ef9e85990eb4e3fe1cfe02c938afa25218"
+                                        },
+                                        {
+                                            "id":  "opaque-xml-payload",
+                                            "part":  "ppt/luna/opaque.xml",
+                                            "sha256":  "7abf6143d230638279410d54952a619be702d10bcf020b22e11bfbabed8f2513",
+                                            "contains":  "Preserve-XML-PPTX-42"
+                                        },
+                                        {
+                                            "id":  "opaque-part-relationship",
+                                            "part":  "ppt/_rels/presentation.xml.rels",
+                                            "sha256":  "2ad60e669cd2e212501ae4baa3dc408f74be5dc79b2c150095b446d5a8017dff",
+                                            "contains":  "urn:designllm:fixture:opaque"
+                                        },
+                                        {
+                                            "id":  "image-and-notes-relationships",
+                                            "part":  "ppt/slides/_rels/slide1.xml.rels",
+                                            "sha256":  "e48a4e0a272bc28c133f864de92de4212b2754ea2c39e6c51057ea048fbba29f"
+                                        },
+                                        {
+                                            "id":  "notes-payload",
+                                            "part":  "ppt/notesSlides/notesSlide1.xml",
+                                            "sha256":  "22c708af5f4c8a8dcc5a7628bf1ff87db83987be687680f8d834cbdd3a2b1ef5",
+                                            "contains":  "Luna-Note-42"
+                                        },
+                                        {
+                                            "id":  "protected-cnvpr-extension",
+                                            "part":  "ppt/slides/slide1.xml",
+                                            "anchor":  "/p:sld/p:cSld/p:spTree/p:sp/p:nvSpPr/p:cNvPr[@id=\"2\"]/a:extLst",
+                                            "occurrence":  1,
+                                            "match_count":  1,
+                                            "fragment_sha256":  "bfdc33f6e41857ea091c0790305defe40e5c3de29d98f5a32d1d75d94ff2745d",
+                                            "fragment_xml":  "\u003ca:extLst\u003e\u003ca:ext uri=\"{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}\"\u003e\u003ca16:creationId xmlns:a16=\"http://schemas.microsoft.com/office/drawing/2014/main\" id=\"{6C1F2A10-1B2C-4D3E-8F40-5A6B7C8D9E01}\"/\u003e\u003c/a:ext\u003e\u003c/a:extLst\u003e"
+                                        },
+                                        {
+                                            "id":  "protected-alternate-content",
+                                            "part":  "ppt/slides/slide1.xml",
+                                            "anchor":  "/p:sld/p:cSld/p:spTree/mc:AlternateContent",
+                                            "occurrence":  1,
+                                            "match_count":  1,
+                                            "fragment_sha256":  "ed86488d8edda221fa541ee5d05c6b2a645be66022b45d492deaca5269e1e9e1",
+                                            "fragment_xml":  "\u003cmc:AlternateContent\u003e\u003cmc:Choice Requires=\"p14\"\u003e\u003cp:sp\u003e\u003cp:nvSpPr\u003e\u003cp:cNvPr id=\"4\" name=\"Alternate ellipsis\"/\u003e\u003cp:cNvSpPr/\u003e\u003cp:nvPr/\u003e\u003c/p:nvSpPr\u003e\u003cp:spPr\u003e\u003ca:xfrm\u003e\u003ca:off x=\"5029200\" y=\"1600200\"/\u003e\u003ca:ext cx=\"685800\" cy=\"685800\"/\u003e\u003c/a:xfrm\u003e\u003ca:prstGeom prst=\"ellipse\"\u003e\u003ca:avLst/\u003e\u003c/a:prstGeom\u003e\u003ca:solidFill\u003e\u003ca:srgbClr val=\"ED7D31\"/\u003e\u003c/a:solidFill\u003e\u003c/p:spPr\u003e\u003c/p:sp\u003e\u003c/mc:Choice\u003e\u003cmc:Fallback\u003e\u003cp:sp\u003e\u003cp:nvSpPr\u003e\u003cp:cNvPr id=\"5\" name=\"Fallback ellipsis\"/\u003e\u003cp:cNvSpPr/\u003e\u003cp:nvPr/\u003e\u003c/p:nvSpPr\u003e\u003cp:spPr\u003e\u003ca:xfrm\u003e\u003ca:off x=\"5029200\" y=\"1600200\"/\u003e\u003ca:ext cx=\"685800\" cy=\"685800\"/\u003e\u003c/a:xfrm\u003e\u003ca:prstGeom prst=\"ellipse\"\u003e\u003ca:avLst/\u003e\u003c/a:prstGeom\u003e\u003ca:solidFill\u003e\u003ca:srgbClr val=\"ED7D31\"/\u003e\u003c/a:solidFill\u003e\u003c/p:spPr\u003e\u003c/p:sp\u003e\u003c/mc:Fallback\u003e\u003c/mc:AlternateContent\u003e"
+                                        },
+                                        {
+                                            "id":  "protected-foreign-attribute",
+                                            "part":  "ppt/slides/slide1.xml",
+                                            "anchor":  "/p:sld/p:cSld/p:spTree/p:sp/p:spPr/@custom:flag",
+                                            "occurrence":  1,
+                                            "match_count":  1,
+                                            "fragment_sha256":  "e02202c8c4def4a7b914b143a3951b092f28d57c282ca5aef90490b37296020d",
+                                            "fragment_xml":  "custom:flag=\"keep\""
+                                        }
+                                    ],
+                         "expected":  {
+                                          "editable_text":  "기본 텍스트",
+                                          "shape_id":  2,
+                                          "font_size_pt":  "18",
+                                          "bold":  true,
+                                          "text_color":  "17365D",
+                                          "native_picture":  true,
+                                          "image_pixel_size":  [
+                                                                   16,
+                                                                   12
+                                                               ],
+                                          "image_extent_emu":  [
+                                                                   457200,
+                                                                   342900
+                                                               ],
+                                          "theme_master_layout":  true,
+                                          "preservation_regions":  [
+                                                                       {
+                                                                           "part":  "ppt/slides/slide1.xml",
+                                                                           "anchor":  "/p:sld/p:cSld/p:spTree/p:sp/p:nvSpPr/p:cNvPr[@id=\"2\"]/a:extLst",
+                                                                           "occurrence":  1,
+                                                                           "match_count":  1,
+                                                                           "sha256":  "bfdc33f6e41857ea091c0790305defe40e5c3de29d98f5a32d1d75d94ff2745d"
+                                                                       },
+                                                                       {
+                                                                           "part":  "ppt/slides/slide1.xml",
+                                                                           "anchor":  "/p:sld/p:cSld/p:spTree/mc:AlternateContent",
+                                                                           "occurrence":  1,
+                                                                           "match_count":  1,
+                                                                           "sha256":  "ed86488d8edda221fa541ee5d05c6b2a645be66022b45d492deaca5269e1e9e1"
+                                                                       },
+                                                                       {
+                                                                           "part":  "ppt/slides/slide1.xml",
+                                                                           "anchor":  "/p:sld/p:cSld/p:spTree/p:sp/p:spPr/@custom:flag",
+                                                                           "occurrence":  1,
+                                                                           "match_count":  1,
+                                                                           "sha256":  "e02202c8c4def4a7b914b143a3951b092f28d57c282ca5aef90490b37296020d"
+                                                                       }
+                                                                   ]
+                                      }
+                     },
+                     {
+                         "id":  "docx.basic-preserve",
+                         "path":  "office/basic-preserve.docx",
+                         "format":  "docx",
+                         "origin":  "author-created",
+                         "license":  "Directly authored for this test suite; CC0-1.0.",
+                         "sha256":  "17fa9d8e23b504504ecd73194ddffb972432541b01a8c6ccdfabadab45437ff2",
+                         "checks":  [
+                                        {
+                                            "id":  "native-image-payload",
+                                            "part":  "word/media/pixel.png",
+                                            "sha256":  "a230990dec0049d50501bcbe1fb830ef9e85990eb4e3fe1cfe02c938afa25218"
+                                        },
+                                        {
+                                            "id":  "opaque-xml-payload",
+                                            "part":  "customXml/item1.xml",
+                                            "sha256":  "fb2188fca85e2c82c272b53a0a9773042edd20413dbf3bcc995c13ef808fb534",
+                                            "contains":  "Preserve-XML-DOCX-42"
+                                        },
+                                        {
+                                            "id":  "header-payload",
+                                            "part":  "word/header1.xml",
+                                            "sha256":  "4c3437c63bc2ad3ee47918c92c71097430c062ce47bbab18743b9369902e3d51"
+                                        },
+                                        {
+                                            "id":  "footer-payload",
+                                            "part":  "word/footer1.xml",
+                                            "sha256":  "0f83d383c4db90630606a9a8b8a623f5fd6f91d3bb605d679363efd038f0ac23"
+                                        },
+                                        {
+                                            "id":  "document-relationships",
+                                            "part":  "word/_rels/document.xml.rels",
+                                            "sha256":  "eb7e47f85840ee07217432a03f915a0a041e0e31e277c7f27d239952f3d31018"
+                                        },
+                                        {
+                                            "id":  "protected-alternate-content",
+                                            "part":  "word/document.xml",
+                                            "anchor":  "/w:document/w:body/w:p[@w14:paraId=\"0A000001\"]/mc:AlternateContent",
+                                            "occurrence":  1,
+                                            "match_count":  1,
+                                            "fragment_sha256":  "98eab5a05d451fc1f780a1803cb65b1f0761be1ee34626bda836a5648f3bc467",
+                                            "fragment_xml":  "\u003cmc:AlternateContent\u003e\u003cmc:Choice Requires=\"w14\"\u003e\u003cw:r\u003e\u003cw:rPr\u003e\u003cw14:textOutline w14:w=\"9525\"\u003e\u003cw14:solidFill\u003e\u003cw14:srgbClr w14:val=\"000000\"/\u003e\u003c/w14:solidFill\u003e\u003c/w14:textOutline\u003e\u003c/w:rPr\u003e\u003cw:t\u003eOutlined sibling payload\u003c/w:t\u003e\u003c/w:r\u003e\u003c/mc:Choice\u003e\u003cmc:Fallback\u003e\u003cw:r\u003e\u003cw:t\u003eFallback sibling payload\u003c/w:t\u003e\u003c/w:r\u003e\u003c/mc:Fallback\u003e\u003c/mc:AlternateContent\u003e"
+                                        }
+                                    ],
+                         "expected":  {
+                                          "editable_text":  "기본 텍스트",
+                                          "paragraph_style":  "LunaTitle",
+                                          "character_style":  "LunaAccent",
+                                          "merged_table_grid_span":  2,
+                                          "inline_image":  true,
+                                          "image_pixel_size":  [
+                                                                   16,
+                                                                   12
+                                                               ],
+                                          "image_extent_emu":  [
+                                                                   152400,
+                                                                   114300
+                                                               ],
+                                          "page_setup":  "A4-ish twips",
+                                          "custom_xml_preserve":  true,
+                                          "preservation_regions":  [
+                                                                       {
+                                                                           "part":  "word/document.xml",
+                                                                           "anchor":  "/w:document/w:body/w:p[@w14:paraId=\"0A000001\"]/mc:AlternateContent",
+                                                                           "occurrence":  1,
+                                                                           "match_count":  1,
+                                                                           "sha256":  "98eab5a05d451fc1f780a1803cb65b1f0761be1ee34626bda836a5648f3bc467"
+                                                                       }
+                                                                   ]
+                                      }
+                     },
+                     {
+                         "id":  "hwpx.image-and-opaque-preserve",
+                         "path":  "hwpx/opaque-image-preserve.hwpx",
+                         "format":  "hwpx",
+                         "origin":  "derived-from-public-fixture",
+                         "license":  "MIT; see fixtures/_sources/rhwp/LICENSE",
+                         "sha256":  "300c923e8173f9dd43007ad19ec8561ac884f95c1b29f601de5b9c9832a6c3bc",
+                         "checks":  [
+                                        {
+                                            "id":  "native-image-payload",
+                                            "part":  "BinData/image1.bmp",
+                                            "sha256":  "dfc98c6df0f7cbbf7ae253a1e0a32fda732b3f2a0c0093fb4867bc52a779a9ea"
+                                        },
+                                        {
+                                            "id":  "opaque-xml-payload",
+                                            "part":  "Luna/opaque.xml",
+                                            "sha256":  "e71edce9568ccf023f00cb202331fe3b5bdbb0faabe897e24dd5c3b4d1035ab4",
+                                            "contains":  "Preserve-XML-HWPX-42"
+                                        },
+                                        {
+                                            "id":  "manifest-item",
+                                            "part":  "Contents/content.hpf",
+                                            "sha256":  "6edc9aab671a6155fd229af59221a4b1723aa5e0e42d0cc8913f1f9c92d97482",
+                                            "contains":  "href=\"Luna/opaque.xml\""
+                                        },
+                                        {
+                                            "id":  "editable-text",
+                                            "part":  "Contents/section0.xml",
+                                            "contains":  "자리차지"
+                                        },
+                                        {
+                                            "id":  "character-style-map",
+                                            "part":  "Contents/header.xml",
+                                            "contains":  "\u003chh:charPr"
+                                        },
+                                        {
+                                            "id":  "protected-text-attribute",
+                                            "part":  "Contents/section0.xml",
+                                            "anchor":  "/hs:sec/hp:p/hp:run/hp:t[@hx:mark=\"preserve-text-42\"]",
+                                            "occurrence":  1,
+                                            "match_count":  1,
+                                            "fragment_sha256":  "e954560b7b95cf086e911d0c8a90ef957a2e1da4b875e2429f9ea09ed3f9e77f",
+                                            "fragment_xml":  "\u003chp:t xmlns:hx=\"urn:designllm:luna-fixture\" hx:mark=\"preserve-text-42\"\u003e자리차지\u003c/hp:t\u003e"
+                                        }
+                                    ],
+                         "expected":  {
+                                          "section":  "Contents/section0.xml",
+                                          "text":  [
+                                                       "자리차지",
+                                                       "어울림",
+                                                       "글앞으로",
+                                                       "글뒤로",
+                                                       "글자처럼 취급"
+                                                   ],
+                                          "style_definitions":  "Contents/header.xml",
+                                          "preserve_image_byte_for_byte":  true,
+                                          "preservation_regions":  [
+                                                                       {
+                                                                           "part":  "Contents/section0.xml",
+                                                                           "anchor":  "/hs:sec/hp:p/hp:run/hp:t[@hx:mark=\"preserve-text-42\"]",
+                                                                           "occurrence":  1,
+                                                                           "match_count":  1,
+                                                                           "sha256":  "e954560b7b95cf086e911d0c8a90ef957a2e1da4b875e2429f9ea09ed3f9e77f"
+                                                                       }
+                                                                   ],
+                                          "provenance":  {
+                                                             "repository":  "https://github.com/edwardkim/rhwp",
+                                                             "commit":  "bc38ff55a7e8acb65aebebe237dca0542480d381",
+                                                             "path":  "samples/test-image.hwpx",
+                                                             "source_sha256":  "4405f89db156da688d1a10ae0c0829f0159ad24ad4ad5e083902577a8304338a"
+                                                         }
+                                      }
+                     },
+                     {
+                         "id":  "hwp.binary-source",
+                         "path":  "hwp/test-image.hwp",
+                         "format":  "hwp5",
+                         "origin":  "public-fixture-copy",
+                         "license":  "MIT; see fixtures/_sources/rhwp/LICENSE",
+                         "sha256":  "a854b822c3150d9731b8ba0687160b2120be1078fc5c91221566a15176de3e20",
+                         "checks":  [
+                                        {
+                                            "id":  "compound-file-signature",
+                                            "part":  "file-header",
+                                            "bytes_hex":  "D0CF11E0A1B11AE1"
+                                        }
+                                    ],
+                         "expected":  {
+                                          "embedded_picture":  true,
+                                          "do_not_treat_zip_as_hwp":  true,
+                                          "provenance":  {
+                                                             "repository":  "https://github.com/edwardkim/rhwp",
+                                                             "commit":  "bc38ff55a7e8acb65aebebe237dca0542480d381",
+                                                             "path":  "samples/test-image.hwp",
+                                                             "source_sha256":  "a854b822c3150d9731b8ba0687160b2120be1078fc5c91221566a15176de3e20"
+                                                         }
+                                      }
+                     },
+                     {
+                         "id":  "figure.numeric-sd",
+                         "path":  "data/known-sd.csv",
+                         "format":  "csv",
+                         "origin":  "author-created",
+                         "license":  "Directly authored for this test suite; CC0-1.0.",
+                         "sha256":  "47fe1c1511dc73a54ba6fc2f1911f192e923a953b19dbf432c640594cd29a0ff",
+                         "checks":  [
+                                        {
+                                            "id":  "original-cell-strings",
+                                            "values":  [
+                                                           "0.10",
+                                                           "0.20",
+                                                           "0.30",
+                                                           "0.01",
+                                                           "0.02",
+                                                           "0.03",
+                                                           "3",
+                                                           "ratio"
+                                                       ]
+                                        }
+                                    ],
+                         "expected":  {
+                                          "row_count":  3,
+                                          "mean_original":  [
+                                                                "0.10",
+                                                                "0.20",
+                                                                "0.30"
+                                                            ],
+                                          "sd_original":  [
+                                                              "0.01",
+                                                              "0.02",
+                                                              "0.03"
+                                                          ],
+                                          "n":  3,
+                                          "unit":  "ratio",
+                                          "parsed_decimal_strings":  [
+                                                                         "0.1",
+                                                                         "0.2",
+                                                                         "0.3"
+                                                                     ]
+                                      }
+                     },
+                     {
+                         "id":  "figure.ambiguous-and-invalid",
+                         "path":  "data/invalid-cases.csv",
+                         "format":  "csv",
+                         "origin":  "author-created",
+                         "license":  "Directly authored for this test suite; CC0-1.0.",
+                         "sha256":  "a5cf5fe624dfba5848272be8bb90f07a9715c350edb86024b642c7a54be7dad5",
+                         "checks":  [
+                                        {
+                                            "id":  "case-ids",
+                                            "values":  [
+                                                           "missing_value",
+                                                           "ambiguous_thousands",
+                                                           "negative_error",
+                                                           "asymmetric_error",
+                                                           "invalid_bounds",
+                                                           "ci_without_level",
+                                                           "missing_n",
+                                                           "log_nonpositive_lower",
+                                                           "duplicate_category"
+                                                       ]
+                                        }
+                                    ],
+                         "expected":  {
+                                          "missing_value":  "keep empty; never coerce to zero; break series by default",
+                                          "ambiguous_thousands":  "diagnose locale ambiguity",
+                                          "negative_error":  "reject negative magnitude",
+                                          "asymmetric_error":  "use explicit lower/upper bounds only",
+                                          "invalid_bounds":  "diagnose lower greater than upper",
+                                          "ci_without_level":  "diagnose missing confidence level",
+                                          "missing_n":  "do not infer",
+                                          "log_nonpositive_lower":  "diagnose negative lower bound; do not clip",
+                                          "duplicate_category":  "preserve both rows and diagnose absent grouping"
+                                      }
+                     },
+                     {
+                         "id":  "figure.pdf-evidence-p12",
+                         "path":  "pdf/evidence-p12.pdf",
+                         "format":  "pdf",
+                         "origin":  "author-created",
+                         "license":  "Directly authored for this test suite; CC0-1.0.",
+                         "sha256":  "2672a324197fe4e69196924101e34b1b03f9d554ab902cee1c66e1dea1c42fd0",
+                         "checks":  [
+                                        {
+                                            "id":  "source-region-and-pagination",
+                                            "physical_page_index":  11,
+                                            "viewer_page_number":  12,
+                                            "printed_page_label":  "9",
+                                            "crop_box_pt":  [
+                                                                18,
+                                                                20,
+                                                                594,
+                                                                760
+                                                            ],
+                                            "rotate":  0,
+                                            "text":  "Evidence: A causes B in this controlled fixture.",
+                                            "source_bbox_emu_xywh":  [
+                                                                         914400,
+                                                                         762000,
+                                                                         3302000,
+                                                                         254000
+                                                                     ]
+                                        }
+                                    ],
+                         "expected":  {
+                                          "physical_page_count":  12,
+                                          "physical_page_index_base":  0,
+                                          "viewer_page_number_base":  1,
+                                          "emu_per_pdf_point":  12700,
+                                          "figure_relation":  "A→B",
+                                          "evidence":  {
+                                                           "id":  "evidence-p12-ab",
+                                                           "source_hash":  "2672a324197fe4e69196924101e34b1b03f9d554ab902cee1c66e1dea1c42fd0",
+                                                           "origin":  "paper_evidence",
+                                                           "physical_page_index":  11,
+                                                           "region":  {
+                                                                          "x":  914400,
+                                                                          "y":  762000,
+                                                                          "width":  3302000,
+                                                                          "height":  254000
+                                                                      },
+                                                           "pdf_geometry":  {
+                                                                                "media_box":  {
+                                                                                                  "x_min":  0,
+                                                                                                  "y_min":  0,
+                                                                                                  "x_max":  7772400,
+                                                                                                  "y_max":  10058400
+                                                                                              },
+                                                                                "crop_box":  {
+                                                                                                 "x_min":  228600,
+                                                                                                 "y_min":  254000,
+                                                                                                 "x_max":  7543800,
+                                                                                                 "y_max":  9652000
+                                                                                             },
+                                                                                "user_unit":  "1",
+                                                                                "rotation_degrees":  0,
+                                                                                "printed_page_label":  "9"
+                                                                            },
+                                                           "text":  "Evidence: A causes B in this controlled fixture.",
+                                                           "review_state":  "unreviewed"
+                                                       },
+                                          "source_scopes":  [
+                                                                {
+                                                                    "source_hash":  "2672a324197fe4e69196924101e34b1b03f9d554ab902cee1c66e1dea1c42fd0",
+                                                                    "physical_page_indices":  [
+                                                                                                  11
+                                                                                              ]
+                                                                }
+                                                            ]
+                                      }
+                     },
+                     {
+                         "id":  "figure.pdf-evidence-p12-userunit2",
+                         "path":  "pdf/evidence-p12-userunit2.pdf",
+                         "format":  "pdf",
+                         "origin":  "derived-from-author-created",
+                         "license":  "Directly authored for this test suite; CC0-1.0.",
+                         "sha256":  "35ae3b673c254cb4032dd175dc652523a4b67472c2ead82e007b71406711fb32",
+                         "checks":  [
+                                        {
+                                            "id":  "user-unit-region-and-pagination",
+                                            "physical_page_index":  11,
+                                            "viewer_page_number":  12,
+                                            "printed_page_label":  "9",
+                                            "crop_box_pt":  [
+                                                                18,
+                                                                20,
+                                                                594,
+                                                                760
+                                                            ],
+                                            "user_unit":  "2",
+                                            "rotation":  0,
+                                            "text":  "Evidence: A causes B in this controlled fixture.",
+                                            "source_bbox_emu_xywh":  [
+                                                                         1828800,
+                                                                         1524000,
+                                                                         6604000,
+                                                                         508000
+                                                                     ]
+                                        }
+                                    ],
+                         "expected":  {
+                                          "physical_page_count":  12,
+                                          "physical_page_index_base":  0,
+                                          "viewer_page_number_base":  1,
+                                          "emu_per_pdf_point":  12700,
+                                          "figure_relation":  "A→B",
+                                          "evidence":  {
+                                                           "id":  "evidence-p12-ab-userunit2",
+                                                           "source_hash":  "35ae3b673c254cb4032dd175dc652523a4b67472c2ead82e007b71406711fb32",
+                                                           "origin":  "paper_evidence",
+                                                           "physical_page_index":  11,
+                                                           "region":  {
+                                                                          "x":  1828800,
+                                                                          "y":  1524000,
+                                                                          "width":  6604000,
+                                                                          "height":  508000
+                                                                      },
+                                                           "pdf_geometry":  {
+                                                                                "media_box":  {
+                                                                                                  "x_min":  0,
+                                                                                                  "y_min":  0,
+                                                                                                  "x_max":  15544800,
+                                                                                                  "y_max":  20116800
+                                                                                              },
+                                                                                "crop_box":  {
+                                                                                                 "x_min":  457200,
+                                                                                                 "y_min":  508000,
+                                                                                                 "x_max":  15087600,
+                                                                                                 "y_max":  19304000
+                                                                                             },
+                                                                                "user_unit":  "2",
+                                                                                "rotation_degrees":  0,
+                                                                                "printed_page_label":  "9"
+                                                                            },
+                                                           "text":  "Evidence: A causes B in this controlled fixture.",
+                                                           "review_state":  "unreviewed"
+                                                       },
+                                          "source_scopes":  [
+                                                                {
+                                                                    "source_hash":  "35ae3b673c254cb4032dd175dc652523a4b67472c2ead82e007b71406711fb32",
+                                                                    "physical_page_indices":  [
+                                                                                                  11
+                                                                                              ]
+                                                                }
+                                                            ]
+                                      }
+                     }
+                 ],
+    "supportFiles":  [
+                         {
+                             "path":  "assets/pixel.png",
+                             "sha256":  "a230990dec0049d50501bcbe1fb830ef9e85990eb4e3fe1cfe02c938afa25218",
+                             "origin":  "author-created",
+                             "license":  "CC0-1.0; preservation sentinel only"
+                         },
+                         {
+                             "path":  "assets/invalid-crc.png",
+                             "sha256":  "e1e92b720a3fe73ed39d0b87181b1c828280ebb57feb243976759cfe5801fc71",
+                             "origin":  "author-created negative PNG with corrupted IDAT CRC",
+                             "license":  "CC0-1.0; invalid test bytes"
+                         },
+                         {
+                             "path":  "_sources/rhwp/LICENSE",
+                             "sha256":  "1c3a7d5643b163a3ead4965e1bea33b832caee5bfca265efe42afcd7bc696b5b",
+                             "origin":  "copied from pinned source repository",
+                             "license":  "MIT"
+                         },
+                         {
+                             "path":  "_sources/rhwp/test-image.hwpx",
+                             "sha256":  "4405f89db156da688d1a10ae0c0829f0159ad24ad4ad5e083902577a8304338a",
+                             "origin":  "copied from pinned source repository",
+                             "license":  "MIT; see fixtures/_sources/rhwp/LICENSE"
+                         },
+                         {
+                             "path":  "_sources/rhwp/test-image.hwp",
+                             "sha256":  "a854b822c3150d9731b8ba0687160b2120be1078fc5c91221566a15176de3e20",
+                             "origin":  "copied from pinned source repository",
+                             "license":  "MIT; see fixtures/_sources/rhwp/LICENSE"
+                         }
+                     ]
+}

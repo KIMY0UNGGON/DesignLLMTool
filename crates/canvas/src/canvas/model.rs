@@ -949,6 +949,14 @@ mod tests {
     use designllm_contracts::CanvasAxisGuides;
     use designllm_contracts::{AssetRef, Breakpoint, CanvasPageSection, CanvasTableRow, CanvasTableSpan, NodeExt, Page};
 
+    /// Every recipe of the shape library that MCP clients are told to use is a path Canvas accepts.
+    #[test]
+    fn the_shape_library_recipes_are_valid_canvas_paths() {
+        for recipe in designllm_contracts::shape_library::SHAPES {
+            assert_eq!(validate_path(&recipe.path()), Ok(()), "{}", recipe.id);
+        }
+    }
+
     fn video_node() -> Node {
         Node {
             id: "video".into(), kind: NodeKind::Video, bounds: Rect { x: 0, y: 0, width: 300, height: 200 },

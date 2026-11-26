@@ -1,0 +1,607 @@
+{
+  "artifacts": [
+    {
+      "dirty": true,
+      "engine_id": "designllm-canvas",
+      "id": "50653fbd-263c-48a8-846d-41bf23acd33f",
+      "kind": "canvas",
+      "revision": 3,
+      "title": "Old workspace canvas"
+    },
+    {
+      "dirty": false,
+      "engine_id": "slides.pptx.v1",
+      "id": "39863ca7-b9c3-4d1f-ae70-e558659324ca",
+      "kind": "slides",
+      "revision": 2,
+      "title": "basic-preserve"
+    },
+    {
+      "dirty": true,
+      "engine_id": "designllm-figures",
+      "id": "89a688af-e496-4b20-80f4-1b5c2c646d3c",
+      "kind": "figure",
+      "revision": 2,
+      "title": "Old workspace figure"
+    }
+  ],
+  "baseline": "p0-v1_1",
+  "project_root_token": "<PROJECT>",
+  "requests": [
+    {
+      "error": null,
+      "method": "artifact.create",
+      "params": {
+        "actor": "p0",
+        "kind": "canvas",
+        "request_id": "00000000-0000-4000-9000-000000000001",
+        "size": {
+          "height": 6858000,
+          "width": 12192000
+        },
+        "template": null,
+        "title": "Old workspace canvas"
+      },
+      "result": {
+        "dirty": true,
+        "engine_id": "designllm-canvas",
+        "id": "50653fbd-263c-48a8-846d-41bf23acd33f",
+        "kind": "canvas",
+        "revision": 0,
+        "title": "Old workspace canvas"
+      }
+    },
+    {
+      "error": null,
+      "method": "changes.apply",
+      "params": {
+        "actor": "p0",
+        "allowed_intents": [
+          "content"
+        ],
+        "artifact_id": "50653fbd-263c-48a8-846d-41bf23acd33f",
+        "base_revision": 0,
+        "job_ref": null,
+        "operations": [
+          {
+            "node": {
+              "asset": null,
+              "bounds": {
+                "height": 571500,
+                "width": 22860000,
+                "x": 360000,
+                "y": 360000
+              },
+              "children": [],
+              "id": "old-text",
+              "interactions": [],
+              "kind": "text",
+              "layout": null,
+              "style": {
+                "align": "left",
+                "bold": false,
+                "color": "#20252D",
+                "fill": "#FFFFFF",
+                "font_family": "Pretendard",
+                "font_size": 228600,
+                "italic": false,
+                "stroke": "#566479",
+                "stroke_width": 12700
+              },
+              "text": "Before edit",
+              "variants": {}
+            },
+            "op": "add_node",
+            "page_id": "0c0c4aae-340f-439e-88b2-302591159904",
+            "parent_id": null
+          }
+        ],
+        "read_dependencies": [],
+        "request_id": "00000000-0000-4000-9000-000000000002",
+        "workspace_id": "229698ed-89e4-45ad-8a19-0d06ac55d5c3"
+      },
+      "result": {
+        "artifact_id": "50653fbd-263c-48a8-846d-41bf23acd33f",
+        "changed_ids": [
+          "old-text"
+        ],
+        "diagnostics": [],
+        "request_id": "00000000-0000-4000-9000-000000000002",
+        "revision": 1
+      }
+    },
+    {
+      "error": null,
+      "method": "changes.apply",
+      "params": {
+        "actor": "p0",
+        "allowed_intents": [
+          "content"
+        ],
+        "artifact_id": "50653fbd-263c-48a8-846d-41bf23acd33f",
+        "base_revision": 1,
+        "job_ref": null,
+        "operations": [
+          {
+            "node_id": "old-text",
+            "op": "set_text",
+            "text": "After edit"
+          }
+        ],
+        "read_dependencies": [],
+        "request_id": "00000000-0000-4000-9000-000000000003",
+        "workspace_id": "229698ed-89e4-45ad-8a19-0d06ac55d5c3"
+      },
+      "result": {
+        "artifact_id": "50653fbd-263c-48a8-846d-41bf23acd33f",
+        "changed_ids": [
+          "old-text"
+        ],
+        "diagnostics": [],
+        "request_id": "00000000-0000-4000-9000-000000000003",
+        "revision": 2
+      }
+    },
+    {
+      "error": null,
+      "method": "changes.apply",
+      "params": {
+        "actor": "p0",
+        "allowed_intents": [
+          "design"
+        ],
+        "artifact_id": "50653fbd-263c-48a8-846d-41bf23acd33f",
+        "base_revision": 2,
+        "job_ref": null,
+        "operations": [
+          {
+            "node_ids": [
+              "old-text"
+            ],
+            "op": "set_style",
+            "patch": {
+              "align": null,
+              "bold": true,
+              "color": null,
+              "fill": null,
+              "font_family": null,
+              "font_size": null,
+              "italic": null,
+              "stroke": null,
+              "stroke_width": null
+            }
+          }
+        ],
+        "read_dependencies": [],
+        "request_id": "00000000-0000-4000-9000-000000000004",
+        "workspace_id": "229698ed-89e4-45ad-8a19-0d06ac55d5c3"
+      },
+      "result": {
+        "artifact_id": "50653fbd-263c-48a8-846d-41bf23acd33f",
+        "changed_ids": [
+          "old-text"
+        ],
+        "diagnostics": [],
+        "request_id": "00000000-0000-4000-9000-000000000004",
+        "revision": 3
+      }
+    },
+    {
+      "error": {
+        "affected_ids": [
+          "missing"
+        ],
+        "code": "NOT_FOUND",
+        "current_revision": 3,
+        "diagnostics": [
+          {
+            "blocking": true,
+            "code": "TARGET_NOT_FOUND",
+            "message": "node missing does not exist",
+            "node_id": "missing"
+          }
+        ],
+        "message": "node missing does not exist",
+        "retryable": false
+      },
+      "method": "changes.apply",
+      "params": {
+        "actor": "p0",
+        "allowed_intents": [
+          "content"
+        ],
+        "artifact_id": "50653fbd-263c-48a8-846d-41bf23acd33f",
+        "base_revision": 3,
+        "job_ref": null,
+        "operations": [
+          {
+            "node_id": "missing",
+            "op": "set_text",
+            "text": "x"
+          }
+        ],
+        "read_dependencies": [],
+        "request_id": "00000000-0000-4000-9000-000000000005",
+        "workspace_id": "229698ed-89e4-45ad-8a19-0d06ac55d5c3"
+      },
+      "result": null
+    },
+    {
+      "error": null,
+      "method": "artifact.open",
+      "params": {
+        "actor": "p0",
+        "kind": "slides",
+        "path": "<PROJECT>\\fixtures\\office/basic-preserve.pptx",
+        "request_id": "00000000-0000-4000-9000-000000000006"
+      },
+      "result": {
+        "dirty": false,
+        "engine_id": "slides.pptx.v1",
+        "id": "39863ca7-b9c3-4d1f-ae70-e558659324ca",
+        "kind": "slides",
+        "revision": 0,
+        "title": "basic-preserve"
+      }
+    },
+    {
+      "error": null,
+      "method": "changes.apply",
+      "params": {
+        "actor": "p0",
+        "allowed_intents": [
+          "content"
+        ],
+        "artifact_id": "39863ca7-b9c3-4d1f-ae70-e558659324ca",
+        "base_revision": 0,
+        "job_ref": null,
+        "operations": [
+          {
+            "node_id": "slide-256:2",
+            "op": "set_text",
+            "text": "Old workspace edit"
+          }
+        ],
+        "read_dependencies": [],
+        "request_id": "00000000-0000-4000-9000-000000000007",
+        "workspace_id": "229698ed-89e4-45ad-8a19-0d06ac55d5c3"
+      },
+      "result": {
+        "artifact_id": "39863ca7-b9c3-4d1f-ae70-e558659324ca",
+        "changed_ids": [
+          "slide-256:2"
+        ],
+        "diagnostics": [],
+        "request_id": "00000000-0000-4000-9000-000000000007",
+        "revision": 1
+      }
+    },
+    {
+      "error": null,
+      "method": "history.undo",
+      "params": {
+        "actor": "p0",
+        "allowed_intents": [
+          "content"
+        ],
+        "artifact_id": "39863ca7-b9c3-4d1f-ae70-e558659324ca",
+        "expected_revision": 1,
+        "job_ref": null,
+        "request_id": "00000000-0000-4000-9000-000000000008",
+        "workspace_id": "229698ed-89e4-45ad-8a19-0d06ac55d5c3"
+      },
+      "result": {
+        "artifact_id": "39863ca7-b9c3-4d1f-ae70-e558659324ca",
+        "changed_ids": [
+          "slide-256:2"
+        ],
+        "diagnostics": [],
+        "request_id": "00000000-0000-4000-9000-000000000008",
+        "revision": 2
+      }
+    },
+    {
+      "error": null,
+      "method": "artifact.create",
+      "params": {
+        "actor": "p0",
+        "kind": "figure",
+        "request_id": "00000000-0000-4000-9000-000000000009",
+        "size": {
+          "height": 10692000,
+          "width": 7560000
+        },
+        "template": null,
+        "title": "Old workspace figure"
+      },
+      "result": {
+        "dirty": true,
+        "engine_id": "designllm-figures",
+        "id": "89a688af-e496-4b20-80f4-1b5c2c646d3c",
+        "kind": "figure",
+        "revision": 0,
+        "title": "Old workspace figure"
+      }
+    },
+    {
+      "error": null,
+      "method": "changes.apply",
+      "params": {
+        "actor": "p0",
+        "allowed_intents": [
+          "content",
+          "data"
+        ],
+        "artifact_id": "89a688af-e496-4b20-80f4-1b5c2c646d3c",
+        "base_revision": 0,
+        "job_ref": null,
+        "operations": [
+          {
+            "dataset": {
+              "columns": [
+                {
+                  "data_type": "category",
+                  "id": "condition",
+                  "name": "condition",
+                  "unit": null
+                },
+                {
+                  "data_type": "numeric",
+                  "id": "mean",
+                  "name": "mean",
+                  "unit": "ratio"
+                },
+                {
+                  "data_type": "numeric",
+                  "id": "sd",
+                  "name": "sd",
+                  "unit": "ratio"
+                },
+                {
+                  "data_type": "count",
+                  "id": "n",
+                  "name": "n",
+                  "unit": null
+                },
+                {
+                  "data_type": "text",
+                  "id": "unit",
+                  "name": "unit",
+                  "unit": null
+                }
+              ],
+              "derived_from": null,
+              "id": "data-47fe1c1511dc73a5",
+              "origin": "user_experimental",
+              "original_asset_hash": "47fe1c1511dc73a54ba6fc2f1911f192e923a953b19dbf432c640594cd29a0ff",
+              "rows": [
+                {
+                  "cells": {
+                    "condition": {
+                      "original": "baseline",
+                      "parsed_decimal": null,
+                      "state": "valid"
+                    },
+                    "mean": {
+                      "original": "0.10",
+                      "parsed_decimal": "0.1",
+                      "state": "valid"
+                    },
+                    "n": {
+                      "original": "3",
+                      "parsed_decimal": "3",
+                      "state": "valid"
+                    },
+                    "sd": {
+                      "original": "0.01",
+                      "parsed_decimal": "0.01",
+                      "state": "valid"
+                    },
+                    "unit": {
+                      "original": "ratio",
+                      "parsed_decimal": null,
+                      "state": "valid"
+                    }
+                  },
+                  "id": "r0001"
+                },
+                {
+                  "cells": {
+                    "condition": {
+                      "original": "treated",
+                      "parsed_decimal": null,
+                      "state": "valid"
+                    },
+                    "mean": {
+                      "original": "0.20",
+                      "parsed_decimal": "0.2",
+                      "state": "valid"
+                    },
+                    "n": {
+                      "original": "3",
+                      "parsed_decimal": "3",
+                      "state": "valid"
+                    },
+                    "sd": {
+                      "original": "0.02",
+                      "parsed_decimal": "0.02",
+                      "state": "valid"
+                    },
+                    "unit": {
+                      "original": "ratio",
+                      "parsed_decimal": null,
+                      "state": "valid"
+                    }
+                  },
+                  "id": "r0002"
+                },
+                {
+                  "cells": {
+                    "condition": {
+                      "original": "recovery",
+                      "parsed_decimal": null,
+                      "state": "valid"
+                    },
+                    "mean": {
+                      "original": "0.30",
+                      "parsed_decimal": "0.3",
+                      "state": "valid"
+                    },
+                    "n": {
+                      "original": "3",
+                      "parsed_decimal": "3",
+                      "state": "valid"
+                    },
+                    "sd": {
+                      "original": "0.03",
+                      "parsed_decimal": "0.03",
+                      "state": "valid"
+                    },
+                    "unit": {
+                      "original": "ratio",
+                      "parsed_decimal": null,
+                      "state": "valid"
+                    }
+                  },
+                  "id": "r0003"
+                }
+              ],
+              "transforms": [],
+              "version_hash": "889dd207cd1eb5f5d16151129d4ebae85bc4e290401ea45962a50a58d90113bd"
+            },
+            "op": "put_dataset"
+          },
+          {
+            "index": 0,
+            "op": "add_panel",
+            "panel": {
+              "body": {
+                "type": "plot",
+                "value": {
+                  "dataset_ref": {
+                    "dataset_id": "data-47fe1c1511dc73a5",
+                    "version_hash": "889dd207cd1eb5f5d16151129d4ebae85bc4e290401ea45962a50a58d90113bd"
+                  },
+                  "error": {
+                    "confidence_level": null,
+                    "kind": "sd",
+                    "sample_count_column": "n",
+                    "values": {
+                      "column": "sd",
+                      "type": "symmetric"
+                    }
+                  },
+                  "kind": "bar",
+                  "x_axis": {
+                    "label": "Condition",
+                    "maximum": null,
+                    "minimum": null,
+                    "scale": "linear",
+                    "tick_step": null,
+                    "unit": null
+                  },
+                  "x_column": "condition",
+                  "y_axis": {
+                    "label": "Mean",
+                    "maximum": null,
+                    "minimum": null,
+                    "scale": "linear",
+                    "tick_step": null,
+                    "unit": "ratio"
+                  },
+                  "y_columns": [
+                    "mean"
+                  ]
+                }
+              },
+              "bounds": {
+                "height": 2000000,
+                "width": 3000000,
+                "x": 0,
+                "y": 0
+              },
+              "id": "panel-a",
+              "label": "A",
+              "style": {
+                "align": "left",
+                "bold": false,
+                "color": "#20252D",
+                "fill": "#FFFFFF",
+                "font_family": "Pretendard",
+                "font_size": 152400,
+                "italic": false,
+                "stroke": "#566479",
+                "stroke_width": 12700
+              }
+            }
+          }
+        ],
+        "read_dependencies": [],
+        "request_id": "00000000-0000-4000-9000-00000000000a",
+        "workspace_id": "229698ed-89e4-45ad-8a19-0d06ac55d5c3"
+      },
+      "result": {
+        "artifact_id": "89a688af-e496-4b20-80f4-1b5c2c646d3c",
+        "changed_ids": [
+          "data-47fe1c1511dc73a5",
+          "panel-a"
+        ],
+        "diagnostics": [],
+        "request_id": "00000000-0000-4000-9000-00000000000a",
+        "revision": 1
+      }
+    },
+    {
+      "error": null,
+      "method": "changes.apply",
+      "params": {
+        "actor": "p0",
+        "allowed_intents": [
+          "content"
+        ],
+        "artifact_id": "89a688af-e496-4b20-80f4-1b5c2c646d3c",
+        "base_revision": 1,
+        "job_ref": null,
+        "operations": [
+          {
+            "axis": "y",
+            "label": "Mean ratio",
+            "op": "set_axis_label",
+            "panel_id": "panel-a"
+          }
+        ],
+        "read_dependencies": [],
+        "request_id": "00000000-0000-4000-9000-00000000000b",
+        "workspace_id": "229698ed-89e4-45ad-8a19-0d06ac55d5c3"
+      },
+      "result": {
+        "artifact_id": "89a688af-e496-4b20-80f4-1b5c2c646d3c",
+        "changed_ids": [
+          "panel-a"
+        ],
+        "diagnostics": [],
+        "request_id": "00000000-0000-4000-9000-00000000000b",
+        "revision": 2
+      }
+    }
+  ],
+  "revisions": {
+    "39863ca7-b9c3-4d1f-ae70-e558659324ca": [
+      "7abc9943b40f279dfb68b555cd78e9d7275961086751832422919605d852a807",
+      "adf5f888cabf650d8c80dac77f3e52b6b22168bb6fbd419868f2154f668d6637",
+      "8ea68352a5eae380cf011cb7619858cc61c920b224bb41aead63afa98ddef123"
+    ],
+    "50653fbd-263c-48a8-846d-41bf23acd33f": [
+      "8982a22e1757b381d1dcd04a3208cfba56c31c86e40e57d8514b2c0e1b88d443",
+      "8d0c5aacbe978a03aac2e4af2a6720c185b08861f6cb123405f7cdd11db23ee7",
+      "848025970fd3846afe9371a943bcdddea02232769360b68d09ac755761b69fea",
+      "93b1794614aa2342746e9c573d1b4a607b2c8af132cd9e51946a879720fcb1df"
+    ],
+    "89a688af-e496-4b20-80f4-1b5c2c646d3c": [
+      "8176d45baf4c86664a2709eb7f644c466afe97fbe684e7557a86d1102f9c8db9",
+      "eb61c53357e04075024bf28e127ccc2e9349293b43a1d508e4321801bf76f047",
+      "adc21aa03e77ce73b82968003bcd6cf5fb33b31a99e051e79b7ea8b61a00d986"
+    ]
+  },
+  "workspace_id": "229698ed-89e4-45ad-8a19-0d06ac55d5c3"
+}

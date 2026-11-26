@@ -1,4 +1,4 @@
-use super::{messages::engine_warning_message, print_range::{parse_page_range, range_supported}, state::SaveRpcOutcome, *};
+use super::{messages::engine_warning_message, print_range::{parse_page_range, range_supported, validate_page_range, UNKNOWN_PAGE_COUNT}, state::SaveRpcOutcome, *};
 
 /// PNG and SVG write one page (the slide engine and the core refuse several: slides lib.rs `export`, core files.rs `export`).
 pub(super) const ONE_PAGE_FORMAT: &str = "PNG와 SVG는 한 번에 한 쪽만 내보냅니다. scope를 page로 하고 쪽을 고르세요";
@@ -176,22 +176,30 @@ impl DesktopApp {
         Ok(())
     }
 
+    /// The DPI the export popover shows and sends: its own pick while it is open (`export_dpi_draft`), else the view's.
+    pub(crate) fn export_dpi(&self) -> u32 {
+        self.export_dpi_draft.unwrap_or_else(|| self.view_ref().figure_export_dpi)
+    }
+
     #[cfg(test)]
     pub(super) fn export_active(&mut self) {
-        self.export_active_with(None);
+        if let Err(error) = self.export_active_with(None) {
+            self.set_error(error);
+        }
     }
 
     /// Sends the export that the popover's settings (`options` None) or the arguments of the save dialog describe: a dry
     /// run for its losses first, then the write.
-    pub(super) fn export_active_with(&mut self, options: Option<&Value>) {
+    pub(super) fn export_active_with(&mut self, options: Option<&Value>) -> Result<(), String> {
         if self.export_path.trim().is_empty() {
-            return;
+            return Err("내보낼 위치를 고르세요".into());
         }
         let pages = options.and_then(|options| options.get("pages")).and_then(Value::as_str).unwrap_or("");
         let Some(mut request) = self.export_request(self.export_path.trim().to_owned(), options) else {
-            return;
+            return Err(EXPORT_NOT_BUILT.into());
         };
-        // The losses the popover showed for these settings are the ones the user accepted with its button.
+        // The losses the popover showed for these settings are the ones the user accepted with its button: the key names the
+        // document and the selection too, so a warning read for another document never permits this one's losses.
         if let Some((key, losses)) = &self.export_preview {
             if *key == self.export_key(pages) {
                 request.options.allowed_losses = losses.iter().map(|loss| loss.code.clone()).collect::<BTreeSet<_>>().into_iter().collect();
@@ -200,12 +208,18 @@ impl DesktopApp {
         let mut dry_run = request.clone();
         dry_run.request_id = new_id();
         dry_run.dry_run = Some(true);
-        self.pending_export = Some(request);
         match serde_json::to_value(dry_run) {
             Ok(params) => {
-                self.call("artifact.export", params, PendingAction::ExportDryRun);
+                let artifact_id = request.options.artifact_id.clone();
+                match self.call_for(&artifact_id, "artifact.export", params, PendingAction::ExportDryRun) {
+                    Some(ticket) => {
+                        self.pending_exports.insert(ticket, request);
+                        Ok(())
+                    }
+                    None => Err("내보내기 요청을 보내지 못했습니다".into()),
+                }
             }
-            Err(_) => self.set_error(String::from("내보내기 요청을 만들지 못했습니다")),
+            Err(_) => Err("내보내기 요청을 만들지 못했습니다".into()),
         }
     }
 
@@ -216,7 +230,71 @@ impl DesktopApp {
         if !range_supported(active.kind, &format.trim().to_ascii_lowercase()) {
             return Err("이 작업물과 형식은 쪽 범위 내보내기를 지원하지 않습니다".into());
         }
-        parse_page_range(pages, self.page_sizes().len()).map(|_| ()).map_err(|error| error.to_string())
+        validate_page_range(pages, self.range_check_count()).map(|_| ()).map_err(|error| error.to_string())
+    }
+
+    /// The title row's `이 페이지 내보내기` / `이 슬라이드 내보내기`: the export menu on this page. One slide is not a PPTX
+    /// (that writes the deck), so a deck's menu opens on PDF for it; the deck's PPTX stays in the menu's formats.
+    pub(super) fn open_page_export(&mut self) {
+        let kind = self.active.as_ref().map_or(ArtifactKind::Canvas, |item| item.kind);
+        // A deck's slide is always PDF here, whatever was chosen before (a Canvas's HTML, the deck's PPTX): the menu would
+        // otherwise put the deck's first format in its place and widen the page to every slide.
+        if kind == ArtifactKind::Slides || !self.export_format_supported(&self.export_format) {
+            self.export_format = String::from("pdf");
+        }
+        self.export_scope = String::from("page");
+        self.smoke_open = Some(String::from("export"));
+    }
+
+    /// Whether the shown kind's export writes the selected nodes only (`EngineAdapter::exports_nodes`): the Canvas engine's
+    /// PNG and SVG. A Figure panel or a slide object exports its whole Figure or slide, so it offers no selection export.
+    pub(super) fn selection_export_supported(&self) -> bool {
+        self.active.as_ref().is_some_and(|active| active.kind == ArtifactKind::Canvas)
+    }
+
+    /// Whether the shown document has more than one page, as far as the window knows it: the count read for the shown
+    /// revision (`shown_page_count`), never the board's fallback page; while that count is unknown, every kind that can
+    /// have several pages is taken to have them (its engine checks).
+    pub(super) fn shown_document_multipage(&self) -> bool {
+        let kind = self.active.as_ref().map_or(ArtifactKind::Canvas, |item| item.kind);
+        match self.shown_page_count() {
+            Some(count) => count > 1,
+            None => !matches!(kind, ArtifactKind::WebCode | ArtifactKind::Figure),
+        }
+    }
+
+    /// Ctrl+E: the export menu, on the settings it had (the editor's top bar opens it).
+    pub(super) fn open_export_menu(&mut self) {
+        self.smoke_open = Some(String::from("export"));
+    }
+
+    /// The properties panel's `내보내기 ›` on a selected Canvas object: the menu on the selection, in PNG unless SVG is
+    /// chosen (only those write some nodes of a page).
+    pub(super) fn open_selection_export(&mut self) {
+        if !matches!(self.export_format.as_str(), "png" | "svg") {
+            self.export_format = String::from("png");
+        }
+        self.export_scope = String::from("selection");
+        self.smoke_open = Some(String::from("export"));
+    }
+
+    /// A deck's PPTX writes every slide: a request for one slide, the selection or a page range is refused, not widened.
+    pub(super) fn deck_scope_refusal(&self, format: &str, scope: Option<&str>) -> Option<&'static str> {
+        let kind = self.active.as_ref()?.kind;
+        (whole_deck(kind, format.trim()) && scope.is_some_and(|scope| scope != "all")).then_some(DECK_PPTX_SCOPE)
+    }
+
+    /// The page count the window holds for the shown document at its shown revision (`page_count_at`); None until a render of
+    /// that revision reported it.
+    pub(super) fn shown_page_count(&self) -> Option<usize> {
+        let active = self.active.as_ref()?;
+        self.page_count_at(&active.id, active.revision)
+    }
+
+    /// The count a page range is checked against before it is sent: the count of the shown revision, or, while it is not known,
+    /// none (the engine checks the range at the revision the request names).
+    pub(super) fn range_check_count(&self) -> usize {
+        self.shown_page_count().unwrap_or(UNKNOWN_PAGE_COUNT)
     }
 
     pub(super) fn export_active_to(&mut self, args: &Value) -> Result<(), String> {
@@ -252,13 +330,16 @@ impl DesktopApp {
         if args.get("scope").is_some_and(|scope| !matches!(scope.as_str(), Some("page" | "selection" | "all" | "range"))) {
             return Err("scope는 page, selection, all 또는 range이어야 합니다".into());
         }
+        if let Some(error) = self.deck_scope_refusal(format, args.get("scope").and_then(Value::as_str)) {
+            return Err(error.into());
+        }
         if args.get("scope").and_then(Value::as_str) == Some("selection") && self.selected_nodes.is_empty() {
             return Err("선택된 항목이 없어 선택 범위를 내보낼 수 없습니다".into());
         }
         // Every page of a document of several pages in one PNG or SVG is refused, as the engines refuse it; the window does not
         // write the page shown instead.
         let one_page_format = matches!(format.trim().to_ascii_lowercase().as_str(), "png" | "svg");
-        if one_page_format && args.get("scope").and_then(Value::as_str) == Some("all") && self.page_sizes().len() > 1 {
+        if one_page_format && args.get("scope").and_then(Value::as_str) == Some("all") && self.shown_page_count().is_some_and(|count| count > 1) {
             return Err(ONE_PAGE_FORMAT.into());
         }
         if args.get("pages").is_some_and(|pages| !pages.is_string()) {
@@ -271,18 +352,25 @@ impl DesktopApp {
             return Err("pages는 scope가 range일 때만 쓸 수 있습니다".into());
         }
         let request = self.export_request(target.to_owned(), Some(args)).ok_or_else(|| String::from("현재 작업물에서 지원하지 않는 내보내기 형식입니다"))?;
+        let artifact_id = request.options.artifact_id.clone();
         let params = serde_json::to_value(request).map_err(|_| String::from("내보내기 요청을 만들지 못했습니다"))?;
-        self.call("artifact.export", params, PendingAction::UiExport);
+        self.call_for(&artifact_id, "artifact.export", params, PendingAction::UiExport);
         Ok(())
     }
 
-    /// What the export popover's settings are now: format, scope, scale, background, the page range (`pages`, when the
-    /// scope is `range`) and revision.
+    /// What the export popover's settings are now: the document and its revision, format, scope, scale, background, the page
+    /// range (`pages`, when the scope is `range`), the selected nodes (when the scope is `selection`) and the DPI. A loss
+    /// warning read under one key is shown and accepted only under the same key.
     pub(crate) fn export_key(&self, pages: &str) -> String {
+        let artifact = self.active.as_ref().map_or("", |item| item.id.as_str());
         let revision = self.active.as_ref().map_or(0, |item| item.revision);
         let pages = if self.export_scope == "range" { pages } else { "" };
-        let dpi = if self.export_format == "png" && self.active.as_ref().is_some_and(|item| item.kind == ArtifactKind::Figure) { self.view_ref().figure_export_dpi } else { 0 };
-        format!("{}|{}|{}|{}|{}|{}|{}|{}", self.export_format, self.export_scope, self.export_scale, self.export_transparent, self.page_index, revision, pages, dpi)
+        let selection = if self.export_scope == "selection" { self.selected_nodes.join(",") } else { String::new() };
+        let dpi = if self.export_format == "png" && self.active.as_ref().is_some_and(|item| item.kind == ArtifactKind::Figure) { self.export_dpi() } else { 0 };
+        format!(
+            "{artifact}|{}|{}|{}|{}|{}|{revision}|{pages}|{selection}|{dpi}",
+            self.export_format, self.export_scope, self.export_scale, self.export_transparent, self.view_ref().page_index,
+        )
     }
 
     /// The arguments of the popover's settings as its button sends them to `file.export` (without the target).
@@ -294,7 +382,7 @@ impl DesktopApp {
             "background": if self.export_transparent { "transparent" } else { "page" },
         });
         if self.export_format == "png" && self.active.as_ref().is_some_and(|item| item.kind == ArtifactKind::Figure) {
-            args["dpi"] = json!(self.view_ref().figure_export_dpi);
+            args["dpi"] = json!(self.export_dpi());
         }
         if self.export_scope == "range" {
             args["pages"] = json!(pages);
@@ -305,7 +393,15 @@ impl DesktopApp {
     /// Asks the host, without writing a file, what the chosen export would lose; the popover lists it.
     pub(crate) fn preview_export_losses(&mut self, pages: &str) {
         let key = self.export_key(pages);
-        if self.export_preview.as_ref().is_some_and(|(seen, _)| *seen == key) || self.export_preview_pending.as_deref() == Some(key.as_str()) {
+        // A failure is kept for its own settings only: other settings are asked at once.
+        if self.export_preview_failed.as_ref().is_some_and(|(failed, _)| *failed != key) {
+            self.export_preview_failed = None;
+        }
+        let held_back = self.export_preview_failed.as_ref().is_some_and(|(_, retry)| retry.is_none_or(|at| Instant::now() < at));
+        if self.export_preview.as_ref().is_some_and(|(seen, _)| *seen == key)
+            || self.export_preview_pending.as_deref() == Some(key.as_str())
+            || held_back
+        {
             return;
         }
         let options = self.popover_export_args(pages);
@@ -314,8 +410,10 @@ impl DesktopApp {
         };
         request.dry_run = Some(true);
         if let Ok(params) = serde_json::to_value(request) {
-            self.export_preview_pending = Some(key.clone());
-            self.call("artifact.export", params, PendingAction::ExportPreview { key });
+            // Nothing is on its way when no ticket comes back (the host is gone): the preview is asked again later.
+            if self.call("artifact.export", params, PendingAction::ExportPreview { key: key.clone() }).is_some() {
+                self.export_preview_pending = Some(key);
+            }
         }
     }
 
@@ -342,7 +440,11 @@ impl DesktopApp {
         let scope = options
             .and_then(|options| options.get("scope").and_then(Value::as_str))
             .map(str::to_owned)
-            .unwrap_or_else(|| if explicit { "page".into() } else { self.export_scope.clone() });
+            .unwrap_or_else(|| if whole_deck(active.kind, &format) { "all".into() } else if explicit { "page".into() } else { self.export_scope.clone() });
+        // A deck's PPTX is every slide: one slide, the selection or a range makes no request (`deck_scope_refusal` says why).
+        if whole_deck(active.kind, &format) && scope != "all" {
+            return None;
+        }
         // A format or document that does not apply page selection makes no request: its engine would write the whole
         // document, and the chosen pages would be dropped without a word.
         if scope == "range" && !range_supported(active.kind, &format) {
@@ -351,14 +453,14 @@ impl DesktopApp {
         // PNG and SVG write one page; the other formats write the page, the named pages (`range`) or the whole document.
         // A WebCode project has no pages, and its engine refuses any page_indices (canvas web/mod.rs export), so none is sent.
         let selection = scope == "selection" && !self.selected_nodes.is_empty();
-        let page_indices = if active.kind == ArtifactKind::WebCode {
+        let page_indices = if active.kind == ArtifactKind::WebCode || whole_deck(active.kind, &format) {
             None
         } else if matches!(format.as_str(), "svg" | "png") || scope == "page" || selection {
-            Some(vec![self.page_index])
+            Some(vec![self.view_ref().page_index])
         } else if scope == "range" {
             // Checked against the pages the document has now; a range that does not fit makes no request.
             let pages = options.and_then(|options| options.get("pages").and_then(Value::as_str))?;
-            Some(parse_page_range(pages, self.page_sizes().len()).ok()?)
+            Some(parse_page_range(pages, self.range_check_count()).ok()?)
         } else {
             None
         };
@@ -399,6 +501,74 @@ impl DesktopApp {
         })
     }
 
+    /// The page count of `artifact_id` at `revision`, when the window holds that revision: the pages of a canvas or slides
+    /// body read at it, or for another kind the count a render of that revision reported. None when the window shows another
+    /// document or another revision, or no render of that revision reported a count.
+    pub(super) fn page_count_at(&self, artifact_id: &str, revision: designllm_contracts::Revision) -> Option<usize> {
+        if self.active.as_ref().is_none_or(|active| active.id != artifact_id) {
+            return None;
+        }
+        if let Some(artifact) = self.artifact.as_ref().filter(|artifact| artifact.id == artifact_id) {
+            let pages = match &artifact.body {
+                designllm_contracts::ArtifactBody::Canvas(document) => Some(document.pages.len()),
+                designllm_contracts::ArtifactBody::Slides(document) => Some(document.pages.len()),
+                _ => None,
+            };
+            if let Some(pages) = pages {
+                return (artifact.revision == revision).then_some(pages);
+            }
+        }
+        // The count goes with the render that reported it: a later revision's count is not the one of this request.
+        self.page_count_read
+            .as_ref()
+            .filter(|(id, read_revision, _)| id == artifact_id && *read_revision == revision)
+            .map(|(_, _, total)| *total as usize)
+    }
+
+    /// Asks about an export's losses: at once when no other export is being asked about, else after the ones before it.
+    pub(super) fn ask_export_losses(&mut self, confirmation: ExportConfirmation) {
+        if self.export_confirmation.is_none() {
+            self.export_confirmation = Some(confirmation);
+        } else {
+            self.export_confirmations_waiting.push_back(confirmation);
+        }
+    }
+
+    /// The loss question on screen is answered: the next waiting export is asked about.
+    fn next_export_confirmation(&mut self) {
+        self.export_confirmation = self.export_confirmations_waiting.pop_front();
+    }
+
+    /// Loss questions the user has not answered yet: the one on screen and the ones waiting behind it.
+    pub(super) fn export_confirmations_open(&self) -> bool {
+        self.export_confirmation.is_some() || !self.export_confirmations_waiting.is_empty()
+    }
+
+    /// How many exports wait for their loss answer (the one on screen and those behind it).
+    pub(super) fn export_confirmation_count(&self) -> usize {
+        usize::from(self.export_confirmation.is_some()) + self.export_confirmations_waiting.len()
+    }
+
+    /// The close question's button that drops them, with their number when there are several.
+    pub(super) fn cancel_exports_label(&self) -> String {
+        match self.export_confirmation_count() {
+            0 | 1 => "내보내기 취소하고 닫기".into(),
+            count => format!("내보내기 {count}개 취소하고 닫기"),
+        }
+    }
+
+    /// `내보내기 취소하고 닫기` of the close question: every unanswered export is dropped (nothing was written for them).
+    pub(super) fn cancel_export_confirmations(&mut self) {
+        self.export_confirmation = None;
+        self.export_confirmations_waiting.clear();
+    }
+
+    /// `취소` of the loss question on screen: that export is not written, and the next waiting one is asked about.
+    pub(super) fn cancel_export_confirmation(&mut self) {
+        self.export_confirmation = None;
+        self.next_export_confirmation();
+    }
+
     pub(super) fn apply_export_losses(&mut self) {
         let Some(mut confirmation) = self.export_confirmation.take() else {
             return;
@@ -408,16 +578,23 @@ impl DesktopApp {
             return;
         }
         confirmation.request.request_id = new_id();
-        confirmation.request.options.allowed_losses =
-            confirmation.allowed.into_iter().collect();
+        // The losses approved now join those approved before for this export: a retry that asks about other losses keeps them.
+        let mut allowed: BTreeSet<String> = confirmation.request.options.allowed_losses.iter().cloned().collect();
+        allowed.extend(confirmation.allowed);
+        confirmation.request.options.allowed_losses = allowed.into_iter().collect();
         self.send_export(confirmation.request);
+        self.next_export_confirmation();
     }
 
     /// Sends the write for a request the user accepted: after a dry run with no losses, or after the loss choice.
     pub(super) fn send_export(&mut self, request: ExportFileRequest) {
         // The pages were checked when the request was built; the document may have lost pages since (a dry run, a loss choice).
-        // The words go by the request, not by the scope the menu shows now: only a page range names more than one page.
-        if let Some(pages) = request.options.page_indices.as_ref().filter(|pages| pages.iter().any(|&page| page as usize >= self.page_sizes().len())) {
+        // The words go by the request, not by the scope the menu shows now: only a page range names more than one page. The
+        // window knows the page count of the document it shows; another document's export is left to its engine to check.
+        // The page count is known only when the document is loaded at the request's revision; otherwise (another document,
+        // or this one not read yet at that revision) its engine checks the pages at the revision the request names.
+        let count = self.page_count_at(&request.options.artifact_id, request.options.expected_revision);
+        if let Some(pages) = request.options.page_indices.as_ref().filter(|pages| count.is_some_and(|count| pages.iter().any(|&page| page as usize >= count))) {
             let message = if pages.len() > 1 {
                 "문서 쪽 수가 바뀌어 쪽 범위를 쓸 수 없습니다. 쪽 번호를 다시 적어 주세요"
             } else {
@@ -428,8 +605,11 @@ impl DesktopApp {
         }
         match serde_json::to_value(&request) {
             Ok(params) => {
-                self.pending_export = Some(request);
-                self.call("artifact.export", params, PendingAction::Export);
+                // Recorded under the export's own document, which may no longer be the shown one.
+                let artifact_id = request.options.artifact_id.clone();
+                if let Some(ticket) = self.call_for(&artifact_id, "artifact.export", params, PendingAction::Export) {
+                    self.pending_exports.insert(ticket, request);
+                }
             }
             Err(_) => self.set_error("내보내기 요청을 만들지 못했습니다".into()),
         }
@@ -442,13 +622,17 @@ impl DesktopApp {
         use crate::widgets::{DialogButton, DialogChoice};
         let palette = crate::theme::palette(ctx);
         let shown = crate::widgets::dialog_with_choices(ctx, &palette, egui::Id::new("내보내기 확인"), "내보내기 확인", crate::widgets::DialogPlace::Screen, |ui| {
-                ui.label("일부 편집 정보가 출력물에 포함되지 않습니다.");
+                ui.label(crate::i18n::tr("일부 편집 정보가 출력물에 포함되지 않습니다."));
+                // Which export this is, when several wait for their answer: its whole path (two folders may hold the same name).
+                let path = &confirmation.request.target_path;
+                ui.label(format!("{}: {}", crate::i18n::tr("저장 위치"), export_destination_label(path)))
+                    .on_hover_text(path.as_str());
                 // A place a UI-test run's save answer named (68r): the person accepts the losses of a write the run placed.
                 if crate::dialogs::is_test_save_answer(&confirmation.request.target_path) {
-                    ui.label(format!("시험 실행이 정한 위치: {}", confirmation.request.target_path));
+                    ui.label(crate::i18n::tr(&format!("시험 실행이 정한 위치: {}", confirmation.request.target_path)));
                 }
                 if confirmation.diagnostics.is_empty() {
-                    ui.label("허용할 손실 항목을 확인할 수 없습니다.");
+                    ui.label(crate::i18n::tr("허용할 손실 항목을 확인할 수 없습니다."));
                 }
                 for diagnostic in &confirmation.diagnostics {
                     let mut checked = confirmation.allowed.contains(&diagnostic.code);
@@ -468,11 +652,47 @@ impl DesktopApp {
         // The main button accepts a loss, so Enter does not press it. Esc is `취소`.
         let (cancel, confirm) = (shown.inner.1[0], shown.inner.1[1]);
         if cancel || shown.dismissed {
-            self.export_confirmation = None;
+            self.cancel_export_confirmation();
         } else if confirm {
             self.apply_export_losses();
         }
     }
+}
+
+/// The longest path the loss question shows whole; a longer one keeps its start and its end (the folder and the file).
+const DESTINATION_CHARS: usize = 72;
+
+/// The place an export writes, as its loss question names it: the path verbatim, its middle left out when it is long.
+pub(super) fn export_destination_label(target_path: &str) -> String {
+    let chars: Vec<char> = target_path.chars().collect();
+    if chars.len() <= DESTINATION_CHARS {
+        return target_path.to_owned();
+    }
+    let tail = DESTINATION_CHARS * 2 / 3;
+    let head = DESTINATION_CHARS - tail - 1;
+    let start: String = chars[..head].iter().collect();
+    let end: String = chars[chars.len() - tail..].iter().collect();
+    format!("{start}…{end}")
+}
+
+/// A request the window could not build from the chosen settings: nothing is sent, and the caller is told.
+pub(super) const EXPORT_NOT_BUILT: &str = "이 설정으로는 내보낼 수 없습니다. 형식과 범위를 확인해 주세요";
+
+/// Why a deck's PPTX refuses one slide, the selection or a page range.
+pub(super) const DECK_PPTX_SCOPE: &str = "PPTX는 모든 슬라이드를 내보냅니다. scope \"all\"을 쓰거나, 슬라이드 하나는 PDF 또는 PNG로 내보내세요";
+
+/// How long a preview that failed in passing (the host busy, a lost reply) waits before it is asked again.
+pub(super) const PREVIEW_RETRY: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// A refusal that the same settings would meet again: the request or the engine says no, not the link or the moment.
+pub(super) fn preview_refusal_is_permanent(code: &designllm_contracts::ErrorCode) -> bool {
+    use designllm_contracts::ErrorCode::*;
+    matches!(code, InvalidArgument | NotFound | UnsupportedOperation | SchemaUnsupported | DataAmbiguous | UnsafeRoundtrip | IntegrityError | ExportLossRequired)
+}
+
+/// A deck's PPTX is the whole deck: its engine writes no single slide and refuses page indices for PPTX.
+pub(super) fn whole_deck(kind: ArtifactKind, format: &str) -> bool {
+    kind == ArtifactKind::Slides && format.eq_ignore_ascii_case("pptx")
 }
 
 /// The kind a file of this tool names in its `format` (`designllm.canvas`, `designllm.web`, `designllm.figure-project`: the

@@ -1,0 +1,7 @@
+{
+  "format": "designllm-mcp-gui-allowlist",
+  "version": 1,
+  "entries": [
+    { "operation": "set_interaction", "reason": "GUI는 같은 편집을 `SetInteractions`(목록 교체)로 한다" }
+  ]
+}

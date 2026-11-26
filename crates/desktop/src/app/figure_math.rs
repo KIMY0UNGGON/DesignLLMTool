@@ -152,7 +152,7 @@ impl DesktopApp {
             .data(|data| data.get_temp::<EquationDraft>(key))
             .filter(|stored| stored.base == base)
             .unwrap_or_else(|| EquationDraft { base: base.to_owned(), text: base.to_owned() });
-        ui.label(RichText::new("수식").strong());
+        ui.label(RichText::new(crate::i18n::tr("수식")).strong());
         let width = ui.available_width();
         widgets::edit_line(ui, &palette, &mut draft.text, widgets::Field { width, ..Default::default() });
         let changed = draft.text != draft.base;
@@ -162,7 +162,7 @@ impl DesktopApp {
                 self.invoke_ui("text.set", json!({ "node_id": node_id, "text": draft.text.clone() }));
             }
             if let Some(message) = &refusal {
-                ui.label(RichText::new(message).color(theme::RED));
+                ui.label(RichText::new(crate::i18n::tr(&message)).color(theme::RED));
             }
         });
         ui.data_mut(|data| data.insert_temp(key, draft));
@@ -174,7 +174,7 @@ impl DesktopApp {
         let mut draft = ui
             .data(|data| data.get_temp::<EquationDraft>(key))
             .unwrap_or_else(|| EquationDraft { base: String::new(), text: String::new() });
-        ui.label(RichText::new("수식 추가").strong());
+        ui.label(RichText::new(crate::i18n::tr("수식 추가")).strong());
         let width = ui.available_width();
         widgets::edit_line(ui, &palette, &mut draft.text, widgets::Field { width, ..Default::default() });
         let refusal = if draft.text.is_empty() { None } else { source_refusal(&draft.text) };
@@ -187,7 +187,7 @@ impl DesktopApp {
                 }
             }
             if let Some(message) = &refusal {
-                ui.label(RichText::new(message).color(theme::RED));
+                ui.label(RichText::new(crate::i18n::tr(&message)).color(theme::RED));
             }
         });
         ui.data_mut(|data| data.insert_temp(key, draft));

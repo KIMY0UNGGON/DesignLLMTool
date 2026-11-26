@@ -1,0 +1,4 @@
+condition,mean,sd,n,unit
+baseline,0.10,0.01,3,ratio
+treated,0.20,0.02,3,ratio
+recovery,0.30,0.03,3,ratio

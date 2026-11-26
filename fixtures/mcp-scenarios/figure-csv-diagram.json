@@ -1,0 +1,108 @@
+{
+  "task": "figure-csv-diagram",
+  "summary": "A paper figure on A4: a bar chart from the declared CSV dataset, one dataset cell edited (a new dataset version the plot follows), a diagram whose edge cites PDF evidence read from physical page 12, a caption, a review that marks the cited evidence reviewed (the publish gate requires it), then PNG and project export.",
+  "steps": [
+    { "id": "workspace", "tool": "workspace_list", "arguments": {}, "bind": { "workspace_id": "/structuredContent/workspace_id" } },
+    { "id": "create", "tool": "artifact_create", "arguments": { "request_id": "$request_id", "actor": "scenario", "kind": "figure", "title": "Mechanism figure", "size": { "width": 7560000, "height": 10692000 }, "template": null }, "bind": { "artifact": "/structuredContent/id", "revision": "/structuredContent/revision" } },
+    { "id": "csv_asset", "tool": "asset_import", "arguments": { "path": "$fixture:figure.numeric-sd" }, "bind": { "csv_sha": "/structuredContent/sha256" } },
+    { "id": "dataset", "tool": "source_import_csv", "arguments": { "sha256": "$csv_sha", "columns": [
+        { "name": "condition", "data_type": "category" },
+        { "name": "mean", "data_type": "numeric", "unit": "ratio" },
+        { "name": "sd", "data_type": "numeric", "unit": "ratio" },
+        { "name": "n", "data_type": "count" },
+        { "name": "unit", "data_type": "text" }
+      ] }, "bind": { "dataset": "/structuredContent", "dataset_id": "/structuredContent/id", "dataset_version": "/structuredContent/version_hash" } },
+    { "id": "chart", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content", "data"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "put_dataset", "dataset": "$dataset" },
+          { "op": "add_panel", "index": 0, "panel": {
+              "id": "panel-a", "bounds": { "x": 0, "y": 0, "width": 3000000, "height": 2000000 }, "label": "A",
+              "style": { "font_family": "Pretendard", "font_size": 101600, "color": "#20252D", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" },
+              "body": { "type": "plot", "value": {
+                "kind": "bar",
+                "dataset_ref": { "dataset_id": "$dataset_id", "version_hash": "$dataset_version" },
+                "x_column": "condition", "y_columns": ["mean"],
+                "x_axis": { "label": "Condition", "unit": null, "scale": "linear", "minimum": null, "maximum": null, "tick_step": null },
+                "y_axis": { "label": "Mean", "unit": "ratio", "scale": "linear", "minimum": null, "maximum": null, "tick_step": null },
+                "error": { "kind": "sd", "values": { "type": "symmetric", "column": "sd" }, "sample_count_column": "n", "confidence_level": null }
+              } }
+            } }
+        ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "edit_cell", "tool": "figure_dataset_edit", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["data"], "job_ref": null, "dataset_id": "$dataset_id", "version_hash": "$dataset_version",
+        "edits": [ { "type": "edit_cell", "row_id": "r0001", "column_id": "mean", "previous": "0.10", "replacement": "0.11" } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "pdf_asset", "tool": "asset_import", "arguments": { "path": "$fixture:figure.pdf-evidence-p12" }, "bind": { "pdf_sha": "/structuredContent/sha256" } },
+    { "id": "extraction", "tool": "source_extract_pdf", "arguments": { "sha256": "$pdf_sha", "pages": [11] }, "save": "extraction" },
+    { "select": { "from": "extraction", "pointer": "/structuredContent/evidence", "where": { "text_contains": "A causes B" }, "field": "id" }, "as": "cited_id" },
+    { "select": { "from": "extraction", "pointer": "/structuredContent/evidence", "where": { "text_contains": "A causes B" } }, "as": "cited" },
+    { "select": { "from": "extraction", "pointer": "/structuredContent/evidence", "where": { "text_contains": "A causes B" }, "field": "source_hash" }, "as": "cited_source_hash" },
+    { "select": { "from": "extraction", "pointer": "/structuredContent/evidence", "where": { "text_contains": "A causes B" }, "field": "origin" }, "as": "cited_origin" },
+    { "select": { "from": "extraction", "pointer": "/structuredContent/evidence", "where": { "text_contains": "A causes B" }, "field": "physical_page_index" }, "as": "cited_page" },
+    { "select": { "from": "extraction", "pointer": "/structuredContent/evidence", "where": { "text_contains": "A causes B" }, "field": "region" }, "as": "cited_region" },
+    { "select": { "from": "extraction", "pointer": "/structuredContent/evidence", "where": { "text_contains": "A causes B" }, "field": "pdf_geometry" }, "as": "cited_geometry" },
+    { "select": { "from": "extraction", "pointer": "/structuredContent/evidence", "where": { "text_contains": "A causes B" }, "field": "text" }, "as": "cited_text" },
+    { "id": "diagram", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "put_evidence", "evidence": "$cited" },
+          { "op": "add_panel", "index": 1, "panel": {
+              "id": "panel-b", "bounds": { "x": 0, "y": 2520000, "width": 3240000, "height": 1800000 }, "label": "B",
+              "style": { "font_family": "Pretendard", "font_size": 101600, "color": "#20252D", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" },
+              "body": { "type": "diagram", "value": {
+                "nodes": [
+                  { "id": "A", "kind": "rectangle", "bounds": { "x": 216000, "y": 648000, "width": 720000, "height": 504000 }, "text": "A", "style": { "font_family": "Pretendard", "font_size": 101600, "color": "#20252D", "fill": "#EAF1F8", "stroke": "#1F4E79", "stroke_width": 12700, "bold": false, "italic": false, "align": "center" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} },
+                  { "id": "B", "kind": "rectangle", "bounds": { "x": 2016000, "y": 648000, "width": 720000, "height": 504000 }, "text": "B", "style": { "font_family": "Pretendard", "font_size": 101600, "color": "#20252D", "fill": "#EAF1F8", "stroke": "#1F4E79", "stroke_width": 12700, "bold": false, "italic": false, "align": "center" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} }
+                ],
+                "edges": [ { "id": "e1", "from": "A", "to": "B", "label": "causes", "evidence_ids": ["$cited_id"], "origin": "paper_evidence", "style": { "font_family": "Pretendard", "font_size": 101600, "color": "#000000", "fill": "#222222", "stroke": "#222222", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" } } ],
+                "evidence_ids": { "A": ["$cited_id"], "B": ["$cited_id"] },
+                "node_origins": { "A": "paper_evidence", "B": "paper_evidence" }
+              } }
+            } },
+          { "op": "set_caption", "caption": "Measured ratios and the cited mechanism" }
+        ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "review_cited", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "put_evidence", "evidence": {
+              "id": "$cited_id", "source_hash": "$cited_source_hash", "origin": "$cited_origin", "physical_page_index": "$cited_page",
+              "region": "$cited_region", "pdf_geometry": "$cited_geometry", "text": "$cited_text", "review_state": "reviewed"
+            } }
+        ]
+      }, "expect": { "is_error": true, "code": "CONTENT_LOCKED", "diagnostic": "REVIEW_USER_ONLY" } },
+    { "id": "user_review", "role": "gui", "method": "changes.apply", "arguments": {
+        "request_id": "$request_id", "actor": "gui", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "put_evidence", "evidence": {
+              "id": "$cited_id", "source_hash": "$cited_source_hash", "origin": "$cited_origin", "physical_page_index": "$cited_page",
+              "region": "$cited_region", "pdf_geometry": "$cited_geometry", "text": "$cited_text", "review_state": "reviewed"
+            } }
+        ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "final", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "final" },
+    { "id": "export_png", "tool": "artifact_export", "arguments": {
+        "request_id": "$request_id", "options": { "artifact_id": "$artifact", "expected_revision": "$revision", "format": "png", "required_editability": "none", "allowed_losses": [], "profile": { "dpi": 96, "transparent": false }, "page_indices": [0] },
+        "target_path": "$scratch/figure.png", "overwrite": false, "expected_target_hash": null
+      } },
+    { "id": "save_project", "tool": "artifact_save", "arguments": {
+        "request_id": "$request_id", "artifact_id": "$artifact", "expected_revision": "$revision",
+        "target_path": "$scratch/figure.figureproject", "overwrite": false, "expected_target_hash": null
+      } }
+  ],
+  "checks": [
+    { "check": "inspect", "pointer": "/structuredContent/body/document/panels", "length": 2 },
+    { "check": "inspect", "pointer": "/structuredContent/body/document/evidence", "length": 1 },
+    { "check": "inspect", "pointer": "/structuredContent/body/document/evidence/0/review_state", "equals": "reviewed" },
+    { "check": "render", "page": 0 },
+    { "check": "file", "path": "$scratch/figure.png", "magic_hex": "89504E47" },
+    { "check": "file", "path": "$scratch/figure.figureproject", "text_contains": "designllm.figure-project" }
+  ]
+}

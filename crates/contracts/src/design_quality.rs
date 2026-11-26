@@ -21,6 +21,50 @@ pub const TEXT_EXTRA_LABEL: &str = "TEXT_EXTRA_LABEL";
 pub const TITLE_LINE_BREAKS: &str = "TITLE_LINE_BREAKS";
 /// Slides only: the last page's text is nothing but a closing line.
 pub const SLIDE_PLAIN_CLOSING: &str = "SLIDE_PLAIN_CLOSING";
+/// A fill or text colour is a stock framework or assistant default (Tailwind, Bootstrap, Material, assistant brand colours),
+/// or a sizeable shape is filled with dark navy: the colours generated designs fall back to when no palette was chosen.
+pub const COLOR_STOCK_DEFAULT: &str = "COLOR_STOCK_DEFAULT";
+
+/// Stock colours generated designs reach for without a chosen palette: Tailwind's blue, indigo, violet, purple, emerald, green,
+/// teal, sky, red and rose accents with their 100-step tints (the 50-step tints sit too close to neutral off-whites to tell apart), Bootstrap's and Material's primaries, and assistant brand
+/// colours. A colour within `STOCK_DISTANCE` of one of them counts as that colour.
+pub const STOCK_COLORS: &[(&str, &str)] = &[
+    ("#3B82F6", "Tailwind blue-500"), ("#2563EB", "Tailwind blue-600"), ("#1D4ED8", "Tailwind blue-700"), ("#1E40AF", "Tailwind blue-800"),
+    ("#1E3A8A", "Tailwind blue-900"), ("#60A5FA", "Tailwind blue-400"), ("#DBEAFE", "Tailwind blue-100"),
+    ("#6366F1", "Tailwind indigo-500"), ("#4F46E5", "Tailwind indigo-600"), ("#4338CA", "Tailwind indigo-700"), ("#312E81", "Tailwind indigo-900"),
+    ("#E0E7FF", "Tailwind indigo-100"),
+    ("#8B5CF6", "Tailwind violet-500"), ("#7C3AED", "Tailwind violet-600"), ("#A855F7", "Tailwind purple-500"), ("#9333EA", "Tailwind purple-600"),
+    ("#10B981", "Tailwind emerald-500"), ("#059669", "Tailwind emerald-600"), ("#D1FAE5", "Tailwind emerald-100"),
+    ("#22C55E", "Tailwind green-500"), ("#16A34A", "Tailwind green-600"), ("#14B8A6", "Tailwind teal-500"), ("#0EA5E9", "Tailwind sky-500"),
+    ("#EF4444", "Tailwind red-500"), ("#DC2626", "Tailwind red-600"), ("#F43F5E", "Tailwind rose-500"),
+    ("#0D6EFD", "Bootstrap primary"), ("#198754", "Bootstrap success"), ("#DC3545", "Bootstrap danger"), ("#6F42C1", "Bootstrap purple"),
+    ("#1A73E8", "Google blue"), ("#4285F4", "Google blue"), ("#34A853", "Google green"), ("#EA4335", "Google red"),
+    ("#6200EE", "Material purple"), ("#3F51B5", "Material indigo"), ("#2196F3", "Material blue"), ("#4CAF50", "Material green"),
+    ("#F44336", "Material red"), ("#10A37F", "ChatGPT green"), ("#D97757", "Claude orange"), ("#CC785C", "Claude orange"),
+    ("#9B72CB", "Gemini violet"),
+];
+/// Largest RGB distance (Euclidean, 0..=441) at which a colour counts as a stock colour.
+const STOCK_DISTANCE: f64 = 12.0;
+/// Dark navy: blue hues, low lightness, clearly saturated (Tailwind slate-900 #0F172A, #1E293B and their kin).
+const NAVY_HUE_MIN: f64 = 205.0;
+const NAVY_HUE_MAX: f64 = 250.0;
+const NAVY_LIGHTNESS_MAX: f64 = 0.32;
+const NAVY_SATURATION_MIN: f64 = 0.25;
+/// And a visible tint: the channels differ by at least this (0..=1). #000001 is black to the eye, though its HSL saturation is 1.
+const NAVY_CHROMA_MIN: f64 = 0.05;
+/// A navy fill counts from this share of its page: a dot or a thin rule is not a navy surface.
+const NAVY_SHARE: f64 = 0.01;
+/// A coloured bar along the top or left edge of a box (the blog-callout stripe of generated designs).
+pub const ACCENT_BAR: &str = "ACCENT_BAR";
+/// An accent bar is at most this thick (EMU, 8 CSS px) and at least this many times as long as it is thick.
+const ACCENT_BAR_MAX: i64 = 8 * EMU_PER_CSS_PX;
+const ACCENT_BAR_RATIO: i64 = 4;
+/// A line draws a bar from this stroke width (EMU, 3 CSS px).
+const ACCENT_LINE_MIN: i64 = 3 * EMU_PER_CSS_PX;
+/// Edges this close (EMU, 2 CSS px) touch.
+const ACCENT_BAR_SLACK: i64 = 2 * EMU_PER_CSS_PX;
+/// A bar's colour is chromatic from this chroma (0..=1): grey rules and black underlines are not accent bars.
+const ACCENT_CHROMA_MIN: f64 = 0.15;
 
 /// A shadow is heavy from 32 CSS px of blur (EMU) at 0.25 opacity or more.
 const HEAVY_BLUR: i64 = 32 * EMU_PER_CSS_PX;
@@ -133,7 +177,59 @@ fn node_warnings(node: &Node, page: &Page, frames: &BTreeMap<String, Rect>, abov
     if matches!(node.kind, NodeKind::Rectangle | NodeKind::Ellipse) && heavy_shadow(&node.style) {
         out.push(warning(SHADOW_HEAVY, &node.id, format!("the shadow on {} blurs at least 32 px and is at least 0.25 opaque", node.id)));
     }
+    if let Some(message) = stock_color_message(node, page, frames) {
+        out.push(warning(COLOR_STOCK_DEFAULT, &node.id, message));
+    }
     out
+}
+
+/// The stock colour `color` is (within `STOCK_DISTANCE`), by its name.
+pub fn stock_color(color: &str) -> Option<&'static str> {
+    let (r, g, b, _) = rgba(color)?;
+    STOCK_COLORS.iter().find_map(|(stock, name)| {
+        let (sr, sg, sb, _) = rgba(stock)?;
+        let distance = [(r, sr), (g, sg), (b, sb)].iter().map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2)).sum::<f64>().sqrt();
+        (distance <= STOCK_DISTANCE).then_some(*name)
+    })
+}
+
+/// Whether `color` is dark navy (blue hue, lightness at most 0.32, saturation at least 0.25).
+pub fn navy(color: &str) -> bool {
+    let Some((r, g, b, _)) = rgba(color) else { return false };
+    let Some((hue, chroma)) = hue_and_chroma(color) else { return false };
+    if chroma < NAVY_CHROMA_MIN { return false; }
+    let max = f64::from(r.max(g).max(b)) / 255.0;
+    let min = f64::from(r.min(g).min(b)) / 255.0;
+    let lightness = (max + min) / 2.0;
+    if lightness == 0.0 { return false; }
+    let saturation = (max - min) / (1.0 - (2.0 * lightness - 1.0).abs());
+    (NAVY_HUE_MIN..=NAVY_HUE_MAX).contains(&hue) && lightness <= NAVY_LIGHTNESS_MAX && saturation >= NAVY_SATURATION_MIN
+}
+
+/// Whether a colour paints at least half opaque on this node.
+fn visible_color(color: &str, style: &Style) -> bool {
+    rgba(color).is_some_and(|(_, _, _, alpha)| u32::from(alpha) * style.opacity_milli.unwrap_or(1000).min(1000) >= 255 * 500)
+}
+
+/// COLOR_STOCK_DEFAULT: a visible solid shape fill or a text colour that is a stock colour, or a shape of at least
+/// `NAVY_SHARE` of the page filled with dark navy. Gradients are left to FILL_STOCK_GRADIENT.
+fn stock_color_message(node: &Node, page: &Page, frames: &BTreeMap<String, Rect>) -> Option<String> {
+    let shape = matches!(node.kind, NodeKind::Rectangle | NodeKind::Ellipse | NodeKind::Path);
+    if shape && node.style.gradient.is_none() && visible_color(&node.style.fill, &node.style) {
+        if let Some(name) = stock_color(&node.style.fill) {
+            return Some(format!("{} is filled with {} ({name}), a stock default colour; choose a palette of your own", node.id, node.style.fill));
+        }
+        let sizeable = frames.get(&node.id).is_some_and(|frame| covers_share(*frame, page, NAVY_SHARE));
+        if sizeable && navy(&node.style.fill) {
+            return Some(format!("{} is filled with dark navy {}, the default dark surface of generated designs; use a neutral near-black or a palette colour", node.id, node.style.fill));
+        }
+    }
+    if live_text(node) && visible_color(&node.style.color, &node.style) {
+        if let Some(name) = stock_color(&node.style.color) {
+            return Some(format!("text {} uses {} ({name}), a stock default colour; choose a palette of your own", node.id, node.style.color));
+        }
+    }
+    None
 }
 
 fn page_warnings(nodes: &[&Node], frames: &BTreeMap<String, Rect>) -> Vec<Diagnostic> {
@@ -173,6 +269,13 @@ fn page_warnings(nodes: &[&Node], frames: &BTreeMap<String, Rect>) -> Vec<Diagno
         out.push(warning(LAYOUT_REPEATED_CARDS, &card.id, format!("a row of identical shadowed cards starts at {}", card.id)));
     }
 
+    for (bar, card, edge) in accent_bars(nodes, frames) {
+        out.push(warning(ACCENT_BAR, &bar.id, format!(
+            "{} is a coloured bar along the {edge} edge of {}, the blog-callout look of generated designs; remove it and show emphasis with size, weight or position",
+            bar.id, card.id
+        )));
+    }
+
     let text_nodes: Vec<&Node> = texts.iter().copied().filter(|node| node.kind == NodeKind::Text).collect();
     if text_nodes.len() >= CENTRED_TEXTS && text_nodes.iter().all(|node| node.style.align == "center") && text_nodes.iter().any(|node| is_body(&node.text)) {
         out.push(
@@ -186,6 +289,105 @@ fn page_warnings(nodes: &[&Node], frames: &BTreeMap<String, Rect>) -> Vec<Diagno
         out.push(warning(TEXT_SIZE_SPREAD, &text_nodes[0].id, format!("this page uses {} text sizes", sizes.len())).with_param("count", sizes.len()));
     }
     out
+}
+
+/// ACCENT_BAR: a thin coloured rectangle (or a thick line) lying along the top or left edge of a larger filled or outlined
+/// rectangle, inside it or touching it from outside, and covering at least half of that edge: the coloured stripe of a
+/// blog callout. Each bar is reported once, against the first box it marks.
+fn accent_bars<'a>(nodes: &[&'a Node], frames: &BTreeMap<String, Rect>) -> Vec<(&'a Node, &'a Node, &'static str)> {
+    let frame = |node: &Node| frames.get(&node.id).copied().filter(|frame| frame.width >= 0 && frame.height >= 0);
+    let mut out = Vec::new();
+    for (bar_index, bar) in nodes.iter().copied().enumerate() {
+        let Some(f) = frame(bar) else { continue };
+        // `b` is what the bar paints: a rectangle's frame, or a line's stroke band centred on the line.
+        let (thickness, length, horizontal, b) = match bar.kind {
+            NodeKind::Rectangle if bar.children.is_empty() && bar.style.gradient.is_none() && accent_colour(&bar.style.fill, &bar.style) => {
+                (f.width.min(f.height), f.width.max(f.height), f.width >= f.height, f)
+            }
+            NodeKind::Line if bar.style.stroke_width >= ACCENT_LINE_MIN && accent_colour(&bar.style.stroke, &bar.style) && (f.width == 0 || f.height == 0) => {
+                let sw = bar.style.stroke_width;
+                let horizontal = f.height == 0;
+                let band = if horizontal {
+                    Rect { x: f.x, y: f.y - sw / 2, width: f.width, height: sw }
+                } else {
+                    Rect { x: f.x - sw / 2, y: f.y, width: sw, height: f.height }
+                };
+                (sw, f.width.max(f.height), horizontal, band)
+            }
+            _ => continue,
+        };
+        if thickness <= 0 || thickness > ACCENT_BAR_MAX || length < thickness * ACCENT_BAR_RATIO {
+            continue;
+        }
+        // A bar that any opaque rectangle drawn after it covers completely is not seen. Opaque: a solid fill, or a gradient whose
+        // every stop is, at full opacity. A rounded cover shows its corners, so the bar must stay clear of them.
+        let opaque = |colour: &str| rgba(colour).is_some_and(|(_, _, _, alpha)| alpha == 255);
+        // What must be covered: the bar with its own visible outline (a rectangle's stroke straddles its edge).
+        let outline = if bar.kind == NodeKind::Rectangle && bar.style.stroke_width > 0 && visible_color(&bar.style.stroke, &bar.style) { bar.style.stroke_width / 2 } else { 0 };
+        let seen = Rect { x: b.x - outline, y: b.y - outline, width: b.width + 2 * outline, height: b.height + 2 * outline };
+        let hidden = nodes.iter().copied().enumerate().skip(bar_index + 1).any(|(_, cover)| {
+            let paint = match &cover.style.gradient {
+                Some(gradient) => !gradient.stops.is_empty() && gradient.stops.iter().all(|stop| opaque(&stop.color)),
+                None => opaque(&cover.style.fill),
+            };
+            let r = cover.style.corner_radius.unwrap_or(0).max(0);
+            // An opaque solid outline paints half its width outside the cover too (a dashed one leaves gaps).
+            let solid = cover.style.stroke_dash.as_ref().is_none_or(|dash| *dash == crate::StrokeDash::Solid);
+            let o = if cover.style.stroke_width > 0 && solid && opaque(&cover.style.stroke) { cover.style.stroke_width / 2 } else { 0 };
+            cover.kind == NodeKind::Rectangle
+                && paint
+                && cover.style.opacity_milli.unwrap_or(1000) >= 1000
+                && frame(cover).is_some_and(|c| {
+                    // Inside the painted rounded rectangle: it is convex, so the bar is inside when its four corners are. A point is
+                    // inside when it lies within r + o of the rectangle shrunk by r (the radius is capped at half the shorter side;
+                    // o is the outline outside the edge).
+                    let r = r.min(c.width / 2).min(c.height / 2);
+                    let (x0, y0, x1, y1) = (c.x + r, c.y + r, c.x + c.width - r, c.y + c.height - r);
+                    let painted = |x: i64, y: i64| {
+                        let (dx, dy) = (x - x.clamp(x0, x1), y - y.clamp(y0, y1));
+                        i128::from(dx) * i128::from(dx) + i128::from(dy) * i128::from(dy) <= i128::from(r + o) * i128::from(r + o)
+                    };
+                    let (sx1, sy1) = (seen.x + seen.width, seen.y + seen.height);
+                    if r == 0 {
+                        // Square corners: the outline's outer edge is the rectangle grown by o (mitred corners).
+                        return seen.x >= c.x - o && seen.y >= c.y - o && sx1 <= c.x + c.width + o && sy1 <= c.y + c.height + o;
+                    }
+                    painted(seen.x, seen.y) && painted(sx1, seen.y) && painted(seen.x, sy1) && painted(sx1, sy1)
+                })
+        });
+        if hidden {
+            continue;
+        }
+        let marked = nodes.iter().copied().enumerate().filter(|(index, card)| *index != bar_index && card.kind == NodeKind::Rectangle).find_map(|(_, card)| {
+            let c = frame(card)?;
+            let boxed = visible_color(&card.style.fill, &card.style) || (card.style.stroke_width > 0 && visible_color(&card.style.stroke, &card.style));
+            if !boxed {
+                return None;
+            }
+            // The painted band reaches the edge: it lies on it, just inside it or just outside it, or straddles it.
+            let touches = |start: i64, size: i64, edge: i64| start - ACCENT_BAR_SLACK <= edge && edge <= start + size + ACCENT_BAR_SLACK;
+            if horizontal {
+                // Along the top edge.
+                let on_top = touches(b.y, b.height, c.y);
+                let spans = b.x >= c.x - ACCENT_BAR_SLACK && b.x + b.width <= c.x + c.width + ACCENT_BAR_SLACK && b.width * 2 >= c.width;
+                (on_top && spans && c.height > thickness * 3).then_some((card, "top"))
+            } else {
+                // Along the left edge.
+                let on_left = touches(b.x, b.width, c.x);
+                let spans = b.y >= c.y - ACCENT_BAR_SLACK && b.y + b.height <= c.y + c.height + ACCENT_BAR_SLACK && b.height * 2 >= c.height;
+                (on_left && spans && c.width > thickness * 3).then_some((card, "left"))
+            }
+        });
+        if let Some((card, edge)) = marked {
+            out.push((bar, card, edge));
+        }
+    }
+    out
+}
+
+/// A colour that marks rather than divides: visible and clearly chromatic (a grey hairline between sections is not a bar).
+fn accent_colour(color: &str, style: &Style) -> bool {
+    visible_color(color, style) && hue_and_chroma(color).is_some_and(|(_, chroma)| chroma >= ACCENT_CHROMA_MIN)
 }
 
 /// SLIDE_PLAIN_CLOSING: the last page has text, and all of it is a closing line.
@@ -1048,5 +1250,86 @@ mod tests {
         }
         let found = deck_quality_warnings(&pages(cards));
         assert_eq!(found.iter().map(|d| d.code.as_str()).collect::<Vec<_>>(), [LAYOUT_REPEATED_CARDS]);
+    }
+
+    #[test]
+    fn stock_default_colours_and_navy_surfaces_are_reported_once_per_node() {
+        let frames = BTreeMap::from([("card".into(), rect(0, 0, 400, 300)), ("dot".into(), rect(0, 0, 12, 12))]);
+        let fill = |id: &str, color: &str| node(id, NodeKind::Rectangle, "", Style { fill: color.into(), ..Style::default() });
+        let has = |nodes: Vec<Node>| codes(&pages(nodes), &frames).iter().filter(|code| *code == COLOR_STOCK_DEFAULT).count();
+        for stock in ["#2563EB", "#2664EA", "#4F46E5", "#10B981", "#EF4444", "#1A73E8", "#10A37F", "#DBEAFE"] {
+            assert_eq!(has(vec![fill("card", stock)]), 1, "{stock} is a stock colour");
+        }
+        for navy_fill in ["#0F172A", "#1E293B", "#172033"] {
+            assert_eq!(has(vec![fill("card", navy_fill)]), 1, "{navy_fill} is a navy surface");
+            assert_eq!(has(vec![fill("dot", navy_fill)]), 0, "a 12 px navy dot is no surface");
+        }
+        for own in ["#FFFFFF", "#18181B", "#2B2B2B", "#B4532A", "#E8E4DA", "#5B6B4E", "#2E5E7E00"] {
+            assert_eq!(has(vec![fill("card", own)]), 0, "{own} is not a stock colour");
+        }
+        let faded = node("card", NodeKind::Rectangle, "", Style { fill: "#2563EB".into(), opacity_milli: Some(300), ..Style::default() });
+        assert_eq!(has(vec![faded]), 0, "a faint fill does not count");
+        let label = node("label", NodeKind::Text, "Sign in", Style { color: "#2563EB".into(), ..Style::default() });
+        assert_eq!(has(vec![label]), 1, "stock text colour");
+        let ink = node("label", NodeKind::Text, "Sign in", Style { color: "#0F172A".into(), ..Style::default() });
+        assert_eq!(has(vec![ink]), 0, "navy is judged on surfaces, not on text");
+        let both = node("card", NodeKind::Rectangle, "Go", Style { fill: "#2563EB".into(), color: "#EF4444".into(), ..Style::default() });
+        assert_eq!(has(vec![both]), 1, "one warning per node");
+        assert_eq!(has(vec![node("card", NodeKind::Rectangle, "", purple("#2563EB", "#1E3A8A"))]), 0, "gradients are FILL_STOCK_GRADIENT's");
+        assert_eq!(stock_color("#2563EB"), Some("Tailwind blue-600"));
+        assert!(navy("#0F172A") && !navy("#000000") && !navy("#000001") && !navy("#18181B") && !navy("#2E5E7E"));
+    }
+
+    #[test]
+    fn a_coloured_bar_along_the_top_or_left_edge_of_a_box_is_an_accent_bar_and_rules_and_progress_bars_are_not() {
+        let filled = |id: &str, fill: &str| node(id, NodeKind::Rectangle, "", Style { fill: fill.into(), ..Style::default() });
+        let card = || filled("card", "#FFFFFF");
+        let bar = || filled("bar", "#B4532A");
+        let found = |nodes: Vec<Node>, frames: Vec<(&str, Rect)>| {
+            let frames: BTreeMap<String, Rect> = frames.into_iter().map(|(id, r)| (id.to_owned(), r)).collect();
+            codes(&pages(nodes), &frames).iter().filter(|code| *code == ACCENT_BAR).count()
+        };
+        // A 4 px stripe inside the top edge, across the card, and one against the left edge.
+        assert_eq!(found(vec![card(), bar()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 4))]), 1, "top stripe");
+        assert_eq!(found(vec![card(), bar()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(96, 100, 4, 240))]), 1, "left stripe outside");
+        let thick = node("bar", NodeKind::Line, "", Style { stroke: "#2F5D62".into(), stroke_width: px(4), ..Style::default() });
+        assert_eq!(found(vec![card(), thick], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(102, 100, 0, 240))]), 1, "a thick coloured line");
+        // Not bars: a grey rule, a short tick, a stripe away from any box, a progress bar in its track, a coloured block.
+        assert_eq!(found(vec![card(), filled("bar", "#BDBDBD")], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 2))]), 0, "grey rule");
+        assert_eq!(found(vec![card(), bar()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 40, 4))]), 0, "short tick");
+        assert_eq!(found(vec![card(), bar()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 400, 400, 4))]), 0, "away from the box");
+        assert_eq!(found(vec![filled("card", "#EEEEEE"), bar()], vec![("card", rect(100, 100, 400, 6)), ("bar", rect(100, 100, 200, 6))]), 0, "progress bar");
+        assert_eq!(found(vec![card(), bar()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 40))]), 0, "a header block is no stripe");
+        // Paint order: a stripe drawn before an opaque card that covers it is hidden; one beside the card still shows.
+        assert_eq!(found(vec![bar(), card()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 4))]), 0, "covered by the card");
+        assert_eq!(found(vec![bar(), card()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(96, 100, 4, 240))]), 1, "beside the card, drawn first");
+        assert_eq!(found(vec![bar(), filled("card", "#FFFFFF80")], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 4))]), 1, "a see-through card does not hide it");
+        // A line's stroke counts: an 8 px line centred 4 px left of the card paints right up to its edge.
+        let wide = node("bar", NodeKind::Line, "", Style { stroke: "#2F5D62".into(), stroke_width: px(8), ..Style::default() });
+        assert_eq!(found(vec![card(), wide], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(96, 100, 0, 240))]), 1, "stroke band touches the edge");
+        // Card A, the stripe, then an opaque card B over both: hidden, whichever card the search meets first.
+        let cover = || filled("cover", "#FFFFFF");
+        assert_eq!(found(vec![card(), bar(), cover()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 4)), ("cover", rect(90, 90, 420, 260))]), 0, "covered by a later card");
+        // An 8 px line centred on the top edge straddles it.
+        let straddle = node("bar", NodeKind::Line, "", Style { stroke: "#2F5D62".into(), stroke_width: px(8), ..Style::default() });
+        assert_eq!(found(vec![card(), straddle], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 0))]), 1, "a stroke centred on the edge");
+        // A stripe 3 px inside the edge is not on it.
+        assert_eq!(found(vec![card(), bar()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 103, 400, 4))]), 0, "inside, off the edge");
+        // An opaque gradient cover hides the stripe; a rounded cover whose corner the stripe reaches does not.
+        let stops = vec![crate::GradientStop { pos_milli: 0, color: "#FFFFFF".into() }, crate::GradientStop { pos_milli: 1000, color: "#F2EFE9".into() }];
+        let graded = node("cover", NodeKind::Rectangle, "", Style { gradient: Some(crate::Gradient { angle_millideg: 0, stops }), ..Style::default() });
+        assert_eq!(found(vec![card(), bar(), graded], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 4)), ("cover", rect(90, 90, 420, 260))]), 0, "opaque gradient cover");
+        let rounded = node("cover", NodeKind::Rectangle, "", Style { fill: "#FFFFFF".into(), corner_radius: Some(px(16)), ..Style::default() });
+        // The stripe's corners lie within the cover's 16 px arcs (8.5 px from their centres): hidden.
+        assert_eq!(found(vec![card(), bar(), rounded], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 4)), ("cover", rect(90, 90, 420, 260))]), 0, "within the rounded corners");
+        // A cover whose rounded corner starts where the stripe does leaves the stripe's corner showing.
+        let rounded = node("cover", NodeKind::Rectangle, "", Style { fill: "#FFFFFF".into(), corner_radius: Some(px(16)), ..Style::default() });
+        assert_eq!(found(vec![card(), bar(), rounded], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 4)), ("cover", rect(100, 100, 400, 260))]), 1, "seen through a rounded corner");
+        // A cover over the stripe's fill leaves its 4 px outline showing 2 px above the cover.
+        let outlined = node("bar", NodeKind::Rectangle, "", Style { fill: "#B4532A".into(), stroke: "#B4532A".into(), stroke_width: px(4), ..Style::default() });
+        assert_eq!(found(vec![card(), outlined, cover()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 100, 400, 4)), ("cover", rect(100, 100, 400, 260))]), 1, "the outline shows above the cover");
+        // A stripe along the straight part of a rounded cover's top edge is hidden.
+        let rounded = node("cover", NodeKind::Rectangle, "", Style { fill: "#FFFFFF".into(), corner_radius: Some(px(16)), ..Style::default() });
+        assert_eq!(found(vec![card(), bar(), rounded], vec![("card", rect(120, 100, 240, 240)), ("bar", rect(120, 100, 240, 4)), ("cover", rect(100, 100, 280, 260))]), 0, "under the straight part of a rounded cover");
     }
 }

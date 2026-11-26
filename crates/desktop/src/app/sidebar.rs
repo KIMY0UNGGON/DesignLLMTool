@@ -100,7 +100,7 @@ pub(super) fn node_label(node: &Node) -> String {
     if !node.text.trim().is_empty() {
         return node.text.trim().to_owned();
     }
-    match node.kind {
+    let kind = match node.kind {
         NodeKind::Text => "텍스트",
         // A painted container is a frame in the layers and the panel (§9.1).
         NodeKind::Rectangle if !node.children.is_empty() || node.layout.is_some() => "프레임",
@@ -111,8 +111,10 @@ pub(super) fn node_label(node: &Node) -> String {
         NodeKind::Video => "동영상",
         NodeKind::Group => "그룹",
         NodeKind::Path => "경로",
-    }
-    .to_owned()
+    };
+    // A kind name is the window's word, so it is shown (and searched) in the window's language; a name or text the person
+    // wrote is kept as written.
+    crate::i18n::tr(kind).into_owned()
 }
 
 fn push_nodes(rows: &mut Vec<LayerRow>, nodes: &[Node], depth: usize, owner_page: u32) {
@@ -548,6 +550,7 @@ impl DesktopApp {
             .unwrap_or_else(|| self.total_pages.max(page_index.saturating_add(1)));
         self.known_sizes.insert(page_index, page_size);
         self.total_pages = total_pages;
+        self.remember_page_count(&snapshot);
         self.flow_find_cached_page = Some((request.artifact_id.clone(), request.revision, page.clone()));
         if let Some(search) = self.flow_find.as_mut() {
             for hit in &mut search.matches {
@@ -711,9 +714,11 @@ impl DesktopApp {
         let selected = self.selected_nodes.clone();
         let page_index = self.view_ref().page_index;
         let layer_state_supported = self.active.as_ref().is_some_and(|item| item.kind == ArtifactKind::Canvas);
-        // A WebCode project's rows are its files: a file has no name to change (the web engine refuses SetNodeInfo), so a
-        // double click opens no rename field.
-        let web_files = self.artifact.as_ref().is_some_and(|artifact| matches!(artifact.body, ArtifactBody::WebCode(_)));
+        // Only the canvas engine renames a node or a page (SetNodeInfo, RenamePage) and moves a layer (SetZOrder): every other
+        // engine refuses them (the slides, figure, flow, HWPX and web guards), so elsewhere a double click opens no rename
+        // field and a row does not drag.
+        let rename_supported = self.command_enabled_for_current_kind("edit.rename");
+        let layer_drag_supported = self.command_enabled_for_current_kind("layer.move");
         let page_scope = self.artifact.as_ref().and_then(|artifact| {
             matches!(&artifact.body, ArtifactBody::Canvas(_) | ArtifactBody::Slides(_)).then_some(page_index)
         });
@@ -763,7 +768,7 @@ impl DesktopApp {
             placed.push(rect);
             if let Some(test) = self.ui_test.as_mut() { test.note_layer_row(row.node_id.as_deref(), row.page_index.or(row.owner_page), &row.label, rect, ui.clip_rect()); }
             if response.drag_started_by(egui::PointerButton::Primary) {
-                if row.depth == 1 {
+                if row.depth == 1 && layer_drag_supported {
                     if let Some(id) = &row.node_id {
                         let grabbed = LayerDrag { node_id: id.clone(), page: row_page };
                         ui.data_mut(|data| data.insert_temp(drag_id, grabbed));
@@ -829,7 +834,7 @@ impl DesktopApp {
                 let sense = if row.locked { Sense::hover() } else { Sense::click() };
                 let state = ui
                     .interact(state_rect, ui.id().with(("layer-hidden", key.as_str())), sense)
-                    .on_hover_text(if row.locked { "숨김" } else { "표시" });
+                    .on_hover_text(crate::i18n::tr(&if row.locked { "숨김" } else { "표시" }));
                 icons::paint(ui, state_rect, "eye-off", palette.ink_2);
                 if state.clicked() {
                     if let Some(id) = &row.node_id {
@@ -845,7 +850,7 @@ impl DesktopApp {
                 let state_rect = Rect::from_min_size(Pos2::new(state_right, rect.center().y - 8.0), Vec2::splat(16.0));
                 let state = ui
                     .interact(state_rect, ui.id().with(("layer-locked", key.as_str())), Sense::click())
-                    .on_hover_text("잠금 해제");
+                    .on_hover_text(crate::i18n::tr("잠금 해제"));
                 icons::paint(ui, state_rect, "lock", palette.ink_2);
                 if state.clicked() {
                     if let Some(id) = &row.node_id {
@@ -887,7 +892,7 @@ impl DesktopApp {
             if double_clicked {
                 if let Some(section_id) = row.section_id.as_deref() {
                     self.open_page_section_editor(section_id);
-                } else if !renaming && !web_files {
+                } else if !renaming && rename_supported {
                     self.layer_rename = Some(LayerRename { key: key.clone(), text: row.label.clone() });
                 }
             }
@@ -989,7 +994,7 @@ impl DesktopApp {
         }
         ui.data_mut(|data| data.insert_temp(open_id, overrides));
         if searching && rows.is_empty() && !flow_search_waiting {
-            ui.label("일치하는 레이어가 없습니다");
+            ui.label(crate::i18n::tr("일치하는 레이어가 없습니다"));
         }
         self.draw_web_mappings(ui, palette);
         // The add row: 4 below the tree, in the page icon's column, `ink-2` (tokens `layer-row.add-row`).
@@ -1006,7 +1011,7 @@ impl DesktopApp {
             }
             let icon_rect = Rect::from_min_size(Pos2::new(rect.left() + 2.0 + 16.0 + 4.0, rect.center().y - 8.0), Vec2::splat(16.0));
             icons::paint(ui, icon_rect, icon, palette.ink_2);
-            ui.painter().text(Pos2::new(icon_rect.right() + 4.0, rect.center().y), Align2::LEFT_CENTER, label, theme::font(theme::Type::Body), palette.ink_2);
+            ui.painter().text(Pos2::new(icon_rect.right() + 4.0, rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&label), theme::font(theme::Type::Body), palette.ink_2);
             if response.clicked() {
                 self.invoke_ui(command, json!({}));
             }
@@ -1346,14 +1351,14 @@ impl DesktopApp {
                 let (name, suffix) = agent_actor_parts(&actor);
                 let font = theme::display_font(false, 12.0);
                 let room = ui.available_width() - theme::ICON_BUTTON - ui.spacing().item_spacing.x;
-                let suffix_width = if suffix.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(suffix.clone(), font.clone(), palette.ink_3).size().x };
+                let suffix_width = if suffix.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(crate::i18n::tr(&suffix).into_owned(), font.clone(), palette.ink_3).size().x };
                 ui.scope(|ui| {
                     ui.set_max_width((room - suffix_width).max(0.0));
-                    let text = egui::RichText::new(name).font(font.clone()).color(palette.ink_3);
-                    ui.add(egui::Label::new(text).truncate().show_tooltip_when_elided(false)).on_hover_text(&actor);
+                    let text = egui::RichText::new(crate::i18n::tr(&name)).font(font.clone()).color(palette.ink_3);
+                    ui.add(egui::Label::new(text).truncate().show_tooltip_when_elided(false)).on_hover_text(crate::i18n::tr(&actor));
                 });
                 if !suffix.is_empty() {
-                    ui.add(egui::Label::new(egui::RichText::new(suffix).font(font).color(palette.ink_3)).extend());
+                    ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr(&suffix)).font(font).color(palette.ink_3)).extend());
                 }
                 if widgets::icon_button(ui, palette, "undo", "되돌리기", false).clicked() {
                     take_back = true;
@@ -1384,7 +1389,8 @@ impl DesktopApp {
                 widgets::avatar(ui, palette, agent_letter(&runtime), super::home::agent_color(palette, &runtime), state, 18.0);
                 // The request the job was started with; a job this window did not start (another client's, or one started
                 // before the window opened) shows the general label, not what the request box holds now.
-                let label = self.job_prompts.get(&job.id).map_or(JOB_LABEL, String::as_str);
+                // The request is what the person wrote, shown as written; only the general label is the window's word.
+                let label: std::borrow::Cow<str> = self.job_prompts.get(&job.id).map_or_else(|| crate::i18n::tr(JOB_LABEL), |prompt| std::borrow::Cow::Borrowed(prompt.as_str()));
                 // The runner's name keeps its width (up to half the row) and the title is cut to what is left, so a long
                 // request neither hides the name nor runs past the column.
                 let runner_font = theme::display_font(false, 12.0);
@@ -1395,7 +1401,7 @@ impl DesktopApp {
                 let title_width = ui.available_width() - runner.map_or(0.0, |(_, width)| width + ui.spacing().item_spacing.x);
                 ui.scope(|ui| {
                     ui.set_max_width(title_width.max(0.0));
-                    ui.add(egui::Label::new(egui::RichText::new(label).font(theme::display_font(false, 13.0)).color(palette.ink)).truncate());
+                    ui.add(egui::Label::new(egui::RichText::new(label.as_ref()).font(theme::display_font(false, 13.0)).color(palette.ink)).truncate());
                 });
                 if let Some((client, width)) = runner {
                     ui.scope(|ui| {
@@ -1420,7 +1426,7 @@ impl DesktopApp {
             // Why a failed job failed: its error, in the words the window uses for errors (a change outside the job's targets
             // is CONTENT_LOCKED).
             if let Some(error) = job.error.as_ref().filter(|_| matches!(job.status, JobStatus::Failed | JobStatus::Conflict)) {
-                ui.label(egui::RichText::new(super::user_error(error)).font(theme::display_font(false, 12.0)).color(palette.danger));
+                ui.label(egui::RichText::new(crate::i18n::tr(&super::user_error(error))).font(theme::display_font(false, 12.0)).color(palette.danger));
             }
             widgets::divider(ui, palette);
         }
@@ -1437,7 +1443,7 @@ impl DesktopApp {
         }
         // The scope the request carries: the whole artifact, the selected targets, or the words of the refusal that holds it.
         let scope = self.ai_scope_label();
-        ui.label(egui::RichText::new(scope).font(theme::display_font(false, 12.0)).color(palette.ink_3));
+        ui.label(egui::RichText::new(crate::i18n::tr(&scope)).font(theme::display_font(false, 12.0)).color(palette.ink_3));
         self.draw_ai_figure_refs(ui);
         self.draw_figure_ai_attachments(ui);
         ui.horizontal(|ui| {
@@ -1484,7 +1490,7 @@ impl DesktopApp {
         });
         // The reason the control is off. An empty prompt needs no reason: the field itself asks for it.
         if let Some(reason) = block.filter(|_| !self.ai_prompt.trim().is_empty()) {
-            ui.label(egui::RichText::new(reason).font(theme::display_font(false, 12.0)).color(palette.ink_3));
+            ui.label(egui::RichText::new(crate::i18n::tr(&reason)).font(theme::display_font(false, 12.0)).color(palette.ink_3));
         }
     }
 
@@ -1498,13 +1504,13 @@ impl DesktopApp {
         let mut remove = None;
         let mut additions = Vec::new();
         let selected_count = refs.len();
-        ui.collapsing(format!("그림 참조 ({selected_count})"), |ui| {
-            ui.label("선택한 Figure ID와 버전만 이 AI 작업에 승인됩니다. 파일 첨부는 별도 source입니다.");
+        ui.collapsing(crate::i18n::tr(&format!("그림 참조 ({selected_count})")), |ui| {
+            ui.label(crate::i18n::tr("선택한 Figure ID와 버전만 이 AI 작업에 승인됩니다. 파일 첨부는 별도 source입니다."));
             for (index, reference) in refs.iter().enumerate() {
                 let title = artifacts.iter().find(|summary| summary.id == reference.figure_id)
                     .map_or(reference.figure_id.as_str(), |summary| summary.title.as_str());
                 ui.horizontal(|ui| {
-                    ui.label(format!("{title} · 버전 {}", reference.figure_revision));
+                    ui.label(crate::i18n::tr(&format!("{title} · 버전 {}", reference.figure_revision)));
                     if widgets::compact_button(ui, palette, "빼기").clicked() { remove = Some(index); }
                 });
             }
@@ -1512,12 +1518,12 @@ impl DesktopApp {
                 for summary in artifacts.iter().filter(|summary| summary.kind == ArtifactKind::Figure) {
                     if refs.iter().any(|reference| reference.figure_id == summary.id && reference.figure_revision == summary.revision) { continue; }
                     let mut checked = false;
-                    if widgets::checkbox(ui, palette, &mut checked, &format!("{} · 버전 {} 승인", summary.title, summary.revision)).changed() && checked {
+                    if widgets::checkbox(ui, palette, &mut checked, &format!("{title} · 버전 {revision} 승인", title = summary.title, revision = summary.revision)).changed() && checked {
                         additions.push(FigureRevisionRef { figure_id: summary.id.clone(), figure_revision: summary.revision });
                     }
                 }
             } else {
-                ui.label("그림 참조는 한 작업에 128개까지 선택할 수 있습니다.");
+                ui.label(crate::i18n::tr("그림 참조는 한 작업에 128개까지 선택할 수 있습니다."));
             }
         });
         if let Some(index) = remove { refs.remove(index); }

@@ -1,0 +1,102 @@
+{
+  "fixture": "docx-alt-v1",
+  "request_path_normalization": {
+    "portable_display_path": "<PROJECT>/fixtures/office/basic-preserve.docx",
+    "replay_rule": "resolve the relative fixture path from the current project root and preserve the exact absolute request body when replaying this DB; do not rewrite path under the same request_id, because request receipts hash the exact params; if the root changed, regenerate the workspace",
+    "stored_request_path": "absolute path resolved from project_root() at generation time"
+  },
+  "schema": 1,
+  "source": {
+    "bytes": 4755,
+    "relative_path": "fixtures/office/basic-preserve.docx",
+    "sha256": "17fa9d8e23b504504ecd73194ddffb972432541b01a8c6ccdfabadab45437ff2"
+  },
+  "workspaces": [
+    {
+      "artifact_id": "b1cf381a-ef0d-4fff-95e8-01be892670a5",
+      "files": [
+        {
+          "path": "blobs/17fa9d8e23b504504ecd73194ddffb972432541b01a8c6ccdfabadab45437ff2",
+          "sha256": "17fa9d8e23b504504ecd73194ddffb972432541b01a8c6ccdfabadab45437ff2",
+          "size": 4755
+        },
+        {
+          "path": "blobs/a230990dec0049d50501bcbe1fb830ef9e85990eb4e3fe1cfe02c938afa25218",
+          "sha256": "a230990dec0049d50501bcbe1fb830ef9e85990eb4e3fe1cfe02c938afa25218",
+          "size": 161
+        },
+        {
+          "path": "blobs/a8262ac47e6e053e3e18a51c472435d51fc3134d425b86d0f81957554d68733e",
+          "sha256": "a8262ac47e6e053e3e18a51c472435d51fc3134d425b86d0f81957554d68733e",
+          "size": 14912
+        },
+        {
+          "path": "core.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        {
+          "path": "workspace.sqlite3",
+          "sha256": "8c9572160d17a240136ef9c8e7c3383bb54c6bc92c88ec5513dde64e364b1df3",
+          "size": 139264
+        }
+      ],
+      "native_save": false,
+      "open_request_id": "9df89db2-8b20-49c1-8907-d526d1f5cd76",
+      "path": "opened",
+      "revision": 0,
+      "state": "opened",
+      "workspace_id": "bf27a39c-367e-421e-8100-e2b4202d2e88"
+    },
+    {
+      "artifact_id": "2e786dd2-4c7e-40e1-a49e-25625ba30764",
+      "files": [
+        {
+          "path": "blobs/17fa9d8e23b504504ecd73194ddffb972432541b01a8c6ccdfabadab45437ff2",
+          "sha256": "17fa9d8e23b504504ecd73194ddffb972432541b01a8c6ccdfabadab45437ff2",
+          "size": 4755
+        },
+        {
+          "path": "blobs/8a7abc38c8c1c6e1b9617b51adee79aa86a0e3ba1e445a13fc1029b654385714",
+          "sha256": "8a7abc38c8c1c6e1b9617b51adee79aa86a0e3ba1e445a13fc1029b654385714",
+          "size": 14912
+        },
+        {
+          "path": "blobs/a230990dec0049d50501bcbe1fb830ef9e85990eb4e3fe1cfe02c938afa25218",
+          "sha256": "a230990dec0049d50501bcbe1fb830ef9e85990eb4e3fe1cfe02c938afa25218",
+          "size": 161
+        },
+        {
+          "path": "blobs/accd17ab0d0136e2e705088eecd5227eae4c6921023adf776bef4ff1f70c1892",
+          "sha256": "accd17ab0d0136e2e705088eecd5227eae4c6921023adf776bef4ff1f70c1892",
+          "size": 15278
+        },
+        {
+          "path": "core.lock",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        {
+          "path": "workspace.sqlite3",
+          "sha256": "d1a3de4cc6f0501d4eb31183a1a64a673a3bac37e30ac051447a99e102df7a48",
+          "size": 139264
+        }
+      ],
+      "native_save": false,
+      "open_request_id": "728d2618-6fca-40aa-8d1e-8538e4839683",
+      "path": "styled-unsaved",
+      "revision": 1,
+      "state": "styled-unsaved",
+      "style_change": {
+        "bold": true,
+        "paragraph_id": "4298856c-3499-4a37-b45b-25cf29826252",
+        "range": [
+          0,
+          1
+        ]
+      },
+      "style_request_id": "708e1a29-5266-4a50-86ce-a733423cc52b",
+      "workspace_id": "d0876c74-c843-4e80-8c04-49548d152cf8"
+    }
+  ]
+}

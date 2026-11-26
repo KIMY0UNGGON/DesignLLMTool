@@ -267,6 +267,7 @@ fn arguments(spec: &CommandSpec, canvas: &str) -> Value {
         "props.fill" | "props.stroke" => json!({ "color": "#1E7F4F" }),
         "props.line_height" => json!({ "value": 1.5 }),
         "add.path" => json!({ "d": "M 0 0 L 24 24", "view_box": "0 0 24 24" }),
+        "add.shape" => json!({ "shape": "cylinder" }),
         _ => Value::Object(args),
     }
 }
@@ -3064,7 +3065,7 @@ fn queued_file_export_preserves_explicit_loss_consent_target_and_actual_results(
     assert_eq!(finished["status"], "failed");
     assert_eq!(serde_json::from_value::<designllm_contracts::DltError>(finished["error"].clone()).unwrap().code, designllm_contracts::ErrorCode::ExportLossRequired);
     assert!(recorder.app.export_confirmation.is_none(), "agent loss refusal never opens the GUI confirmation dialog");
-    assert!(recorder.app.pending_export.is_none());
+    assert!(recorder.app.pending_exports.is_empty());
     assert!(!target.exists(), "a refused export writes no file");
 
     let accepted_losses = json!(allowed_loss_codes);

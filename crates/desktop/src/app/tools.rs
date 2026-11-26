@@ -101,7 +101,7 @@ pub(super) fn icon_picker(ui: &mut Ui, palette: &theme::Palette) -> Option<Strin
                         ui.painter().rect_filled(rect, egui::CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
                     }
                     crate::icons::paint(ui, Rect::from_center_size(rect.center(), egui::Vec2::splat(theme::ICON_IN_BUTTON)), &format!("content:{}", entry.name), palette.ink);
-                    if response.on_hover_text(&entry.purpose).clicked() {
+                    if response.on_hover_text(crate::i18n::tr(&entry.purpose)).clicked() {
                         chosen = Some(entry.name.clone());
                     }
                 }
@@ -212,7 +212,7 @@ impl DesktopApp {
         }
         if images_ok && !slides {
             if self.video_insert_for_active().is_some() {
-                ui.small(self.video_insert_status_for_active());
+                ui.small(crate::i18n::tr(&self.video_insert_status_for_active()));
                 if ui.add_enabled_ui(self.video_insert_can_cancel(), |ui| widgets::labeled_button(ui, palette, None, "동영상 추가 취소", false)).inner.clicked() {
                     if let Err(message) = self.cancel_canvas_video_insert() { self.set_error(message); }
                 }
@@ -258,7 +258,7 @@ impl DesktopApp {
                 .map(|summary| (summary.id.clone(), summary.title.clone()))
                 .collect();
             for (id, title) in figures {
-                if widgets::menu_item(ui, palette, Some("ins-figure"), &title, "", false).clicked() {
+                if widgets::menu_item_verbatim(ui, palette, Some("ins-figure"), &title, false).clicked() {
                     self.invoke_ui("add.figure_link", json!({ "figure_id": id }));
                     ui.close();
                 }

@@ -1,0 +1,375 @@
+{
+  "base_file": "p0-v1_1.json",
+  "base_sha256": "488212c8de3a896244e314f8f1f89c527bc979fcddda7c5c7abe688aa2176603",
+  "reason": "Task 66a (M39): SVG exports embed font subsets of the used glyphs instead of whole Pretendard TTF files; 46 allowlisted outputs, all export/svg outputs and their export results, each tagged svg-font-subset. Applied after p2-docx-picture.json and p3-flow-page-breaks.json, so each from is the value after those overlays. Generated mechanically from the p0_baseline_write_or_compare mismatch list (log D:/DesignLLMTool-build/lane-desktop/logs/66m-p0.log) by a perl script; no other output differed. Orchestrator approval 2026-11-20 (bundle svg-font-subset). The v1.1 baseline file is unchanged.",
+  "entries": [
+    {
+      "case": "created.canvas.nested-layout",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 7197889 -> 1131729 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "dcad79efe9e1aff6a6cad0fc1df0f73b82b9e33be2983c11b297a10576d3e338", "size": 7197889 },
+      "to": { "sha256": "9c50b1745b566479541a5d20b885b5891e687e82fbaaa7c6811a0edf69943493", "size": 1131729 }
+    },
+    {
+      "case": "created.canvas.nested-layout",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 379 -> 379 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "fb8d92c16bcab15b301fbca395bd02663abbf62bcb5509c5d79486f2cdbbc7e8", "size": 379 },
+      "to": { "sha256": "f96513a9cfac17319f3dceea507d846b06e41c7e72619914854df59d85c40b34", "size": 379 }
+    },
+    {
+      "case": "created.canvas.nested-layout",
+      "output": "export/svg/p1",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3557667 -> 565223 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "6ee9a2f9669500c960a56d4074dcf3c9990f6e816ed800cebe67a43f680af2fc", "size": 3557667 },
+      "to": { "sha256": "52a5d0ee152daf87bad991ec4427a608f0134caca4502c5fcc6d519b04d99a56", "size": 565223 }
+    },
+    {
+      "case": "created.canvas.nested-layout",
+      "output": "export/svg/p1/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 359 -> 358 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "625e96f6f88fecf5cf1aa90d190a56f3acf9fca48c7d4373769b4d6bc76e2b06", "size": 359 },
+      "to": { "sha256": "872a149596d7591e258fbdcff6c6794df7c52f7dd4a04d432507471bd37492d2", "size": 358 }
+    },
+    {
+      "case": "created.docx.document",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 7198650 -> 1132490 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "2d94b518d140c7ce4209fa70ebf784ddd4674f03b645ed8545177a6533f4ac8c", "size": 7198650 },
+      "to": { "sha256": "cc83cfeeac21ad3e429b03c25b53283e47d828e5e6749000ea9a03be73745264", "size": 1132490 }
+    },
+    {
+      "case": "created.docx.document",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 371 -> 371 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "beca11d8f2027d702f1b830a080b6c9eb2d2d1f431c59f1eae7584ca75383d38", "size": 371 },
+      "to": { "sha256": "57a32b15debd6b17357117069f6a5a47c2d7dcee86f3cdb186578a4a237dda3c", "size": 371 }
+    },
+    {
+      "case": "created.figure.mixed",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 7203742 -> 1137582 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "6e8f29a4b79ff931938ff70cc98960e10b8ad8c0f9554352628cc2391395b767", "size": 7203742 },
+      "to": { "sha256": "2694870b1d1672e4d6f56aaf98d80fae0c3b69d6f57dc38595ceadc1fc4b92bb", "size": 1137582 }
+    },
+    {
+      "case": "created.figure.mixed",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 553 -> 553 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "a90c8d32a64b4e3859c7b94f0871913f3d90f3add614e2336c228d1a7d3250b6", "size": 553 },
+      "to": { "sha256": "c2ab6da0fefa31daa6b9c3db249e722b17c0eb826907e82c07b52b97a2f1a56f", "size": 553 }
+    },
+    {
+      "case": "created.slides.deck",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3558872 -> 566428 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "0fc764f6ca041b14ef56c91f0c528dadf91974a37952101a7bbac8892e6e3d51", "size": 3558872 },
+      "to": { "sha256": "d74b6497659f897560ac62b2948664ab68162f5a6632e88428d66a80c87a69dc", "size": 566428 }
+    },
+    {
+      "case": "created.slides.deck",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 477 -> 476 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "09edf148cd0ff3e6b92ddb230120dee577bfc1a0c18e6294e78dae9914d0e0e0", "size": 477 },
+      "to": { "sha256": "d92bbcab5dbd47a60e1e5a45194adce2879d7193c30d68eb2e0425b6d82e4771", "size": 476 }
+    },
+    {
+      "case": "created.slides.deck",
+      "output": "export/svg/p1",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3639936 -> 566220 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "04f5c38bab39ff83c35177ec528e1d89dd411befe3a617dc0ca8583711182ff0", "size": 3639936 },
+      "to": { "sha256": "375136b89c5b4a6b0972f40697e02420a09570744e07a6cd2f9050cc5cbe072c", "size": 566220 }
+    },
+    {
+      "case": "created.slides.deck",
+      "output": "export/svg/p1/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 352 -> 351 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "d26047344f5525073efd8586af80adf1491f023d93581c0c76afbcd0ac751a0a", "size": 352 },
+      "to": { "sha256": "6616d5e7eb1c42bfe8123f5d34eed5abdac7e55a68037909f678030ed861d265", "size": 351 }
+    },
+    {
+      "case": "fixture.csv.known-sd",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 7202567 -> 1136407 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "761c8103c02899ca1be58bfbdbf72e339823041a604915df000f20e0f9e20163", "size": 7202567 },
+      "to": { "sha256": "8431812e3a750907968baa873f69bab2b55be85576e80d222033dc054d51b4f2", "size": 1136407 }
+    },
+    {
+      "case": "fixture.csv.known-sd",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 370 -> 370 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "0700962ea5baf421730536eec79f47d7be87e26fca28a72e2797f1dedc7170ba", "size": 370 },
+      "to": { "sha256": "dbb36b29588f557359a7909b156d1c163f7ed315746fe8ae1f7bb0e2e190091c", "size": 370 }
+    },
+    {
+      "case": "fixture.docx.basic-preserve",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 7198710 -> 1136374 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "e733b6075d171ad22418d5ed6c6bf2609272f0228523986699409576d6d5d794", "size": 7198710 },
+      "to": { "sha256": "2f1868e3b1217db4a8328f9afb899d1e9ff663e3e25330c58849b84cd735b6d4", "size": 1136374 }
+    },
+    {
+      "case": "fixture.docx.basic-preserve",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 826 -> 826 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "be25933884a1698ba55cea931a9a3a1c2a906885ae4e4d478a54bad2ea276f26", "size": 826 },
+      "to": { "sha256": "1bc426624f9f3e921e5583c57e736841b94ae00ccd081c7a5712f860974dfa53", "size": 826 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3644576 -> 571468 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "33840320181a075265dde08a14609fd587e15d9ee9220e853bb1f52b7919a35f", "size": 3644576 },
+      "to": { "sha256": "4df20d06b58b11e43f2f39bc86f69343ace2a97c9428abcd180ee87f56ca641b", "size": 571468 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 763 -> 762 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "bdf9f205d29c216eab3ccf1e7296c92964c489903c6951907b3983763b954c90", "size": 763 },
+      "to": { "sha256": "496fb20e3f2653767129b8088f1f9d5f7c0064cb6a40223ba208670e65f02513", "size": 762 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p1",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3644570 -> 571430 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "789dcdf57a2ef4015fb97d37c297ae38c72844e965a7930c95deea902f671c64", "size": 3644570 },
+      "to": { "sha256": "89351f9b25fbd1afe48875ed50398c35ab365c5dd874b673433afd782c06cb1d", "size": 571430 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p1/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 629 -> 628 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "ce72fcbd62ba83a867afb1a65fdafc98a39a1a768d85acffb8cc7d273f342f5c", "size": 629 },
+      "to": { "sha256": "7aea8bbcf90f1254921eb00b74b1491e2364bde0fd195abe6a6e9dc92293f32f", "size": 628 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p2",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3644573 -> 571545 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "6aa439433e04e273eabaf09d392295437c1e5dfd22360ac3c4d348b3740bb06a", "size": 3644573 },
+      "to": { "sha256": "6df495d193db92ca2aa9f7f34376f7a619e3ce2c8e144f7e641075613191c848", "size": 571545 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p2/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 629 -> 628 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "25b06d9f93fc754d2c7348116cae0faa32872239adbdb64a8832895c6afb6300", "size": 629 },
+      "to": { "sha256": "04f207ab859b2ca36b4fd1aa53a70b779a41ee2c46e3495aed84eeea00bb7138", "size": 628 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p3",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3644570 -> 571242 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "92ae87b6d57d2bd729e8649e36ac8aca6b0e3a1484fe41f36fe292c862b499db", "size": 3644570 },
+      "to": { "sha256": "2d684b6ec62a2c63ae2ca7f5a39c0dfce06b11cb7ce4c41a0c48fe2e25342e97", "size": 571242 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p3/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 629 -> 628 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "ade7cdec0f4485bab9fed0acd2833ad6f9df3ae7d3c3682f66e5264b4a4336a7", "size": 629 },
+      "to": { "sha256": "086dedfe384ce44bd68d3e84de4ede571d99c3d78f7a8400cf59057df56c8c1a", "size": 628 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p4",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3644580 -> 571872 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "47996d76bf9e19c2cff6a07514716963109e4edfa297d25a8cc23b9186f3a2f3", "size": 3644580 },
+      "to": { "sha256": "095d71f069d70803e73e857810ddcfc5179df5b6e352e3e548ff0636944260ba", "size": 571872 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p4/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 629 -> 628 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "9db52596c104eb89226e976f39bf51353da6537df73f71257b68f0a5211a17e3", "size": 629 },
+      "to": { "sha256": "f3f80dd9936738b316508b9c919359f18618a0b6b5b916648fb699eb2c19cec9", "size": 628 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3639688 -> 566580 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "4b12e74c4a4b19ddfb16bb0815936e49f8cc5cbb329c491c4e0ef1c4b5c46cb3", "size": 3639688 },
+      "to": { "sha256": "8b6414b43b7cd4722656c38e4ddfd5d818a4ae555cc8ae45041ffd392c64df9e", "size": 566580 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 1856 -> 1855 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "6fdff642f98198941d4c8d654ede32bd68e55a2d96d8fff312bbc364e01da579", "size": 1856 },
+      "to": { "sha256": "e976c37f2fcede4371b7a2a8651a52376c3cf11631e73f495a13c73cb03ce61c", "size": 1855 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p1",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3639679 -> 566539 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "d61fb3b87ae802ac849794c67a27fc2cd30fe0de36427d532123db44365b41b1", "size": 3639679 },
+      "to": { "sha256": "c57dc36ff578f1a6c54139bbf78d51fb8f7af0f4d2ad215d387cd9d83bb5ba31", "size": 566539 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p1/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 1856 -> 1855 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "e0f6bcf1cbcd92a4b2735d9677a7e582aa6d6fa943fda9f08180a6bff515dcba", "size": 1856 },
+      "to": { "sha256": "658e83c35ad5e0b554746cc5c7861aa6a6af19858e061fb5002646b43e0bd7ac", "size": 1855 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p2",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3639679 -> 566651 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "481e414a06a0a3c76c61b5323e8090afb8e7f7467ce551e8eb429c5276224100", "size": 3639679 },
+      "to": { "sha256": "ceaa65d68720edf629acab800a03efc2fe10c5f80a7dc419b6510bd68895caf9", "size": 566651 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p2/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 1856 -> 1855 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "7aaeabc94976f9aecad1ee1b6451e18da0724c8f652f4bb53608a60aac39af15", "size": 1856 },
+      "to": { "sha256": "9d5a78f707732a6806819e229e99de79b811f7baba4edcc3a1da7572ce3633a2", "size": 1855 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p3",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3639676 -> 566348 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "5f4d19401bf534fafdb1eff53a266cb4430b2d7a3795eb83788b8bb47e521548", "size": 3639676 },
+      "to": { "sha256": "afb18c0d7c116e4008ffd8e9b38bfb57df480e8bfb46da6dd6ca333e7cbed7e6", "size": 566348 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p3/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 1856 -> 1855 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "e914bd8515cf8bf0bc379637cbbe5e661b0fea90d6e681734aee1f35a946c3ad", "size": 1856 },
+      "to": { "sha256": "9bcc4664b2b627ea1b9dcdb699e2a47d9977d953027cebc5dcca48ce69867ec5", "size": 1855 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p4",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3639864 -> 567156 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "83684fcb7920f141dbfa49b66b4218bc7886c6b9c9843c1d03878d5755ef5bc0", "size": 3639864 },
+      "to": { "sha256": "4642ef555f4ddfde5d7b6371b3de9416a1ba61f1aef3a4556fc886888c78eb24", "size": 567156 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p4/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 2299 -> 2298 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "7fd39fd519e36b8fabc63bc234bffbb7598ce675919463c2235fc70d29fab5bc", "size": 2299 },
+      "to": { "sha256": "0fa03272537ba8579a47854f15b1688b3c8f942e6a93fd572a33b99980913422", "size": 2298 }
+    },
+    {
+      "case": "fixture.pptx.basic-preserve",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3558624 -> 566180 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "ba61b489a54be7ceabaca2b914e94346cd2bc9711eefa0de3e44e67c225022c1", "size": 3558624 },
+      "to": { "sha256": "35998a360457ef96b6b119090f0acefce3d454d65e8395fa1bcc8e43a9b64624", "size": 566180 }
+    },
+    {
+      "case": "fixture.pptx.basic-preserve",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 501 -> 500 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "d69bc273f4225f7c6266891cecae0a917ae0535aa52859e0658b4b18b3007437", "size": 501 },
+      "to": { "sha256": "b5ee861577b6ea5cac64bed37a4d00646c53c4e9428db674c7eb078b47e9a62b", "size": 500 }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 7223311 -> 1160975 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "9c23834c2d5a433f6fe689e11ccc2cab961d4395dc5422ffae73e9dec2d7d3a2", "size": 7223311 },
+      "to": { "sha256": "13b240bfe65081825b03e487cb0bc3233bb8499c3efe52a0d7bc26b10f23b375", "size": 1160975 }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 822 -> 822 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "38ca661393fd0b47fd43250c9d0de2e0a9f622485314d699ff4c46731caae643", "size": 822 },
+      "to": { "sha256": "2597058de420c305253c099048b5361687b41217f65baa4679a0831c7c1e95e2", "size": 822 }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "figure/export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 7202567 -> 1136407 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "761c8103c02899ca1be58bfbdbf72e339823041a604915df000f20e0f9e20163", "size": 7202567 },
+      "to": { "sha256": "8431812e3a750907968baa873f69bab2b55be85576e80d222033dc054d51b4f2", "size": 1136407 }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "figure/export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 380 -> 380 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "955256194cc4ceeee51d8170e93d2e9f7d32cc4cc1bddb1e50c6af34590a8ce2", "size": 380 },
+      "to": { "sha256": "1fb0aad68322faaa5eed8b1d8f3dd91e678758895dd84d61a57f71ae4da91515", "size": 380 }
+    },
+    {
+      "case": "linked.pptx.figure-link",
+      "output": "export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 3583637 -> 591861 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "4b8d059d41e398a7c2d0be9075e4ac7ab4f38d37aebbeee3241a64eeb56061c6", "size": 3583637 },
+      "to": { "sha256": "729a94c7744414ce7ba66b4c0027b0db7b7a31de857eda27c16fdd30241ecf94", "size": 591861 }
+    },
+    {
+      "case": "linked.pptx.figure-link",
+      "output": "export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 497 -> 496 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "0d96fb62e2b8bf8aa041810331827e881fa4b626cadadfafbf25a737eb791291", "size": 497 },
+      "to": { "sha256": "d1709d14e6321b257a5af581c241e1499de2784183217e6cfe2a4f99d5644d32", "size": 496 }
+    },
+    {
+      "case": "linked.pptx.figure-link",
+      "output": "figure/export/svg/p0",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the embedded Pretendard fonts keep only the used glyphs instead of the whole TTF in Base64; SVG 7202567 -> 1136407 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "761c8103c02899ca1be58bfbdbf72e339823041a604915df000f20e0f9e20163", "size": 7202567 },
+      "to": { "sha256": "8431812e3a750907968baa873f69bab2b55be85576e80d222033dc054d51b4f2", "size": 1136407 }
+    },
+    {
+      "case": "linked.pptx.figure-link",
+      "output": "figure/export/svg/p0/result",
+      "bundles": ["svg-font-subset"],
+      "note": "svg-font-subset (task 66a, crates/render/src/svg.rs and svg/font.rs): the export result records the sha256 and size of the smaller SVG; result JSON 380 -> 380 bytes. Evidence: crates/render/tests/renderer.rs svg_embedded_fonts_render_in_an_independent_renderer; this output matches the baseline when only svg.rs is reverted (17/0).",
+      "from": { "sha256": "f40a465a307a621761241cff07c51f45146e57660b3a96b64f1cc6b4c6f9269d", "size": 380 },
+      "to": { "sha256": "f9feaa1d49def3ab9879d2de92dddb6baaaff3489eb696bf0984483a73f48bc1", "size": 380 }
+    }
+  ]
+}

@@ -82,6 +82,8 @@ impl DesktopApp {
             self.layer_find_open = false;
             self.layer_find_focus = false;
             self.canvas_find_reveal = None;
+            // A preview asked for the document left is not used: its key does not hold the next one back.
+            self.export_preview_pending = None;
         }
         self.active = Some(summary);
         self.place_jobs(None);
@@ -94,6 +96,14 @@ impl DesktopApp {
         } else if self.active.as_ref().is_some_and(|active| self.late_start_waits(&active.id)) {
             // The answer of a start the window no longer waits for is still due: the words say so again on return.
             self.notices.warning(figure_close::LATE_START_WAIT, Instant::now());
+        }
+        // A settings change still unwritten (a Figure created with a profile while the save failed) is told on this document too.
+        if self.settings_unsaved() {
+            self.set_error(String::from(super::settings::SETTINGS_SAVE_FAILED));
+        }
+        // A notice for this document from a reply handled while another one was shown (an output profile's kept legend items).
+        if let Some(message) = self.active.as_ref().and_then(|active| self.figure_notices.remove(&active.id)) {
+            self.notices.warning(message, Instant::now());
         }
         self.agent_batches.clear();
         self.reservations.clear();

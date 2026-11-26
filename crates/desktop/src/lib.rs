@@ -7,6 +7,7 @@ mod figure_layout;
 mod frame;
 pub mod gl_probe;
 mod grapheme;
+mod i18n;
 mod icons;
 mod icons_table;
 mod notice;
@@ -85,7 +86,7 @@ impl StartupErrorView {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(28.0);
-                ui.heading("작업공간에 연결할 수 없습니다");
+                ui.heading(crate::i18n::tr("작업공간에 연결할 수 없습니다"));
                 ui.add_space(12.0);
                 widgets::callout(ui, &palette, &self.cause, &[], false);
                 if let Some(warning) = &self.recovery_warning {
@@ -93,7 +94,7 @@ impl StartupErrorView {
                     widgets::callout(ui, &palette, warning, &[], true);
                 }
                 ui.add_space(12.0);
-                ui.label("자세한 내용은 다음 로그에서 확인할 수 있습니다.");
+                ui.label(crate::i18n::tr("자세한 내용은 다음 로그에서 확인할 수 있습니다."));
                 ui.monospace(&self.log_path);
             });
         });

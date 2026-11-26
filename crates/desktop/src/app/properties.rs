@@ -535,16 +535,17 @@ fn interaction_target_menu(
     options: &[(String, String)],
     current: &str,
 ) -> Option<String> {
-    let label = options.iter().find(|(id, _)| id == current).map_or("선택", |(_, label)| label.as_str());
+    // The targets are named by their pages and layers, the person's own names.
+    let label = options.iter().find(|(id, _)| id == current).map_or_else(|| crate::i18n::tr("선택"), |(_, label)| std::borrow::Cow::Borrowed(label.as_str()));
     let width = ui.available_width();
-    let button = widgets::dropdown(ui, palette, label, None, width);
+    let button = widgets::dropdown_verbatim(ui, palette, &label, None, width);
     let mut selected = None;
     egui::Popup::from_toggle_button_response(&button)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.set_width(width.max(200.0));
             for (id, label) in options {
-                if widgets::menu_item(ui, palette, None, label, "", id == current).clicked() {
+                if widgets::menu_item_verbatim(ui, palette, None, label, id == current).clicked() {
                     selected = Some(id.clone());
                     ui.close();
                 }
@@ -703,7 +704,7 @@ impl DesktopApp {
                         || node.as_ref().is_none_or(|node| node.id != editor.intent.node_id)
                 }) {
                     section_head(ui, palette, &mut first, "이미지 자르기 초안", None);
-                    ui.label("다른 이미지 작업이 선택되어 있습니다. 초안은 보존되어 있습니다.");
+                    ui.label(crate::i18n::tr("다른 이미지 작업이 선택되어 있습니다. 초안은 보존되어 있습니다."));
                     if let Some(copy) = image_crop_copy_payload(editor) {
                         if widgets::labeled_button(ui, palette, None, "자르기 초안 복사", false).clicked() { ui.ctx().copy_text(copy); }
                     }
@@ -813,10 +814,10 @@ impl DesktopApp {
         if let Some(editor) = editor {
             let current = self.image_crop_target_is_current(&editor.intent);
             let editable = editor.stage == super::ImageCropStage::Editing && current && !editor.outcome_uncertain;
-            ui.small(match node.image_crop_pixel_rect {
+            ui.small(crate::i18n::tr(&match node.image_crop_pixel_rect {
                 Some(rect) => format!("현재 자르기: X {} · Y {} · 폭 {} · 높이 {} px", rect.x, rect.y, rect.width, rect.height),
                 None => "현재 자르기: 전체 이미지".into(),
-            });
+            }));
             if let Some(message) = editor.message.as_deref() {
                 ui.colored_label(palette.warn, message);
             }
@@ -831,28 +832,28 @@ impl DesktopApp {
             }
             match editor.stage {
                 super::ImageCropStage::Loading => {
-                    ui.small("원본 픽셀 크기를 확인하고 있습니다");
+                    ui.small(crate::i18n::tr("원본 픽셀 크기를 확인하고 있습니다"));
                     if widgets::labeled_button(ui, palette, None, "자르기 확인 취소", false).clicked() { discard = true; }
                 }
                 super::ImageCropStage::Applying => {
-                    ui.small("이미지 자르기를 적용하고 있습니다. 결과가 확인될 때까지 다른 변경을 보류합니다");
+                    ui.small(crate::i18n::tr("이미지 자르기를 적용하고 있습니다. 결과가 확인될 때까지 다른 변경을 보류합니다"));
                 }
                 super::ImageCropStage::Editing => {
                     if let (Some((image_width, image_height)), Some(mut fields)) = (editor.dimensions, editor.draft.clone()) {
-                        ui.small(format!("원본 크기: {image_width} × {image_height} px"));
+                        ui.small(crate::i18n::tr(&format!("원본 크기: {image_width} × {image_height} px")));
                         let mut changed = false;
                         // Two fields and their labels share a row: each field takes half of what the labels leave, 40 to 64
                         // wide, with a 4 px margin so that five digits fit.
                         let crop_field_width = |ui: &Ui, labels: [&str; 2]| {
                             let font = egui::TextStyle::Small.resolve(ui.style());
-                            let taken: f32 = labels.iter().map(|label| ui.painter().layout_no_wrap((*label).to_owned(), font.clone(), palette.ink).size().x).sum();
+                            let taken: f32 = labels.iter().map(|label| ui.painter().layout_no_wrap(crate::i18n::tr(&(*label)).into_owned(), font.clone(), palette.ink).size().x).sum();
                             ((ui.available_width() - taken - 3.0 * ui.spacing().item_spacing.x) / 2.0).clamp(40.0, 64.0)
                         };
                         row(ui, palette, Some("원점 (px)"), |ui| {
                             ui.horizontal(|ui| {
                                 let width = crop_field_width(ui, ["X", "Y"]);
                                 for (label, index) in [("X", 0usize), ("Y", 1usize)] {
-                                    ui.small(label);
+                                    ui.small(crate::i18n::tr(&label));
                                     changed |= widgets::edit_line(ui, palette, &mut fields[index], widgets::Field {
                                         width,
                                         margin: Some(egui::Margin::symmetric(4, 4)),
@@ -867,7 +868,7 @@ impl DesktopApp {
                             ui.horizontal(|ui| {
                                 let width = crop_field_width(ui, ["폭", "높이"]);
                                 for (label, index) in [("폭", 2usize), ("높이", 3usize)] {
-                                    ui.small(label);
+                                    ui.small(crate::i18n::tr(&label));
                                     changed |= widgets::edit_line(ui, palette, &mut fields[index], widgets::Field {
                                         width,
                                         margin: Some(egui::Margin::symmetric(4, 4)),
@@ -898,7 +899,7 @@ impl DesktopApp {
                         }
                         if changed { changed_fields = Some(fields); }
                     } else {
-                        ui.small("원본 픽셀 크기를 확인하지 못했습니다");
+                        ui.small(crate::i18n::tr("원본 픽셀 크기를 확인하지 못했습니다"));
                         ui.horizontal(|ui| {
                             if ui.add_enabled_ui(current, |ui| widgets::labeled_button(ui, palette, None, "크기 다시 확인", false)).inner.clicked() { start = true; }
                             if widgets::labeled_button(ui, palette, None, "초안 버리기", false).clicked() { discard = true; }
@@ -919,7 +920,7 @@ impl DesktopApp {
             let response = row(ui, palette, Some("자르기"), |ui| {
                 let button = ui.add_enabled_ui(available, |ui| widgets::labeled_button(ui, palette, None, "원본 픽셀 범위 편집", false)).inner;
                 let response = if available { button } else {
-                    button.on_disabled_hover_text("잠금, 다른 작업의 예약, 선택 또는 이미지 원본을 확인한 뒤 시작할 수 있습니다")
+                    button.on_disabled_hover_text(crate::i18n::tr("잠금, 다른 작업의 예약, 선택 또는 이미지 원본을 확인한 뒤 시작할 수 있습니다"))
                 };
                 response.clicked()
             });
@@ -967,14 +968,14 @@ impl DesktopApp {
         }
         if has_spans {
             section_head(ui, palette, first, "표", None);
-            ui.small("병합을 해제한 뒤 행·열을 편집할 수 있습니다");
+            ui.small(crate::i18n::tr("병합을 해제한 뒤 행·열을 편집할 수 있습니다"));
         }
-        ui.small(format!("{rows}행 × {columns}열"));
+        ui.small(crate::i18n::tr(&format!("{rows}행 × {columns}열")));
         let mut action = None;
         let current_widths = column_widths.clone().unwrap_or_else(|| vec![1; columns]);
         let mut invalid_width = false;
         ui.horizontal_wrapped(|ui| {
-            ui.small("열 비율");
+            ui.small(crate::i18n::tr("열 비율"));
             for (index, weight) in current_widths.iter().enumerate() {
                 let prefix = format!("{}:", index + 1);
                 let value = field(
@@ -1301,7 +1302,7 @@ fn draw_local_token_section(
     let mut local_draft_pending = state.has_local_draft();
     if local_draft_pending {
         ui.horizontal(|ui| {
-            ui.small(egui::RichText::new("로컬 토큰 초안이 저장되지 않았습니다. 공유 설정을 바꾸기 전에 저장하거나 취소하세요").color(palette.danger));
+            ui.small(egui::RichText::new(crate::i18n::tr("로컬 토큰 초안이 저장되지 않았습니다. 공유 설정을 바꾸기 전에 저장하거나 취소하세요")).color(palette.danger));
             if widgets::labeled_button(ui, palette, Some("close"), "초안 취소", false).clicked() {
                 state.discard_local_draft(document, revision);
                 local_draft_pending = false;
@@ -1317,11 +1318,11 @@ fn draw_local_token_section(
         action = Some(("canvas.design_system.publish", json!({ "publish": published })));
     }
     if design_system.is_some() && !publishes_design_system {
-        ui.small(egui::RichText::new("공유 원본에 연결된 작업물은 게시할 수 없습니다. 먼저 연결을 해제하세요").color(palette.ink_3));
+        ui.small(egui::RichText::new(crate::i18n::tr("공유 원본에 연결된 작업물은 게시할 수 없습니다. 먼저 연결을 해제하세요")).color(palette.ink_3));
     }
 
     let current_source_name = design_system.map_or_else(
-        || String::from("연결 안 됨"),
+        || crate::i18n::tr("연결 안 됨").into_owned(),
         |reference| {
             state
                 .design_systems
@@ -1338,7 +1339,7 @@ fn draw_local_token_section(
     let next_source = row(ui, palette, Some("공유 원본"), |ui| {
         ui.add_enabled_ui(source_picker_enabled, |ui| {
             let width = ui.available_width();
-            let button = widgets::dropdown(ui, palette, &current_source_name, None, width);
+            let button = widgets::dropdown_verbatim(ui, palette, &current_source_name, None, width);
             let mut picked: Option<Option<(String, u64)>> = None;
             egui::Popup::from_toggle_button_response(&button)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -1353,7 +1354,7 @@ fn draw_local_token_section(
                             continue;
                         }
                         let label = format!("{} · r{}", system.title, system.revision);
-                        if widgets::menu_item(ui, palette, None, &label, "", design_system.is_some_and(|reference| reference.artifact_id == system.artifact_id)).clicked() {
+                        if widgets::menu_item_verbatim(ui, palette, None, &label, design_system.is_some_and(|reference| reference.artifact_id == system.artifact_id)).clicked() {
                             picked = Some(Some((system.artifact_id.clone(), system.revision)));
                             ui.close();
                         }
@@ -1386,9 +1387,9 @@ fn draw_local_token_section(
         }
     }
     if !state.design_systems_loaded {
-        ui.small(egui::RichText::new("공유 디자인 시스템 목록을 읽는 중입니다").color(palette.ink_3));
+        ui.small(egui::RichText::new(crate::i18n::tr("공유 디자인 시스템 목록을 읽는 중입니다")).color(palette.ink_3));
     } else if state.design_systems_error {
-        ui.small(egui::RichText::new("공유 디자인 시스템 목록을 읽지 못했습니다").color(palette.danger));
+        ui.small(egui::RichText::new(crate::i18n::tr("공유 디자인 시스템 목록을 읽지 못했습니다")).color(palette.danger));
         if widgets::labeled_button(ui, palette, Some("refresh"), "다시 읽기", false).clicked() && action.is_none() {
             action = Some(("canvas.design_system.list", json!({})));
         }
@@ -1406,7 +1407,7 @@ fn draw_local_token_section(
         if shared_snapshot_current {
             menu_field(ui, palette, TOKEN_SOURCES, if state.binding_source == TokenSource::Shared { "shared" } else { "local" })
         } else {
-            ui.label("로컬");
+            ui.label(crate::i18n::tr("로컬"));
             None
         }
     }) {
@@ -1416,9 +1417,9 @@ fn draw_local_token_section(
         }
     }
     if design_system.is_some() && state.shared_source_loading {
-        ui.small(egui::RichText::new("공유 토큰을 읽는 중입니다").color(palette.ink_3));
+        ui.small(egui::RichText::new(crate::i18n::tr("공유 토큰을 읽는 중입니다")).color(palette.ink_3));
     } else if design_system.is_some() && state.shared_source_error {
-        ui.small(egui::RichText::new("공유 토큰을 읽지 못했습니다. 목록을 다시 읽어 주세요").color(palette.danger));
+        ui.small(egui::RichText::new(crate::i18n::tr("공유 토큰을 읽지 못했습니다. 목록을 다시 읽어 주세요")).color(palette.danger));
         if widgets::labeled_button(ui, palette, Some("refresh"), "공유 원본 다시 읽기", false).clicked() && action.is_none() {
             action = Some(("canvas.design_system.list", json!({})));
         }
@@ -1429,12 +1430,12 @@ fn draw_local_token_section(
         .as_deref()
         .and_then(|id| document.tokens.get(id))
         .map_or_else(
-            || if state.baseline_existed { "토큰이 삭제됨" } else { "새 토큰" },
-            |token| token.name.as_str(),
+            || crate::i18n::tr(if state.baseline_existed { "토큰이 삭제됨" } else { "새 토큰" }),
+            |token| std::borrow::Cow::Borrowed(token.name.as_str()),
         );
     let picked = row(ui, palette, Some("토큰"), |ui| {
         let width = ui.available_width();
-        let button = widgets::dropdown(ui, palette, current_name, None, width);
+        let button = widgets::dropdown_verbatim(ui, palette, &current_name, None, width);
         let mut picked: Option<Option<String>> = None;
         egui::Popup::from_toggle_button_response(&button)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -1446,7 +1447,7 @@ fn draw_local_token_section(
                 }
                 for (token_id, token) in &document.tokens {
                     let label = format!("{} · {}", token.name, token_id);
-                    if widgets::menu_item(ui, palette, None, &label, "", state.selected_token.as_deref() == Some(token_id)).clicked() {
+                    if widgets::menu_item_verbatim(ui, palette, None, &label, state.selected_token.as_deref() == Some(token_id)).clicked() {
                         picked = Some(Some(token_id.clone()));
                         ui.close();
                     }
@@ -1481,7 +1482,7 @@ fn draw_local_token_section(
 
     if stale {
         let message = if snapshot_current { "작업물이 바뀌었습니다. 저장 전에 최신 토큰을 불러오세요" } else { "최신 작업물 상태를 읽는 중입니다" };
-        ui.small(egui::RichText::new(message).color(palette.danger));
+        ui.small(egui::RichText::new(crate::i18n::tr(&message)).color(palette.danger));
         let id_conflict = state.selected_token.is_none() && document.tokens.contains_key(&state.token_id);
         let label = if state.selected_token.as_deref().is_some_and(|id| document.tokens.contains_key(id)) || id_conflict {
             "최신 토큰 불러오기"
@@ -1552,10 +1553,10 @@ fn draw_local_token_section(
         }
     }
     if token_id_conflict && !stale {
-        ui.small(egui::RichText::new("이미 있는 ID입니다. 토큰 목록에서 불러오세요").color(palette.ink_3));
+        ui.small(egui::RichText::new(crate::i18n::tr("이미 있는 ID입니다. 토큰 목록에서 불러오세요")).color(palette.ink_3));
     }
     if dirty {
-        ui.small(egui::RichText::new("저장되지 않음").color(palette.ink_3));
+        ui.small(egui::RichText::new(crate::i18n::tr("저장되지 않음")).color(palette.ink_3));
     }
 
     let selected_shared = if state.binding_source == TokenSource::Shared && shared_snapshot_current {
@@ -1563,10 +1564,10 @@ fn draw_local_token_section(
             .selected_shared_token
             .as_deref()
             .and_then(|id| state.shared_tokens.get(id));
-        let current_name = current.map_or("공유 토큰 선택", |token| token.name.as_str());
+        let current_name = current.map_or_else(|| crate::i18n::tr("공유 토큰 선택"), |token| std::borrow::Cow::Borrowed(token.name.as_str()));
         let picked = row(ui, palette, Some("공유 토큰"), |ui| {
             let width = ui.available_width();
-            let button = widgets::dropdown(ui, palette, current_name, None, width);
+            let button = widgets::dropdown_verbatim(ui, palette, &current_name, None, width);
             let mut picked = None;
             egui::Popup::from_toggle_button_response(&button)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -1574,7 +1575,7 @@ fn draw_local_token_section(
                     ui.set_width(width.max(180.0));
                     for (token_id, token) in &state.shared_tokens {
                         let label = format!("{} · {}", token.name, token_id);
-                        if widgets::menu_item(ui, palette, None, &label, "", state.selected_shared_token.as_deref() == Some(token_id)).clicked() {
+                        if widgets::menu_item_verbatim(ui, palette, None, &label, state.selected_shared_token.as_deref() == Some(token_id)).clicked() {
                             picked = Some(token_id.clone());
                             ui.close();
                         }
@@ -1592,11 +1593,11 @@ fn draw_local_token_section(
     if state.binding_source == TokenSource::Shared && shared_snapshot_current {
         if let Some(token) = selected_shared {
             let (kind, light, dark) = token_display_values(&token.values);
-            ui.small(egui::RichText::new(format!("{} · {}", kind, token.name)).color(palette.ink_3));
-            row(ui, palette, Some("라이트 값"), |ui| { ui.label(light); });
-            row(ui, palette, Some("다크 값"), |ui| { ui.label(dark); });
+            ui.small(egui::RichText::new(format!("{} · {}", crate::i18n::tr(&kind), token.name)).color(palette.ink_3));
+            row(ui, palette, Some("라이트 값"), |ui| { ui.label(crate::i18n::tr(&light)); });
+            row(ui, palette, Some("다크 값"), |ui| { ui.label(crate::i18n::tr(&dark)); });
         } else {
-            ui.small(egui::RichText::new("공유 원본에 토큰이 없습니다").color(palette.ink_3));
+            ui.small(egui::RichText::new(crate::i18n::tr("공유 원본에 토큰이 없습니다")).color(palette.ink_3));
         }
     }
 
@@ -1641,7 +1642,7 @@ fn draw_local_token_section(
                 .filter(|binding| selected_nodes.iter().any(|node_id| node_id == &binding.node_id) && &binding.target == target)
                 .count()
         });
-        ui.small(egui::RichText::new(format!("{}개 선택 · {bound_count}개 연결", selected_nodes.len())).color(palette.ink_3));
+        ui.small(egui::RichText::new(crate::i18n::tr(&format!("{}개 선택 · {bound_count}개 연결", selected_nodes.len()))).color(palette.ink_3));
         let binding_token_id = match state.binding_source {
             TokenSource::Local => existing_id.as_deref(),
             TokenSource::Shared => selected_shared.map(|_| state.selected_shared_token.as_deref()).flatten(),
@@ -1875,7 +1876,10 @@ impl DesktopApp {
                 [("align-left", "왼쪽", "left"), ("align-h-center", "가운데", "h-center"), ("align-right", "오른쪽", "right")],
                 [("align-top", "위쪽", "top"), ("align-v-center", "중간", "v-center"), ("align-bottom", "아래쪽", "bottom")],
             ];
-            for (index, line) in aligns.iter().enumerate() {
+            // Aligning and spreading are commands of the kinds whose nodes sit freely on a page (Canvas, Slides); a figure's
+            // panels and a document's blocks are placed by their engine.
+            let align_shown = self.command_enabled_for_current_kind("props.align");
+            for (index, line) in aligns.iter().enumerate().filter(|_| align_shown) {
                 if index > 0 {
                     ui.add_space(2.0);
                 }
@@ -1885,7 +1889,7 @@ impl DesktopApp {
                 }
             }
             // Spreading needs a middle node: three or more (§7).
-            if self.selected_nodes.len() >= 3 {
+            if self.selected_nodes.len() >= 3 && self.command_enabled_for_current_kind("props.distribute") {
                 ui.add_space(2.0);
                 if let Some(chosen) = acts(ui, palette, &[("distribute-h", "가로 분배"), ("distribute-v", "세로 분배")]) {
                     self.invoke_ui("props.distribute", json!({ "axis": (["h", "v"][chosen]) }));
@@ -1961,7 +1965,7 @@ impl DesktopApp {
         let effects_editable = feature_editable(self.feature_support(Feature::Effects));
         let shaped_kind = |other: &NodeProperties| !matches!(other.kind, NodeKind::Group | NodeKind::Line);
         let shaped = shaped_kind(node) && group.iter().all(shaped_kind);
-        if effects_shown && shaped {
+        if effects_shown && shaped && self.command_enabled_for_current_kind("props.opacity") {
             section_head(ui, palette, first, "모양", None);
             let opacity = agree(&group, node, |other| other.style.opacity_milli.unwrap_or(1000))
                 .then_some(f64::from(style.opacity_milli.unwrap_or(1000)) / 10.0);
@@ -1972,7 +1976,7 @@ impl DesktopApp {
                 self.invoke_ui("props.opacity", json!({ "percent": new.clamp(0.0, 100.0) }));
             }
             let rounded = |other: &NodeProperties| matches!(other.kind, NodeKind::Rectangle | NodeKind::Image);
-            if rounded(node) && group.iter().all(rounded) {
+            if rounded(node) && group.iter().all(rounded) && self.command_enabled_for_current_kind("props.corner_radius") {
                 let radius = agree(&group, node, |other| other.style.corner_radius.unwrap_or(0))
                     .then_some(style.corner_radius.unwrap_or(0) as f64 / EMU_PER_PX);
                 if let Some(new) = row(ui, palette, Some("모서리"), |ui| {
@@ -2016,10 +2020,10 @@ impl DesktopApp {
             if let Some(stage) = replacement_stage {
                 let cancel = row(ui, palette, Some("교체"), |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(match stage {
+                        ui.label(crate::i18n::tr(&match stage {
                             super::ImageReplacementStage::Importing => "이미지를 가져오는 중",
                             super::ImageReplacementStage::Applying => "교체를 적용하는 중",
-                        });
+                        }));
                         ui.add_enabled_ui(stage == super::ImageReplacementStage::Importing, |ui| widgets::labeled_button(ui, palette, None, "취소", false)).inner.clicked()
                     }).inner
                 });
@@ -2028,7 +2032,7 @@ impl DesktopApp {
                 let enabled = editable && self.canvas_image_replacement_available(&node.id);
                 let response = ui.add_enabled_ui(enabled, |ui| widgets::labeled_button(ui, palette, None, "이미지 교체", true)).inner;
                 let response = if enabled { response } else {
-                    response.on_disabled_hover_text("잠긴 이미지, 컴포넌트 원본·인스턴스와 그림 연결 이미지는 이 경로로 교체할 수 없습니다")
+                    response.on_disabled_hover_text(crate::i18n::tr("잠긴 이미지, 컴포넌트 원본·인스턴스와 그림 연결 이미지는 이 경로로 교체할 수 없습니다"))
                 };
                 response.clicked()
             }) {
@@ -2071,7 +2075,9 @@ impl DesktopApp {
                 section_head(ui, palette, first, "채우기", None);
                 let value = agree(&group, node, |other| other.style.fill.clone()).then(|| style.fill.clone());
                 let gradient = style.gradient.clone().filter(|_| agree(&group, node, |other| other.style.gradient.clone()));
-                let gradients = unlocked && feature_editable(self.feature_support(Feature::Effects)) && commands_available("props.gradient");
+                // Gradients are Canvas only (ui_channel scopes); a slide or a figure refuses them.
+                let canvas = self.active.as_ref().is_some_and(|item| item.kind == ArtifactKind::Canvas);
+                let gradients = canvas && unlocked && feature_editable(self.feature_support(Feature::Effects)) && commands_available("props.gradient");
                 // Smoke captures open the popover without a click (`DESIGNLLM_SMOKE_OPEN=fill_popover`).
                 let force_open = gradients && self.smoke_open.as_deref() == Some("fill_popover");
                 if force_open {
@@ -2138,7 +2144,9 @@ impl DesktopApp {
                 if removed {
                     self.invoke_ui("props.stroke_remove", json!({}));
                 }
-                if feature_editable(self.feature_support(Feature::Effects)) && commands_available("props.stroke_style") {
+                if feature_editable(self.feature_support(Feature::Effects)) && commands_available("props.stroke_style")
+                    && self.command_enabled_for_current_kind("props.stroke_style")
+                {
                     // ② 모양, and ③ 끝·꺾임 for open paths only.
                     if let Some(dash) = ui.add_enabled_ui(unlocked, |ui| stroke_dash_row(ui, palette, &group, node)).inner {
                         self.invoke_ui("props.stroke_style", json!({ "dash": dash }));
@@ -2176,7 +2184,16 @@ impl DesktopApp {
                 self.invoke_ui("props.stroke", json!({ "color": "#566479" }));
             }
         }
-        if effects_shown && shaped {
+        // A shadow is taken by a canvas node other than text, lines and paths, and by a slide's rectangles and ellipses (the
+        // canvas and pptx guards refuse the rest). A shadow already on another node keeps its row: clearing it is allowed.
+        let takes_shadow = |other: &NodeProperties| match kind {
+            ArtifactKind::Canvas => !matches!(other.kind, NodeKind::Text | NodeKind::Line | NodeKind::Path | NodeKind::Group),
+            ArtifactKind::Slides => matches!(other.kind, NodeKind::Rectangle | NodeKind::Ellipse),
+            _ => false,
+        };
+        let shadow_shown = self.command_enabled_for_current_kind("props.shadow")
+            && (!style.shadows.is_empty() || (takes_shadow(node) && group.iter().all(takes_shadow)));
+        if effects_shown && shaped && shadow_shown {
             if let Some(shadow) = style.shadows.first().cloned() {
                 section_head(ui, palette, first, "효과", None);
                 let (changed, removed) = row(ui, palette, Some("그림자"), |ui| {
@@ -2229,7 +2246,7 @@ impl DesktopApp {
         }
         let dirty = draft.d != draft.base_d || draft.view_box != draft.base_view_box;
         let mut edited = false;
-        ui.small("경로 데이터 (d)");
+        ui.small(crate::i18n::tr("경로 데이터 (d)"));
         let d_width = ui.available_width();
         edited |= widgets::edit_area(ui, palette, &mut draft.d, widgets::Field {
             width: d_width,
@@ -2344,7 +2361,7 @@ impl DesktopApp {
             } else if let Some(url) = apply {
                 self.invoke_ui("canvas.open_url", json!({ "url": url }));
             }
-            ui.label(egui::RichText::new("다른 클릭 동작은 한 요소씩 편집하세요").color(palette.ink_3));
+            ui.label(egui::RichText::new(crate::i18n::tr("다른 클릭 동작은 한 요소씩 편집하세요")).color(palette.ink_3));
             ui.add_space(8.0);
             return;
         }
@@ -2664,7 +2681,7 @@ impl DesktopApp {
                 ui.painter().rect_filled(rect, corner, palette.surface_2);
             }
             icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(16.0)), "padding-sides", if open { palette.accent } else { palette.ink_2 });
-            (new_h, new_v, response.on_hover_text("네 면 따로").clicked())
+            (new_h, new_v, response.on_hover_text(crate::i18n::tr("네 면 따로")).clicked())
         });
         if toggled {
             open = !open;
@@ -2736,7 +2753,8 @@ impl DesktopApp {
                 .then(|| style.line_height_milli.map(|milli| f64::from(milli) / 1000.0))
                 .flatten();
             let line_mixed = !agree(group, node, |other| other.style.line_height_milli);
-            if let Some(new) = row(ui, palette, Some("줄 높이"), |ui| {
+            if !self.command_enabled_for_current_kind("props.line_height") {
+            } else if let Some(new) = row(ui, palette, Some("줄 높이"), |ui| {
                 let width = ui.available_width();
                 // Empty means the font's own line height; a typed multiple sets it.
                 field(ui, palette, id("line-height"), width, "", if line_mixed { None } else { Some(line.unwrap_or(1.2)) }, "배", 2, true)
@@ -2745,7 +2763,8 @@ impl DesktopApp {
             }
             let spacing = agree(group, node, |other| other.style.letter_spacing.unwrap_or(0))
                 .then_some(style.letter_spacing.unwrap_or(0) as f64 / EMU_PER_PX);
-            if let Some(new) = row(ui, palette, Some("자간"), |ui| {
+            if !self.command_enabled_for_current_kind("props.letter_spacing") {
+            } else if let Some(new) = row(ui, palette, Some("자간"), |ui| {
                 let width = ui.available_width();
                 field(ui, palette, id("letter-spacing"), width, "", spacing, "px", 1, true)
             }) {
@@ -2757,7 +2776,8 @@ impl DesktopApp {
                 _ => 0,
             };
             let flags: Vec<bool> = (0..3).map(|index| index == vertical).collect();
-            if let Some(chosen) = row(ui, palette, Some("세로 정렬"), |ui| {
+            if !self.command_enabled_for_current_kind("props.vertical_align") {
+            } else if let Some(chosen) = row(ui, palette, Some("세로 정렬"), |ui| {
                 seg(ui, palette, &[("text-valign-top", "위"), ("text-valign-middle", "가운데"), ("text-valign-bottom", "아래")], &flags)
             }) {
                 if chosen != vertical {
@@ -2840,7 +2860,7 @@ impl DesktopApp {
                 ArtifactBody::Canvas(document) => document.pages.get(page_index as usize).map(|page| {
                     let sources: Vec<(String, String)> = document.pages.iter().enumerate()
                         .filter(|(_, candidate)| candidate.role == Some(designllm_contracts::PageRole::Component) && candidate.id != page.id)
-                        .map(|(index, candidate)| (candidate.id.clone(), candidate.name.clone().unwrap_or_else(|| format!("컴포넌트 {}", index + 1))))
+                        .map(|(index, candidate)| (candidate.id.clone(), candidate.name.clone().unwrap_or_else(|| crate::i18n::tr(&format!("컴포넌트 {}", index + 1)).into_owned())))
                         .collect();
                     (page.id.clone(), page.role == Some(designllm_contracts::PageRole::Component), sources)
                 }),
@@ -2857,12 +2877,12 @@ impl DesktopApp {
                     let source_key = Id::new(("component-source-page", page_id.as_str()));
                     let first_source = sources[0].0.clone();
                     let mut selected = ui.data(|data| data.get_temp::<String>(source_key)).filter(|id| sources.iter().any(|(source, _)| source == id)).unwrap_or(first_source);
-                    let label = sources.iter().find(|(source, _)| source == &selected).map(|(_, name)| name.as_str()).unwrap_or("컴포넌트 선택");
+                    let label = sources.iter().find(|(source, _)| source == &selected).map(|(_, name)| std::borrow::Cow::Borrowed(name.as_str())).unwrap_or_else(|| crate::i18n::tr("컴포넌트 선택"));
                     let names: Vec<&str> = sources.iter().map(|(_, name)| name.as_str()).collect();
                     let current = sources.iter().position(|(source, _)| *source == selected);
                     row(ui, palette, Some("원본"), |ui| {
                         let width = ui.available_width();
-                        if let Some(index) = widgets::select_menu(ui, palette, label, &names, current, width) {
+                        if let Some(index) = widgets::select_menu_verbatim(ui, palette, &label, &names, current, width) {
                             selected = sources[index].0.clone();
                         }
                     });
@@ -2887,16 +2907,26 @@ impl DesktopApp {
                 "사용자 크기"
             };
             let measure = format!("{} × {}", widgets::format_number(width, unit.decimals()), widgets::format_number(height, unit.decimals()));
+            // The slides engine keeps the slide size and refuses SetPageSize (PageSetup edit Unsupported): the row then only
+            // tells the size.
+            let resizable = feature_editable(self.feature_support(Feature::PageSetup)) && self.command_enabled_for_current_kind("props.page_size");
+            if !resizable {
+                custom = false;
+            }
             let choice = row(ui, palette, Some("크기"), |ui| {
                 let room = ui.available_width();
-                let (rect, response) = ui.allocate_exact_size(vec2(room, theme::FIELD_HEIGHT), Sense::click());
+                let (rect, response) = ui.allocate_exact_size(vec2(room, theme::FIELD_HEIGHT), if resizable { Sense::click() } else { Sense::hover() });
                 let corner = CornerRadius::same(theme::RADIUS_CONTROL);
-                ui.painter().rect(rect, corner, if response.hovered() { palette.surface_2 } else { palette.field }, Stroke::new(1.0, palette.line_strong), StrokeKind::Inside);
+                let fill = if resizable && response.hovered() { palette.surface_2 } else { palette.field };
+                ui.painter().rect(rect, corner, fill, Stroke::new(1.0, if resizable { palette.line_strong } else { palette.line }), StrokeKind::Inside);
                 icons::paint(ui, Rect::from_min_size(Pos2::new(rect.left() + 8.0, rect.center().y - 8.0), Vec2::splat(16.0)), "preset-slide", palette.ink_2);
-                ui.painter().text(Pos2::new(rect.left() + 30.0, rect.center().y), Align2::LEFT_CENTER, ratio, theme::display_font(false, 13.0), palette.ink);
-                ui.painter().text(Pos2::new(rect.right() - 30.0, rect.center().y), Align2::RIGHT_CENTER, &measure, theme::display_font(false, 13.0), palette.ink_3);
-                icons::paint(ui, Rect::from_min_size(Pos2::new(rect.right() - 24.0, rect.center().y - 8.0), Vec2::splat(16.0)), "chev-down", palette.ink_3);
+                ui.painter().text(Pos2::new(rect.left() + 30.0, rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&ratio), theme::display_font(false, 13.0), palette.ink);
+                ui.painter().text(Pos2::new(rect.right() - if resizable { 30.0 } else { 8.0 }, rect.center().y), Align2::RIGHT_CENTER, crate::i18n::tr(&measure), theme::display_font(false, 13.0), palette.ink_3);
                 let mut choice = None;
+                if !resizable {
+                    return choice;
+                }
+                icons::paint(ui, Rect::from_min_size(Pos2::new(rect.right() - 24.0, rect.center().y - 8.0), Vec2::splat(16.0)), "chev-down", palette.ink_3);
                 egui::Popup::from_toggle_button_response(&response)
                     .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                     .show(|ui| {
@@ -2965,9 +2995,14 @@ impl DesktopApp {
     /// `내보내기 ›` (mockups `canvas-board`, `slides-board`, `figure-board`): the last section, one 34 px row that opens
     /// the export popover with its range set to `scope` — this page (as the title row's ⇪), or the selection
     /// (`file.export_selection`, PNG·SVG).
-    fn export_row(&mut self, ui: &mut Ui, palette: &theme::Palette, first: &mut bool, scope: &str) {
+    pub(super) fn export_row(&mut self, ui: &mut Ui, palette: &theme::Palette, first: &mut bool, scope: &str) {
         let command = if scope == "selection" { "file.export_selection" } else { "file.export" };
         if !commands_available(command) {
+            return;
+        }
+        // Only a kind whose export writes some nodes of a page offers the selection's row: elsewhere the menu would put the
+        // whole page in its place.
+        if scope == "selection" && !self.selection_export_supported() {
             return;
         }
         let height = section_height(ui);
@@ -2979,11 +3014,14 @@ impl DesktopApp {
         }
         *first = false;
         let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
-        ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, "내보내기", theme::display_font(true, 13.0), palette.ink);
+        ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, crate::i18n::tr("내보내기"), theme::display_font(true, 13.0), palette.ink);
         icons::paint(ui, Rect::from_min_size(Pos2::new(rect.right() - 16.0, rect.center().y - 8.0), Vec2::splat(16.0)), "chev-right", palette.ink_3);
         if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            self.export_scope = scope.to_owned();
-            self.smoke_open = Some(String::from("export"));
+            if scope == "selection" {
+                self.open_selection_export();
+            } else {
+                self.open_page_export();
+            }
         }
     }
 
@@ -3021,7 +3059,13 @@ impl DesktopApp {
                 };
                 // tokens `component.doc-style-list.row`: a menu item (30, 13 `ink`).
                 let is_open = open.as_deref() == Some(entry.id.as_str());
-                if widgets::menu_item(ui, palette, None, &entry.label, "", is_open).clicked() {
+                let builtin = DOCX_STYLE_NAMES.iter().any(|(_, name)| *name == entry.label);
+                let item = if builtin {
+                    widgets::menu_item(ui, palette, None, &entry.label, "", is_open)
+                } else {
+                    widgets::menu_item_verbatim(ui, palette, None, &entry.label, is_open)
+                };
+                if item.clicked() {
                     open = if is_open { None } else { Some(entry.id.clone()) };
                     ui.data_mut(|data| match &open {
                         Some(id) => data.insert_temp(open_id, id.clone()),
@@ -3046,14 +3090,14 @@ impl DesktopApp {
                 }) {
                     self.invoke_ui("doc.named_style", json!({ "name": name, "font_size": new.max(1.0) }));
                 }
-                if let Some(chosen) = row(ui, palette, Some("모양"), |ui| seg(ui, palette, &[("bold", "굵게"), ("italic", "기울임")], &[style.bold, style.italic])) {
+                if let Some(chosen) = row(ui, palette, Some("모양"), |ui| ui.add_enabled_ui(editable, |ui| seg(ui, palette, &[("bold", "굵게"), ("italic", "기울임")], &[style.bold, style.italic])).inner) {
                     if editable {
                         self.invoke_ui("doc.named_style", if chosen == 0 { json!({ "name": name, "bold": !style.bold }) } else { json!({ "name": name, "italic": !style.italic }) });
                     }
                 }
                 if let Some(colour) = row(ui, palette, Some("색"), |ui| {
                     let width = ui.available_width();
-                    colour_field(ui, palette, Id::new(("named-style", name, "color")), width, Some(&style.color))
+                    ui.add_enabled_ui(editable, |ui| colour_field(ui, palette, Id::new(("named-style", name, "color")), width, Some(&style.color))).inner
                 }) {
                     if editable {
                         self.invoke_ui("doc.named_style", json!({ "name": name, "color": colour }));
@@ -3087,7 +3131,7 @@ impl DesktopApp {
         }
         *first = false;
         let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), section_height(ui)), Sense::click());
-        ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, "쪽", theme::display_font(true, 13.0), palette.ink);
+        ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, crate::i18n::tr("쪽"), theme::display_font(true, 13.0), palette.ink);
         icons::paint(ui, Rect::from_min_size(Pos2::new(rect.right() - 16.0, rect.center().y - 8.0), Vec2::splat(16.0)), if open { "chev-down" } else { "chev-right" }, palette.ink_3);
         if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
             open = !open;
@@ -3129,13 +3173,13 @@ impl DesktopApp {
         let mm = EMU_PER_MM as f64;
         let a4 = Size::a4();
         let paper = if (setup.size.width - a4.width).abs() < mm as i64 || (setup.size.height - a4.width).abs() < mm as i64 { 0 } else { 1 };
-        if let Some(chosen) = row(ui, palette, Some("용지"), |ui| seg(ui, palette, &[("preset-paper", "A4"), ("preset-paper", "Letter")], &[paper == 0, paper == 1])) {
+        if let Some(chosen) = row(ui, palette, Some("용지"), |ui| ui.add_enabled_ui(editable, |ui| seg(ui, palette, &[("preset-paper", "A4"), ("preset-paper", "Letter")], &[paper == 0, paper == 1])).inner) {
             if editable && chosen != paper {
                 self.invoke_ui("doc.page_setup", json!({ "section_id": section.id, "paper": (["a4", "letter"][chosen]) }));
             }
         }
         let landscape = setup.size.width > setup.size.height;
-        if let Some(chosen) = row(ui, palette, Some("방향"), |ui| seg(ui, palette, &[("orient-portrait", "세로"), ("orient-landscape", "가로")], &[!landscape, landscape])) {
+        if let Some(chosen) = row(ui, palette, Some("방향"), |ui| ui.add_enabled_ui(editable, |ui| seg(ui, palette, &[("orient-portrait", "세로"), ("orient-landscape", "가로")], &[!landscape, landscape])).inner) {
             if editable && (chosen == 1) != landscape {
                 self.invoke_ui("doc.page_setup", json!({ "section_id": section.id, "orientation": (["portrait", "landscape"][chosen]) }));
             }
@@ -3427,7 +3471,7 @@ impl DesktopApp {
             let shown = columns.iter().find(|column| Some(column.id.as_str()) == current);
             let picked = row(ui, palette, Some(label), |ui| {
                 let width = ui.available_width();
-                let button = widgets::dropdown(ui, palette, &shown.map(column_label).unwrap_or_default(), shown.map(icon_of), width);
+                let button = widgets::dropdown_verbatim(ui, palette, &shown.map(column_label).unwrap_or_default(), shown.map(icon_of), width);
                 let mut picked = None;
                 egui::Popup::from_toggle_button_response(&button)
                     .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -3435,7 +3479,7 @@ impl DesktopApp {
                         ui.set_width(width.max(200.0));
                         for column in &columns {
                             let chosen = Some(column.id.as_str()) == current;
-                            if widgets::menu_item(ui, palette, Some(icon_of(column)), &column_label(column), "", chosen).clicked() {
+                            if widgets::menu_item_verbatim(ui, palette, Some(icon_of(column)), &column_label(column), chosen).clicked() {
                                 if !chosen {
                                     picked = Some(column.id.clone());
                                 }
@@ -3642,7 +3686,7 @@ fn column_menu<'a>(
     let icon_of = |column: &designllm_contracts::DataColumn| if matches!(column.data_type.as_str(), "text" | "string" | "category") { "col-category" } else { "col-number" };
     let shown = columns.iter().copied().find(|column| Some(column.id.as_str()) == current);
     let width = ui.available_width();
-    let button = widgets::dropdown(ui, palette, &shown.map(label).unwrap_or_default(), shown.map(icon_of), width);
+    let button = widgets::dropdown_verbatim(ui, palette, &shown.map(label).unwrap_or_default(), shown.map(icon_of), width);
     let mut picked = None;
     egui::Popup::from_toggle_button_response(&button)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -3650,7 +3694,7 @@ fn column_menu<'a>(
             ui.set_width(width.max(200.0));
             for column in columns.iter().copied() {
                 let chosen = Some(column.id.as_str()) == current;
-                if widgets::menu_item(ui, palette, Some(icon_of(column)), &label(column), "", chosen).clicked() {
+                if widgets::menu_item_verbatim(ui, palette, Some(icon_of(column)), &label(column), chosen).clicked() {
                     if !chosen {
                         picked = Some(column.id.clone());
                     }
@@ -4005,7 +4049,7 @@ fn text_width(ui: &Ui, text: &str, font: egui::FontId) -> f32 {
     if text.is_empty() {
         return 0.0;
     }
-    ui.painter().layout_no_wrap(text.to_owned(), font, Color32::BLACK).size().x
+    ui.painter().layout_no_wrap(crate::i18n::tr(&text).into_owned(), font, Color32::BLACK).size().x
 }
 
 /// A section head (mockup `.sh`): a 1 px `line` across the panel above every section but the first, then a 34 px
@@ -4022,7 +4066,7 @@ pub(super) fn section_head(ui: &mut Ui, palette: &theme::Palette, first: &mut bo
     }
     *first = false;
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), section_height(ui)), Sense::hover());
-    ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, title, theme::display_font(true, 13.0), palette.ink);
+    ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, crate::i18n::tr(&title), theme::display_font(true, 13.0), palette.ink);
     let Some((icon, label)) = action else {
         return false;
     };
@@ -4034,7 +4078,7 @@ pub(super) fn section_head(ui: &mut Ui, palette: &theme::Palette, first: &mut bo
         ui.painter().rect_filled(button, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
     }
     icons::paint(ui, Rect::from_min_size(Pos2::new(button.left() + 4.0, button.center().y - 8.0), Vec2::splat(16.0)), icon, palette.ink_2);
-    ui.painter().text(Pos2::new(button.left() + 24.0, button.center().y), Align2::LEFT_CENTER, label, font, palette.ink_2);
+    ui.painter().text(Pos2::new(button.left() + 24.0, button.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&label), font, palette.ink_2);
     response.clicked()
 }
 
@@ -4052,7 +4096,7 @@ fn row_with<R>(ui: &mut Ui, palette: &theme::Palette, label: Option<&str>, colum
         ui.spacing_mut().item_spacing.x = 8.0;
         if let Some(label) = label {
             let (rect, _) = ui.allocate_exact_size(vec2(column - 8.0, theme::PROPERTY_ROW), Sense::hover());
-            ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, label, theme::display_font(false, 12.0), palette.ink_2);
+            ui.painter().text(rect.left_center(), Align2::LEFT_CENTER, crate::i18n::tr(&label), theme::display_font(false, 12.0), palette.ink_2);
         }
         add(ui)
     })
@@ -4089,10 +4133,10 @@ fn field_with_hint(ui: &mut Ui, palette: &theme::Palette, id: Id, width: f32, pr
     }
     let rect = response.rect;
     if !prefix.is_empty() {
-        ui.painter().text(Pos2::new(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, prefix, small.clone(), palette.ink_3);
+        ui.painter().text(Pos2::new(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&prefix), small.clone(), palette.ink_3);
     }
     if !unit.is_empty() {
-        ui.painter().text(Pos2::new(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, unit, small, palette.ink_3);
+        ui.painter().text(Pos2::new(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, crate::i18n::tr(&unit), small, palette.ink_3);
     }
     if response.has_focus() {
         ui.data_mut(|data| data.insert_temp(draft_id, draft.clone()));
@@ -4531,11 +4575,11 @@ fn gradient_field(ui: &mut Ui, palette: &theme::Palette, width: f32, gradient: &
     let mut x = rect.left() + 30.0;
     for (text, ink) in [(widgets::normalise_hex(&from), palette.ink), (String::from(" → "), palette.ink_3), (widgets::normalise_hex(&to), palette.ink)] {
         let width = text_width(ui, &text, font.clone());
-        ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, text, font.clone(), ink);
+        ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&text), font.clone(), ink);
         x += width;
     }
     let angle = format!("{}°", widgets::format_number(f64::from(gradient.angle_millideg) / 1000.0, 0));
-    ui.painter().text(Pos2::new(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, angle, theme::display_font(false, 12.0), palette.ink_3);
+    ui.painter().text(Pos2::new(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, crate::i18n::tr(&angle), theme::display_font(false, 12.0), palette.ink_3);
     (rect, response.on_hover_cursor(egui::CursorIcon::PointingHand))
 }
 
@@ -4669,7 +4713,7 @@ fn paint_icon_label(ui: &Ui, rect: Rect, icon: &str, label: &str, ink: Color32) 
     let total = 16.0 + 4.0 + text_width(ui, label, font.clone());
     let left = rect.center().x - total / 2.0;
     icons::paint(ui, Rect::from_min_size(Pos2::new(left, rect.center().y - 8.0), Vec2::splat(16.0)), icon, ink);
-    ui.painter().text(Pos2::new(left + 20.0, rect.center().y), Align2::LEFT_CENTER, label, font, ink);
+    ui.painter().text(Pos2::new(left + 20.0, rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&label), font, ink);
 }
 
 /// A row of equal action buttons across the section (mockup `.acts`): 28 px, icon + label in `ink-2`, a `surface-2`
@@ -4703,7 +4747,7 @@ fn remove_button(ui: &mut Ui, palette: &theme::Palette, hint: &str) -> bool {
         ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
     }
     icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(16.0)), "minus", palette.ink_2);
-    response.on_hover_text(hint).clicked()
+    response.on_hover_text(crate::i18n::tr(&hint)).clicked()
 }
 
 /// A field-like menu button filling the row (mockup `.fld` with an icon and `chev-down`) and its menu. `items` are
@@ -4742,7 +4786,7 @@ fn shadow_field(ui: &mut Ui, palette: &theme::Palette, id: Id, width: f32, shado
     ui.painter().rect_stroke(sample, CornerRadius::same(theme::RADIUS_SMALL), Stroke::new(1.0, palette.swatch_ring), StrokeKind::Inside);
     let (x, y, blur) = (shadow.x as f64 / EMU_PER_PX, shadow.y as f64 / EMU_PER_PX, shadow.blur as f64 / EMU_PER_PX);
     let summary = format!("{}, {} · {}", widgets::format_number(x, 0), widgets::format_number(y, 0), widgets::format_number(blur, 0));
-    ui.painter().text(Pos2::new(rect.left() + 30.0, rect.center().y), Align2::LEFT_CENTER, summary, theme::display_font(false, 13.0), palette.ink);
+    ui.painter().text(Pos2::new(rect.left() + 30.0, rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&summary), theme::display_font(false, 13.0), palette.ink);
     let mut changed = None;
     egui::Popup::from_toggle_button_response(&response)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)

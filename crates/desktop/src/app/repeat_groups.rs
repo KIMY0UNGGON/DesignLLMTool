@@ -244,7 +244,7 @@ impl DesktopApp {
         let current = tables.iter().position(|(id, _)| *id == table);
         row(ui, palette, Some("데이터 표"), |ui| {
             let width = ui.available_width();
-            if let Some(index) = widgets::select_menu(ui, palette, &label, &names, current, width) {
+            if let Some(index) = widgets::select_menu_verbatim(ui, palette, &label, &names, current, width) {
                 table = tables[index].0.clone();
             }
         });
@@ -295,7 +295,7 @@ impl DesktopApp {
             // The source takes the whole row and its column the next one: side by side they do not fit a narrow panel.
             row(ui, palette, Some("연결"), |ui| {
                 let width = ui.available_width();
-                if let Some(index) = widgets::select_menu(ui, palette, &source_label, &options, current, width) {
+                if let Some(index) = widgets::select_menu_verbatim(ui, palette, &source_label, &options, current, width) {
                     add.0 = candidates[index].0.clone();
                 }
             });
@@ -486,7 +486,7 @@ fn comparable(form: &ConditionForm) -> ConditionForm {
 /// One line under the controls: the stored value moved while the panel held an edit, and the edit stays as it is.
 fn stale_notice(ui: &mut Ui, palette: &theme::Palette) {
     row(ui, palette, Some(""), |ui| {
-        ui.label(egui::RichText::new("저장된 값이 바뀌었습니다. 편집 중인 값은 유지했습니다").font(theme::display_font(false, 12.0)).color(palette.ink_2));
+        ui.label(egui::RichText::new(crate::i18n::tr("저장된 값이 바뀌었습니다. 편집 중인 값은 유지했습니다")).font(theme::display_font(false, 12.0)).color(palette.ink_2));
     });
 }
 

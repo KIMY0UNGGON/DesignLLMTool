@@ -233,16 +233,17 @@ fn run_attempt(shared: std::sync::Arc<Shared>, job: JobRef) {
 /// Starts the runtime for one attempt and reports its lifecycle to the core. Returns the error that should
 /// fail the job. A canceled or superseded attempt returns Ok: the core already holds the final state.
 fn launch_and_wait(shared: &std::sync::Arc<Shared>, job: &JobRef) -> Result<(), DltError> {
-    let job_context = shared.core_call(|ws| -> DltResult<Option<(JobStartRequest, ArtifactKind)>> {
+    let job_context = shared.core_call(|ws| -> DltResult<Option<(JobStartRequest, ArtifactKind, String)>> {
         let current = ws.job(&job.job_id)?;
         if current.attempt_id != job.attempt_id || current.status != JobStatus::Queued {
             return Ok(None);
         }
         let request = ws.job_start_request(&job.job_id)?;
         let artifact_kind = ws.artifact_kind(&request.artifact_id)?;
-        Ok(Some((request, artifact_kind)))
+        let title = ws.artifact_title(&request.artifact_id)?;
+        Ok(Some((request, artifact_kind, title)))
     })?;
-    let Some((request, artifact_kind)) = job_context else {
+    let Some((request, artifact_kind, title)) = job_context else {
         return Ok(());
     };
     let kind = RuntimeKind::parse(&request.runtime)?;
@@ -263,12 +264,15 @@ fn launch_and_wait(shared: &std::sync::Arc<Shared>, job: &JobRef) -> Result<(), 
         None => std::env::current_exe()
             .map_err(|e| DltError::new(ErrorCode::Io, format!("cannot locate the application executable: {e}")))?,
     };
+    // The artifact's title and the request choose the guide together: "increase the spacing" on an architecture Canvas still
+    // gets the paper-diagram guide.
+    let design_guidance = designllm_bridge::manual::job_design_guidance(artifact_kind, &format!("{title}\n{}", request.prompt));
     let spec = LaunchSpec {
         job: job.clone(),
         request,
         workspace_root: shared.root.clone(),
         mcp: McpCommand::for_job(&program, &shared.root, job),
-        design_guidance: designllm_bridge::manual::job_design_guidance(artifact_kind),
+        design_guidance,
     };
     let transcript = transcript_path(&shared.root, job)?;
     // The job is known before the runtime runs: the start hands it to the callback and resumes the process after it.

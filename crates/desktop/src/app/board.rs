@@ -658,7 +658,7 @@ impl DesktopApp {
                 .pages
                 .get(page_index as usize)
                 .and_then(|page| page.name.clone())
-                .unwrap_or_else(|| format!("페이지 {}", page_index + 1)),
+                .unwrap_or_else(|| crate::i18n::tr(&format!("페이지 {}", page_index + 1)).into_owned()),
             Some(designllm_contracts::ArtifactBody::Slides(document)) => {
                 let title = document.pages.get(page_index as usize).and_then(|page| {
                     page.name.clone().or_else(|| first_text(&page.nodes).map(|text| text.lines().next().unwrap_or_default().trim().to_owned()))
@@ -668,7 +668,7 @@ impl DesktopApp {
                     None => format!("{}", page_index + 1),
                 }
             }
-            _ => format!("페이지 {}", page_index + 1),
+            _ => crate::i18n::tr(&format!("페이지 {}", page_index + 1)).into_owned(),
         }
     }
 
@@ -693,8 +693,7 @@ impl DesktopApp {
         }
         if crate::widgets::mini_button(&mut child, palette, "export", &format!("{page_label} 내보내기")).clicked() {
             self.region_clicked = true;
-            self.export_scope = String::from("page");
-            self.smoke_open = Some(String::from("export"));
+            self.open_page_export();
         }
     }
 
@@ -919,7 +918,7 @@ impl DesktopApp {
         if !self.flow_uses_paragraph_editor() { return; }
         let palette = theme::palette(ctx);
         let height = (ctx.content_rect().height() * 0.45).clamp(80.0, 420.0);
-        egui::Window::new("문단 편집").id(Id::new("paginated-paragraph-editor"))
+        egui::Window::new(crate::i18n::tr("문단 편집")).id(Id::new("paginated-paragraph-editor"))
             .collapsible(false).default_width(480.0).show(ctx, |ui| {
                 egui::ScrollArea::vertical().max_height(height).show(ui, |ui| {
                     let size = Vec2::new(ui.available_width().max(1.0), 80.0);
@@ -962,11 +961,11 @@ impl DesktopApp {
         // A notice on the board, under the other notices: it takes no keys, so Esc and typing stay the inline editor's.
         let board = self.board_rect.unwrap_or_else(|| ctx.content_rect());
         let shown = crate::widgets::dialog_with_choices(ctx, &palette, Id::new("inline-text-conflict"), "", crate::widgets::DialogPlace::BoardTop(board), |ui| {
-                ui.label(edit.conflict.as_deref().unwrap_or_default());
+                ui.label(crate::i18n::tr(&edit.conflict.as_deref().unwrap_or_default()));
                 if edit.retry_same_request {
-                    ui.label("마지막 입력의 확정 결과가 불명확합니다. 재시도는 같은 request_id로 확인하며, 초안을 버려도 이미 확정된 입력은 남을 수 있습니다.");
+                    ui.label(crate::i18n::tr("마지막 입력의 확정 결과가 불명확합니다. 재시도는 같은 request_id로 확인하며, 초안을 버려도 이미 확정된 입력은 남을 수 있습니다."));
                 }
-                ui.label("적용되지 않은 초안:");
+                ui.label(crate::i18n::tr("적용되지 않은 초안:"));
                 let preview: String = self.text_draft.chars().take(240).collect();
                 ui.label(egui::RichText::new(preview).monospace());
                 let can_copy = !edit.composing && !self.text_adapter.is_ime_active();
@@ -1118,7 +1117,7 @@ impl DesktopApp {
         let center = board_rect.center();
         // GUI_DESIGN §8: without a preview engine the board shows its reason in one line; the code editor stays.
         if let Some(reason) = self.web_runtime_unavailable.as_deref() {
-            ui.painter().text(center, egui::Align2::CENTER_CENTER, reason, theme::font(theme::Type::Body), palette.ink_2);
+            ui.painter().text(center, egui::Align2::CENTER_CENTER, crate::i18n::tr(&reason), theme::font(theme::Type::Body), palette.ink_2);
             return;
         }
         let rect = Rect::from_center_size(center, Vec2::new(200.0, theme::CONTROL_HEIGHT));

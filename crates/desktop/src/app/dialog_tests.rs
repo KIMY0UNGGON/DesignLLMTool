@@ -10,7 +10,6 @@ use eframe::egui::{self, Event, Key, Modifiers, Pos2, Rect, ViewportCommand, Vie
 use serde_json::{json, Value};
 
 use super::super::{
-    board::LeftTab,
     drafts::{Body, Live},
     page_sections::SectionEditor,
     test_support::{canvas_with_page, primary_button, screen, Host, Window},
@@ -525,26 +524,12 @@ fn board_notices_hang_from_the_board_top_middle_stack_without_overlap_and_leave_
     assert!((alone.top() - (board.top() + 16.0)).abs() < 1.5, "the draft notice moves up once alone: {alone:?}");
 }
 
-/// The agent mark of the editor's top bar: its letter, pressed, opens the AI tab; its tooltip says so.
+/// The editor's top bar has no agent mark: the left panel's AI tab is the one way to the AI panel.
 #[test]
-fn the_editor_agent_mark_opens_the_ai_tab_and_says_so() {
+fn the_editor_top_bar_has_no_agent_mark() {
     let mut bench = Bench::canvas();
-    assert_eq!(bench.window.app.view_ref().left_tab, LeftTab::Layers);
     let output = bench.frame_with(Vec::new());
-    let letter = top_bar_letter(&output).expect("the editor shows the runtime's mark");
-    // The tooltip shows after the pointer rests on the mark.
-    let mut texts = Vec::new();
-    bench.frame_with(vec![Event::PointerMoved(letter)]);
-    for _ in 0..40 {
-        let output = bench.frame_with(Vec::new());
-        texts = super::super::test_support::drawn_text(&output);
-        if texts.iter().any(|text| text.starts_with("AI 패널 열기")) {
-            break;
-        }
-    }
-    assert!(texts.iter().any(|text| text == "AI 패널 열기 · Claude 대기"), "the tooltip names the press: {texts:?}");
-    bench.click_at(letter);
-    assert_eq!(bench.window.app.view_ref().left_tab, LeftTab::Ai, "the mark opens the AI tab");
+    assert!(top_bar_letter(&output).is_none(), "the top bar draws no runtime letter next to the save button");
 }
 
 /// The centre of the `C`/`X` letter drawn in the top bar (44 high), if any.

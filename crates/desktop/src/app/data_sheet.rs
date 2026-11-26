@@ -207,27 +207,27 @@ impl DesktopApp {
                 ui.set_width(UNIT_FORM_LABEL + 8.0 + UNIT_FORM_FIELD);
                 egui::Grid::new("sheet-unit-scale-grid").num_columns(2).spacing([8.0, 6.0]).min_col_width(UNIT_FORM_LABEL).show(ui, |ui| {
                     // The column list is taller than its label: the label sits at the top of the row.
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| ui.label("열"));
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| ui.label(crate::i18n::tr("열")));
                     ui.vertical(|ui| {
                         ui.set_width(UNIT_FORM_FIELD);
                         for column in &numeric_columns {
                             let label = column_unit_label(column);
-                            if widgets::menu_item(ui, palette, None, &label, "", draft.column_id == column.id).clicked() {
+                            if widgets::menu_item_verbatim(ui, palette, None, &label, draft.column_id == column.id).clicked() {
                                 draft.column_id = column.id.clone();
                             }
                         }
                     });
                     ui.end_row();
 
-                    ui.label("출력 단위");
+                    ui.label(crate::i18n::tr("출력 단위"));
                     widgets::edit_line(ui, palette, &mut draft.output_unit, widgets::Field { width: UNIT_FORM_FIELD, ..Default::default() });
                     ui.end_row();
 
-                    ui.label("분자");
+                    ui.label(crate::i18n::tr("분자"));
                     widgets::edit_line(ui, palette, &mut draft.numerator, widgets::Field { width: UNIT_FORM_FIELD, ..Default::default() });
                     ui.end_row();
 
-                    ui.label("분모");
+                    ui.label(crate::i18n::tr("분모"));
                     widgets::edit_line(ui, palette, &mut draft.denominator, widgets::Field { width: UNIT_FORM_FIELD, ..Default::default() });
                     ui.end_row();
                 });

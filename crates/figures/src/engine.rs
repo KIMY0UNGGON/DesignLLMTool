@@ -174,7 +174,7 @@ fn capability_report() -> CapabilityReport {
     m.insert(Feature::Effects, all(Support::Approximate, &guard::effects_reason()));
     m.insert(
         Feature::VectorPaths,
-        na("NodeKind::Path, path data and icons are refused; diagrams draw rectangles and ellipses only"),
+        na("NodeKind::Path, path data and icons are refused; diagrams draw rectangles, ellipses and math formulas only"),
     );
     m.insert(
         Feature::GridLayout,

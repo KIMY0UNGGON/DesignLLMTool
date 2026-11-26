@@ -1,0 +1,51 @@
+{
+  "note": "Public, explicitly licensed HWP 5.x samples. No user documents. Tests read these files and must never modify them; hashes are re-checked before and after each test run.",
+  "sources": [
+    {
+      "id": "hwp-rs-0.2.0",
+      "origin": "crates.io package hwp 0.2.0 (https://crates.io/crates/hwp/0.2.0), path tests/integration/project/files/ inside the .crate",
+      "crate_sha256": "f1ad6bad2b9f7681f0cbf99f77620c3f6f5b4162c092bdbd85555962c93c08ab",
+      "crate_sha256_matches_crates_io_index_cksum": true,
+      "vcs_sha1": "e41e7b427e131bea298c708d8a1c5e71dbf625b7",
+      "repository": "https://github.com/hahnlee/hwp-rs (path crates/hwp)",
+      "license": "Apache-2.0 (package license field and README license block; see UPSTREAM_README.md)",
+      "authorship": "UPSTREAM_tests_integration_README.md: project/ files were created directly by the hwp project to cover HWP states. The hancom/ and naver_documents/ files of the same package state third-party copyright and are deliberately NOT used.",
+      "producer": "not stated upstream; FileHeader version is recorded by the probe",
+      "files": {
+        "bookmark.hwp": "a6ee98d86b20fda8904262bbd2741e11cc299315e83e9cb1af28358d8f39564e",
+        "color_fill.hwp": "3802a91ee19f6f6ae6f6019ca5bc5eb08f7a2c93efc889a0e67c18284b58258a",
+        "draw_text.hwp": "40b34944c664914bb4948778683c7e2e49f067b0ef3a8d27287a58124877e092",
+        "dutmal.hwp": "9b688dda6133f39d3e4b99b9e7aac4c38252943f6c6785fa33bd7b6d42743780",
+        "gradation_fill.hwp": "9d370772c1731bc69f83972097d82bf48a75a1fd53e9eb5c8617fb3bdb90576a",
+        "group_with_draw_text.hwp": "73b72129141df552d2e66d25afad465f06057413079b891eec44b174c0d7ee8c",
+        "hello_world.hwp": "283e16ee51834d75e22f413203549027a5d3fda39346302d9429e9732bb3a77c",
+        "image_fill.hwp": "ca0cb87c189464948915d23ea3a1d26c48b4af6504edfbf125a1953f3ecb875e",
+        "outline.hwp": "e8a03924738d8a8e6e6d01ffb77331bd6b0a5918fc5086b8c7f41459f93d0a2a",
+        "over_type.hwp": "464d65172eaf4e99af868b5d6989fa5f56845f06bf361ab08c618a51bd73ec87",
+        "range.hwp": "60c1194b177526c853ec7c2d38fd94e08316a99bee0b5d33e15dec2aace8d933",
+        "shadow.hwp": "cc1e5f500d1fb6c1c47d506ff777f43cf91814928f20da8806127230d314e4ed"
+      }
+    },
+    {
+      "id": "rhwp-0.9.0-saved",
+      "origin": "crates.io package rhwp 0.9.0, path saved/blank2010.hwp inside the .crate",
+      "crate_sha256": "a1e228d3bf78bf79dfa4fd305d03d7a8abd917687e98ae87e733d7d6a014ce36",
+      "crate_sha256_matches_crates_io_index_cksum": true,
+      "vcs_sha1": "4a765822988575099104c30081516b2bb7c4ddb5",
+      "license": "MIT (rhwp package; UPSTREAM_LICENSE)",
+      "caveat": "Same project as the library under test; used only as an extra input.",
+      "files": {
+        "blank2010.hwp": "43f472751fafefb8c66b0f831660ebed51e443a46bebe44c75bba918154ce4c9"
+      }
+    },
+    {
+      "id": "rhwp-repo-sample",
+      "origin": "https://raw.githubusercontent.com/edwardkim/rhwp/4a765822988575099104c30081516b2bb7c4ddb5/samples/test-image.hwp (single-file HTTPS download, no clone)",
+      "license": "MIT (repository LICENSE, copyright Edward Kim; UPSTREAM_LICENSE). No separate per-file license statement found.",
+      "caveat": "Same project as the library under test. Byte-identical to fixtures/_sources/rhwp/test-image.hwp placed by Luna-2.",
+      "files": {
+        "test-image.hwp": "a854b822c3150d9731b8ba0687160b2120be1078fc5c91221566a15176de3e20"
+      }
+    }
+  ]
+}

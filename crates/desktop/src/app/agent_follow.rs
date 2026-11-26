@@ -553,7 +553,8 @@ impl DesktopApp {
         let Some(active) = &self.active else { return };
         for job in self.parked_jobs.iter().filter(|job| job.artifact_id == active.id && figure_close::job_running(job)) {
             let name = job.client_name.as_deref().filter(|name| !name.is_empty()).unwrap_or(&job.runtime);
-            ui.label(format!("{} · {}", if name.is_empty() { "AI 작업" } else { name }, job.id));
+            // The job's name is the person's (or the agent's) text: only the fallback is the window's.
+            ui.label(format!("{} · {}", if name.is_empty() { crate::i18n::tr("AI 작업") } else { std::borrow::Cow::Borrowed(name) }, job.id));
             let stages = match job.status {
                 JobStatus::Queued => [crate::widgets::Stage::Current(0.0), crate::widgets::Stage::Pending, crate::widgets::Stage::Pending],
                 JobStatus::Running => [crate::widgets::Stage::Done, crate::widgets::Stage::Current(0.5), crate::widgets::Stage::Pending],

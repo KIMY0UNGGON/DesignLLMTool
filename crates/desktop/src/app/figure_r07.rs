@@ -397,12 +397,12 @@ fn origin_label(origin: Option<&str>) -> &'static str {
 }
 
 fn evidence_label(item: &Evidence) -> String {
-    let page = item.physical_page_index.map_or_else(|| "원문".to_owned(), |index| format!("{}쪽", index.saturating_add(1)));
+    let page = item.physical_page_index.map_or_else(|| crate::i18n::tr("원문").into_owned(), |index| crate::i18n::page_label(index.saturating_add(1)));
     format!("{page} · {}", truncate(&item.text, 48))
 }
 
 fn evidence_text(figure: &FigureDocument, id: Option<&str>) -> String {
-    id.and_then(|id| figure.evidence.iter().find(|item| item.id == id)).map_or_else(|| "근거 없음".to_owned(), evidence_label)
+    id.and_then(|id| figure.evidence.iter().find(|item| item.id == id)).map_or_else(|| crate::i18n::tr("근거 없음").into_owned(), evidence_label)
 }
 
 fn pixel(text: &str) -> Result<u32, String> {
@@ -729,7 +729,7 @@ impl DesktopApp {
                 self.invoke_ui(command, args);
             }
             if let Some(message) = refusal {
-                ui.label(RichText::new(message).color(theme::RED));
+                ui.label(RichText::new(crate::i18n::tr(&message)).color(theme::RED));
             }
         });
     }
@@ -745,7 +745,7 @@ impl DesktopApp {
             .data(|data| data.get_temp::<ProvenanceDraft>(key))
             .filter(|stored| stored.base == fresh.base)
             .unwrap_or_else(|| fresh.clone());
-        ui.label(RichText::new("출처와 근거").strong());
+        ui.label(RichText::new(crate::i18n::tr("출처와 근거")).strong());
         let mut options = Vec::new();
         let mut choices: Vec<Option<String>> = Vec::new();
         if !connector {
@@ -765,7 +765,7 @@ impl DesktopApp {
         });
         for item in &figure.evidence {
             let mut checked = draft.evidence.contains(&item.id);
-            if widgets::checkbox(ui, &palette, &mut checked, &evidence_label(item)).changed() {
+            if widgets::checkbox_verbatim(ui, &palette, &mut checked, &evidence_label(item)).changed() {
                 draft.evidence.retain(|id| id != &item.id);
                 if checked {
                     draft.evidence.push(item.id.clone());
@@ -789,14 +789,14 @@ impl DesktopApp {
             .data(|data| data.get_temp::<TransformDraft>(key))
             .filter(|stored| stored.base == fresh.base)
             .unwrap_or_else(|| fresh.clone());
-        ui.label(RichText::new("그림 자르기·회전").strong());
+        ui.label(RichText::new(crate::i18n::tr("그림 자르기·회전")).strong());
         widgets::checkbox(ui, &palette, &mut draft.crop_on, "자르기");
         let on = draft.crop_on;
         // Two fields a line (x y, then the size), so that the four fit the narrowest panel.
         egui::Grid::new(("r07-transform-crop", panel_id)).num_columns(4).show(ui, |ui| {
             let fields = [("x", &mut draft.x), ("y", &mut draft.y), ("너비", &mut draft.width), ("높이", &mut draft.height)];
             for (index, (label, field)) in fields.into_iter().enumerate() {
-                ui.label(label);
+                ui.label(crate::i18n::tr(&label));
                 widgets::edit_line(ui, &palette, field, widgets::Field { width: NUMBER_WIDTH, enabled: on, ..Default::default() });
                 if index % 2 == 1 {
                     ui.end_row();
@@ -804,7 +804,7 @@ impl DesktopApp {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("회전 (도)");
+            ui.label(crate::i18n::tr("회전 (도)"));
             widgets::edit_line(ui, &palette, &mut draft.rotation, widgets::Field { width: NUMBER_WIDTH, ..Default::default() });
         });
         let dirty = draft != fresh;
@@ -832,14 +832,16 @@ impl DesktopApp {
             .data(|data| data.get_temp::<CalibrationDraft>(key))
             .filter(|stored| stored.base == fresh.base)
             .unwrap_or_else(|| fresh.clone());
-        ui.label(RichText::new("측정 보정").strong());
+        ui.label(RichText::new(crate::i18n::tr("측정 보정")).strong());
         ui.horizontal_wrapped(|ui| {
             wrapped_field(ui, &palette, &mut draft.length, widgets::Field { hint: "길이", record: Some("길이"), width: NUMBER_WIDTH, ..Default::default() });
             wrapped_field(ui, &palette, &mut draft.pixel_span, widgets::Field { hint: "픽셀 간격", record: Some("픽셀 간격"), width: 84.0, ..Default::default() });
             wrapped_field(ui, &palette, &mut draft.unit, widgets::Field { hint: "단위", record: Some("단위"), width: 64.0, ..Default::default() });
         });
         let labels: Vec<String> = figure.evidence.iter().map(evidence_label).collect();
-        let mut options = vec!["근거 없음"];
+        // The evidence's own words are shown as read; only `근거 없음` is the window's.
+        let none = crate::i18n::tr("근거 없음");
+        let mut options = vec![none.as_ref()];
         options.extend(labels.iter().map(String::as_str));
         let current = match draft.evidence.as_deref() {
             None => Some(0),
@@ -848,7 +850,7 @@ impl DesktopApp {
         ui.horizontal(|ui| {
             let shown = evidence_text(figure, draft.evidence.as_deref());
             let width = fitted(ui, SELECT_WIDTH);
-            if let Some(index) = widgets::select_menu(ui, &palette, &shown, &options, current, width) {
+            if let Some(index) = widgets::select_menu_verbatim(ui, &palette, &shown, &options, current, width) {
                 draft.evidence = index.checked_sub(1).and_then(|index| figure.evidence.get(index)).map(|item| item.id.clone());
             }
         });
@@ -872,7 +874,7 @@ impl DesktopApp {
             .data(|data| data.get_temp::<LegendDraft>(key))
             .filter(|stored| stored.base == fresh.base)
             .unwrap_or_else(|| fresh.clone());
-        ui.label(RichText::new("공통 범례").strong());
+        ui.label(RichText::new(crate::i18n::tr("공통 범례")).strong());
         let placement_options: Vec<&str> = PLACEMENTS.iter().map(|(_, label)| *label).collect();
         let placement_current = PLACEMENTS.iter().position(|(value, _)| *value == draft.placement);
         ui.horizontal_wrapped(|ui| {
@@ -898,7 +900,7 @@ impl DesktopApp {
             draft.items.remove(index);
         }
         if widgets::dialog_button(ui, &palette, "항목 추가", DialogButton::Plain, true).clicked() {
-            draft.items.push((String::new(), "#1F4E79".to_owned()));
+            draft.items.push((String::new(), "#0072B2".to_owned()));
         }
         let dirty = draft != fresh;
         let legend = draft.legend();
@@ -920,10 +922,10 @@ impl DesktopApp {
             .data(|data| data.get_temp::<ReviewDraft>(key))
             .filter(|stored| stored.base == fresh.base)
             .unwrap_or_else(|| fresh.clone());
-        ui.label(RichText::new("시각 검토").strong());
+        ui.label(RichText::new(crate::i18n::tr("시각 검토")).strong());
         let stale = review_status_message(figure.visual_review.as_ref(), self.r07_diagnostics());
         if let Some(message) = stale {
-            ui.label(RichText::new(message).color(theme::RED));
+            ui.label(RichText::new(crate::i18n::tr(&message)).color(theme::RED));
         }
         let state_options: Vec<&str> = REVIEW_STATES.iter().map(|(_, label)| *label).collect();
         let state_current = REVIEW_STATES.iter().position(|(value, _)| *value == draft.state);

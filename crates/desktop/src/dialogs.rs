@@ -172,7 +172,7 @@ pub fn open_project_folder(owner: Option<isize>) -> Option<PathBuf> {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
         dialog.SetOptions(dialog.GetOptions().ok()? | FOS_FORCEFILESYSTEM | FOS_PICKFOLDERS).ok()?;
-        dialog.SetTitle(&HSTRING::from("프로젝트 폴더 열기")).ok()?;
+        dialog.SetTitle(&HSTRING::from(&*crate::i18n::tr("프로젝트 폴더 열기"))).ok()?;
         dialog.Show(owner.map(|raw| HWND(raw as *mut core::ffi::c_void))).ok()?;
         path_of(&dialog.GetResult().ok()?)
     }
@@ -192,7 +192,7 @@ fn show_open(owner: Option<isize>, filters: &[(&str, &str)]) -> Option<PathBuf> 
         let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
         let options = dialog.GetOptions().ok()?;
         dialog.SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST).ok()?;
-        let names: Vec<(HSTRING, HSTRING)> = filters.iter().map(|(name, spec)| (HSTRING::from(*name), HSTRING::from(*spec))).collect();
+        let names: Vec<(HSTRING, HSTRING)> = filters.iter().map(|(name, spec)| (HSTRING::from(&*crate::i18n::tr(name)), HSTRING::from(*spec))).collect();
         let specs: Vec<COMDLG_FILTERSPEC> = names
             .iter()
             .map(|(name, spec)| COMDLG_FILTERSPEC { pszName: PCWSTR(name.as_ptr()), pszSpec: PCWSTR(spec.as_ptr()) })
@@ -206,7 +206,7 @@ fn show_open(owner: Option<isize>, filters: &[(&str, &str)]) -> Option<PathBuf> 
 
 /// Shows the save dialog for the artifact's native format, suggesting its title.
 pub fn save_document(owner: Option<isize>, title: String, kind: designllm_contracts::ArtifactKind) -> Option<PathBuf> {
-    let name = if title.trim().is_empty() { "새 작업물".to_owned() } else { title };
+    let name = if title.trim().is_empty() { crate::i18n::tr("새 작업물").into_owned() } else { title };
     let extension = designllm_contracts::artifact_native_extension(kind);
     show_save(owner, &name, &format!("*.{extension}"), extension)
 }
@@ -214,7 +214,7 @@ pub fn save_document(owner: Option<isize>, title: String, kind: designllm_contra
 /// Shows the save dialog for an export in `extension` (without the dot).
 pub fn save_export(owner: Option<isize>, extension: &str) -> Option<PathBuf> {
     let spec = format!("*.{extension}");
-    show_save(owner, "내보내기", &spec, extension)
+    show_save(owner, &crate::i18n::tr("내보내기"), &spec, extension)
 }
 
 fn show_save(owner: Option<isize>, suggested: &str, spec: &str, label: &str) -> Option<PathBuf> {

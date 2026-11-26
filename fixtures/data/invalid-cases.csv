@@ -1,0 +1,11 @@
+case,category,value,error,n,unit,error_type,lower,upper,ci_level
+missing_value,Missing,,0.02,3,ratio,SD,,,
+ambiguous_thousands,Ambiguous,"1,234",0.01,3,ratio,SD,,,
+negative_error,Negative,0.20,-0.01,3,ratio,SD,,,
+asymmetric_error,Asymmetric,0.20,,3,ratio,ASYMMETRIC,0.18,0.23,
+invalid_bounds,Bounds,0.20,,3,ratio,RANGE,0.25,0.15,
+ci_without_level,CI,0.20,,3,ratio,CI,,,
+missing_n,NoN,0.20,0.01,,ratio,SD,,,
+log_nonpositive_lower,Log,0.10,0.15,3,ratio,SD,,,
+duplicate_category,Duplicate,0.10,0.01,3,ratio,SD,,,
+duplicate_category,Duplicate,0.20,0.02,3,ratio,SD,,,

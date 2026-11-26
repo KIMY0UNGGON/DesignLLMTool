@@ -114,7 +114,7 @@ pub(super) fn show(ui: &mut Ui, palette: &theme::Palette, info: &WorkspaceInfo) 
             ui.add(egui::Label::new(egui::RichText::new(&backup.path).font(theme::font(theme::Type::Body)).color(palette.ink)).wrap());
             let versions = versions_line(backup);
             if !versions.is_empty() {
-                ui.add(egui::Label::new(egui::RichText::new(versions).font(theme::font(theme::Type::Caption)).color(palette.ink_3)).wrap());
+                ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr(&versions)).font(theme::font(theme::Type::Caption)).color(palette.ink_3)).wrap());
             }
             ui.add_space(6.0);
         }

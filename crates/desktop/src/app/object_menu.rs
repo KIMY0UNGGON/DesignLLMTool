@@ -17,9 +17,13 @@ fn node_menu_entries(kind: ArtifactKind, many: bool, hidden: bool, locked: bool)
         entries.push(Some("edit.duplicate"));
     }
     entries.extend([Some("edit.copy"), Some("edit.paste"), Some("edit.copy_properties"), Some("edit.paste_properties"), None]);
-    entries.extend([Some("edit.group"), Some("edit.ungroup"), Some("edit.stack"), None]);
-    if !many {
-        entries.extend([Some("edit.order_forward"), Some("edit.order_backward"), Some("edit.order_front"), Some("edit.order_back"), None]);
+    // Grouping and stacking order are Canvas operations: a deck refuses them (ui_channel scopes, slides guard), so a slide's
+    // menu does not offer them.
+    if kind == ArtifactKind::Canvas {
+        entries.extend([Some("edit.group"), Some("edit.ungroup"), Some("edit.stack"), None]);
+        if !many {
+            entries.extend([Some("edit.order_forward"), Some("edit.order_backward"), Some("edit.order_front"), Some("edit.order_back"), None]);
+        }
     }
     entries.extend(super::selection::layer_state_commands(kind, hidden, locked).into_iter().map(Some));
     entries.extend([None, Some("edit.delete")]);

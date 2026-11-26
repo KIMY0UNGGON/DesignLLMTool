@@ -1,0 +1,35 @@
+{
+  "task": "design-intent-refusal",
+  "summary": "A17 through MCP: a change set whose allowed_intents is only design but that also rewrites text is refused whole (CONTENT_LOCKED), so the revision is unchanged; the same design change alone is then applied at the same base revision (bold true, text unchanged).",
+  "steps": [
+    { "id": "workspace", "tool": "workspace_list", "arguments": {}, "bind": { "workspace_id": "/structuredContent/workspace_id" } },
+    { "id": "create", "tool": "artifact_create", "arguments": { "request_id": "$request_id", "actor": "scenario", "kind": "canvas", "title": "Intent gate", "size": { "width": 3714750, "height": 8039100 }, "template": null }, "bind": { "artifact": "/structuredContent/id", "revision": "/structuredContent/revision" } },
+    { "id": "view0", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "view0" },
+    { "select": { "from": "view0", "pointer": "/structuredContent/body/document/pages", "field": "id" }, "as": "page_one" },
+    { "id": "add_text", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "add_node", "page_id": "$page_one", "parent_id": null, "node": { "id": "keep", "kind": "text", "bounds": { "x": 152400, "y": 533400, "width": 3409950, "height": 381000 }, "text": "keep me", "style": { "font_family": "Pretendard", "font_size": 254000, "color": "#1F2A44", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} } }
+        ] }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "mixed", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["design"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "set_style", "node_ids": ["keep"], "patch": { "bold": true } },
+          { "op": "set_text", "node_id": "keep", "text": "rewritten" }
+        ] }, "expect": { "is_error": true, "code": "CONTENT_LOCKED" } },
+    { "id": "design_only", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["design"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "set_style", "node_ids": ["keep"], "patch": { "bold": true } }
+        ] }, "bind": { "styled_revision": "/structuredContent/revision" } },
+    { "id": "final", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "final" }
+  ],
+  "checks": [
+    { "check": "inspect", "pointer": "/structuredContent/revision", "equals": "$styled_revision" },
+    { "check": "inspect", "pointer": "/structuredContent/body/document/pages/0/nodes/0/text", "equals": "keep me" },
+    { "check": "inspect", "pointer": "/structuredContent/body/document/pages/0/nodes/0/style/bold", "equals": true }
+  ]
+}

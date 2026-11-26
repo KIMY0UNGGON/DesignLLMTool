@@ -1179,3 +1179,19 @@ fn a_video_dropped_on_another_page_with_a_menu_open_closes_the_menu_and_opens_th
     assert!(!eframe::egui::Popup::is_any_open(&bench.window.ctx), "the drop closed the menu");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A diagram shape tile's command puts the shared library recipe on the canvas as a path node, centred on the drop point,
+/// with the neutral starting style; an unknown shape is refused.
+#[test]
+fn a_diagram_shape_lands_on_the_canvas_as_the_library_path() {
+    let mut bench = Bench::canvas();
+    bench.step("add.shape", json!({ "shape": "cylinder", "at": { "x": 200, "y": 150 } })).expect("the shape is sent");
+    let artifact = bench.host.artifact(&bench.artifact);
+    let ArtifactBody::Canvas(document) = &artifact.body else { panic!("a canvas") };
+    let path = document.pages[0].nodes.iter().find(|node| node.kind == NodeKind::Path).expect("the shape is a path node");
+    assert_eq!(path.ext.path, designllm_contracts::shape_library::shape("cylinder").map(|recipe| recipe.path()));
+    assert_eq!((path.style.fill.as_str(), path.style.stroke.as_str()), ("#FFFFFF", "#1C1C1C"));
+    let center = (path.bounds.x + path.bounds.width / 2, path.bounds.y + path.bounds.height / 2);
+    assert_eq!(center, (200 * EMU_PER_CSS_PX, 150 * EMU_PER_CSS_PX), "centred on the drop point");
+    assert!(bench.step("add.shape", json!({ "shape": "nope" })).is_err(), "an unknown shape is refused");
+}

@@ -35,7 +35,8 @@ const MARKER: i64 = 57_150;
 const LABEL_PT: i64 = 127_000;
 /// Passes allowed when fitting numeric x tick labels into the content box. Each pass only widens a margin.
 const X_FIT_PASSES: usize = 8;
-const PALETTE: [&str; 6] = ["#1F4E79", "#C0504D", "#4F9B3C", "#7F6000", "#7030A0", "#2E75B6"];
+/// Series colours: one definition for the renderer and the window that predicts them (output profiles, legend swatches).
+pub use designllm_contracts::figure_rules::{legacy_series_colors, series_colors};
 /// Model id of the common legend: the source-map owner of its primitives, and the id it reports. No element may use it.
 pub const COMMON_LEGEND_ID: &str = "common_legend";
 /// Id of the visual review in `changed_ids`. The review has no element of its own, so no element may use it either.
@@ -163,9 +164,6 @@ fn line_style(style: &Style, color: &str) -> Style {
     s
 }
 
-fn series_color(style: &Style, j: usize) -> String {
-    if j == 0 { style.fill.clone() } else { PALETTE[j % PALETTE.len()].to_owned() }
-}
 
 /// Bounds of a primitive as a source region. A line gets a tolerance of half its stroke width, between 1 pt and
 /// 2 mm, so that a connector or an axis can be hit next to the drawn line.
@@ -746,6 +744,9 @@ impl<'a> Canvas<'a> {
         let Some(data) = built.data else { return Ok(()) };
         let pid = panel.id.as_str();
         let st = panel.style.clone();
+        // Every series colour of this plot, computed once for its marks and its legend.
+        let colours = series_colors(&st.fill, data.series.len());
+        let colour_of = |j: usize| colours.get(j).cloned().unwrap_or_else(|| series_colors(&st.fill, j + 1).pop().unwrap_or_default());
         let axis_style = line_style(&st, &st.stroke.clone());
         let line_h = self.size("Ag", &st)?.1;
         let cap_h = self.size(&data.y_caption, &st)?.1;
@@ -928,7 +929,7 @@ impl<'a> Canvas<'a> {
                             continue;
                         }
                         let left = cx - group / 2 + j as i64 * bw;
-                        let bar_style = Style { fill: series_color(&st, j), ..st.clone() };
+                        let bar_style = Style { fill: colour_of(j), ..st.clone() };
                         self.add_shape(&format!("{pid}/bar{i}/{j}"), Rect { x: left, y: ym.min(base_y), width: bw, height: h }, "rect", &bar_style);
                     }
                 }
@@ -939,7 +940,7 @@ impl<'a> Canvas<'a> {
             for j in 0..data.series.len() {
                 for i in 1..data.rows.len() {
                     if let (Some(a), Some(b)) = (point_of(i - 1, j), point_of(i, j)) {
-                        let style = line_style(&st, &series_color(&st, j));
+                        let style = line_style(&st, &colour_of(j));
                         self.add_line(&format!("{pid}/line{j}/{i}"), a, b, &style, false);
                     }
                 }
@@ -961,7 +962,7 @@ impl<'a> Canvas<'a> {
             for j in 0..data.series.len() {
                 for i in 0..data.rows.len() {
                     if let Some(p) = point_of(i, j) {
-                        let color = series_color(&st, j);
+                        let color = colour_of(j);
                         let mk_style = Style { fill: color.clone(), stroke: color.clone(), color: color.clone(), ..st.clone() };
                         let rect = Rect { x: p.x - MARKER / 2, y: p.y - MARKER / 2, width: MARKER, height: MARKER };
                         self.add_shape(&format!("{pid}/mk{j}/{i}"), rect, "ellipse", &mk_style);
@@ -1029,7 +1030,7 @@ impl<'a> Canvas<'a> {
             } else {
                 let mut x = start;
                 for (j, name) in data.series.iter().enumerate() {
-                    let color = series_color(&st, j);
+                    let color = colour_of(j);
                     self.add_shape(&format!("{pid}/swatch{j}"), Rect { x, y: y0 + (line_h - sw) / 2, width: sw, height: sw }, "rect", &Style { fill: color.clone(), stroke: color.clone(), ..st.clone() });
                     self.emit_text(&format!("{pid}/legend{j}"), name, &st, x + sw + GAP, y0, true)?;
                     x += sw + GAP + widths[j] + 2 * GAP;
@@ -1124,3 +1125,4 @@ pub fn build(doc: &FigureDocument, figure_id: &str, renderer: &dyn RenderProvide
     cv.check_fixed();
     cv.finish(doc, figure_id)
 }
+

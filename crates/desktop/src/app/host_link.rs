@@ -28,8 +28,8 @@ pub(crate) struct HostLink {
     pub(super) lost: bool,
     pub(super) starter: Option<HostStarter>,
     /// The ticket of the `system.hello` that checks whether the host is still there.
-    probe: Option<u64>,
-    reconnecting: Option<mpsc::Receiver<DltResult<()>>>,
+    pub(super) probe: Option<u64>,
+    pub(super) reconnecting: Option<mpsc::Receiver<DltResult<()>>>,
     /// Why the last reconnect failed, in the window's words.
     failure: Option<String>,
     /// `종료` was chosen: the close goes past the close question, which needs the host to release held work.
@@ -111,6 +111,8 @@ impl DesktopApp {
             Ok(()) => {
                 self.host_link.lost = false;
                 self.host_link.failure = None;
+                // A preview that failed with the old host is asked of the new one.
+                self.export_preview_failed = None;
                 self.host_link.probe = None;
                 // The new host keeps no view of the old one (UI channel and views are in memory only, docs/UI_CHANNEL.md): the
                 // registry, the token and the page transforms are sent to it again.
@@ -192,10 +194,10 @@ impl DesktopApp {
         let palette = crate::theme::palette(ctx);
         let shown = crate::widgets::dialog_with_choices(ctx, &palette, Id::new("host-link-lost"), HOST_LOST, crate::widgets::DialogPlace::Modal, |ui| {
             if let Some(failure) = &self.host_link.failure {
-                ui.label(failure);
+                ui.label(crate::i18n::tr(&failure));
             }
             if close_work {
-                ui.label(HOST_LOST_CLOSE_NOTE);
+                ui.label(crate::i18n::tr(&HOST_LOST_CLOSE_NOTE));
             }
             ((), vec![
                 DialogChoice::new(RECONNECT, DialogButton::Primary).enabled(can_restart).human_only(),

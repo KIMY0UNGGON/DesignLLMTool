@@ -15,11 +15,20 @@ impl DesktopApp {
         let memo_work = self.board_memo_editor.is_some() || self.board_memo_mutation.is_some() || self.board_memo_gesture.is_some();
         let section_pending = self.page_section_request_in_flight();
         let section_work = self.page_section_editor.is_some() || self.page_section_mutation.is_some();
+        let export_pending = self.export_in_flight();
+        let export_asked = self.export_confirmations_open();
         let figure = self.figure_close_warning();
         if self.held_edits.is_empty() && figure.is_none() && !inline_pending && !release_pending && !inline_rpc_pending && !memo_work
-            && !section_work && !crop_work && !video_work && !self.close_release_failed && !self.close_after_inline_cleanup
+            && !section_work && !crop_work && !video_work && !export_pending && !export_asked && !self.close_release_failed
+            && !self.close_after_inline_cleanup
         {
             return None;
+        }
+        if export_pending {
+            return Some("내보내기 요청의 결과를 기다리고 있습니다. 결과가 돌아오기 전에는 창을 닫을 수 없습니다.".into());
+        }
+        if export_asked {
+            return Some("손실 확인에 답하지 않은 내보내기가 있습니다. 닫으려면 그 내보내기를 취소하세요.".into());
         }
         if video_wait {
             return Some("동영상 가져오기 또는 노드 추가 요청의 결과를 기다리고 있습니다. 결과가 돌아오기 전에는 창을 닫을 수 없습니다.".into());
@@ -101,6 +110,14 @@ impl DesktopApp {
                     | PendingAction::InlineTextRelease { .. } | PendingAction::InlineTextCloseRelease { .. }))
     }
 
+    /// A submitted export still waits for its dry run or its write: only that reply starts or ends the write, so the window
+    /// does not close under it.
+    pub(super) fn export_in_flight(&self) -> bool {
+        self.pending.values().any(|pending| matches!(&pending.action, PendingAction::ExportDryRun | PendingAction::Export | PendingAction::UiExport))
+            || self.export_completions.keys().any(|ticket| self.pending.contains_key(ticket))
+            || !self.export_reports_waiting.is_empty()
+    }
+
     pub(super) fn has_close_work(&self) -> bool {
         self.has_non_figure_close_work() || self.figure_close_warning().is_some()
     }
@@ -115,6 +132,8 @@ impl DesktopApp {
             || self.pending.values().any(|pending| matches!(&pending.action, PendingAction::InlineTextChange { .. }))
             || self.board_memo_request_in_flight()
             || self.page_section_request_in_flight()
+            || self.export_in_flight()
+            || self.export_confirmations_open()
             || self.close_release_failed || self.close_after_inline_cleanup
     }
 
@@ -165,6 +184,18 @@ impl DesktopApp {
         self.held_drops_on_close(drafts_unsaved).then_some("보류 중인 변경도 버려집니다.")
     }
 
+    /// Drops the exports still waiting for their loss answer and closes, unless other work still holds the window: the
+    /// question then goes on with that work.
+    pub(super) fn cancel_exports_and_close(&mut self, ctx: &Context) {
+        self.cancel_export_confirmations();
+        if self.has_close_work() || !self.drafts.flush() {
+            return;
+        }
+        self.close_confirmation_open = false;
+        self.permit_close_once = true;
+        ctx.send_viewport_cmd(ViewportCommand::Close);
+    }
+
     pub(super) fn keep_working_after_close_request(&mut self, ctx: &Context) {
         self.close_confirmation_open = false;
         ctx.send_viewport_cmd(ViewportCommand::CancelClose);
@@ -196,6 +227,7 @@ impl DesktopApp {
     /// Closes after dropping the held edits. With `save_drafts`, a draft file that cannot be written keeps the window open.
     fn close_discarding(&mut self, ctx: &Context, save_drafts: bool) {
         if self.board_memo_request_in_flight() || self.page_section_request_in_flight() || self.image_crop_apply_pending()
+            || self.export_in_flight()
             || self.video_insert.as_ref().is_some_and(PendingVideoInsert::close_wait_required) {
             self.close_confirmation_open = true;
             ctx.send_viewport_cmd(ViewportCommand::CancelClose);
@@ -222,6 +254,7 @@ impl DesktopApp {
         self.held_edits.clear();
         self.held_pdf_evidence.clear();
         self.held_pdf_warnings.clear();
+        self.cancel_export_confirmations();
         self.discard_figure_work();
         self.held_refusal_id = None;
         self.refusal = None;
@@ -492,35 +525,41 @@ impl DesktopApp {
         use crate::widgets::{DialogButton, DialogChoice};
         /// What each button of the question does.
         #[derive(Clone, Copy, PartialEq, Eq)]
-        enum Answer { Keep, CancelVideo, RetryRelease, RetryCheck, CloseAfterFailure, Discard }
+        enum Answer { Keep, CancelVideo, CancelExports, RetryRelease, RetryCheck, CloseAfterFailure, Discard }
         let keep = (Answer::Keep, DialogChoice::new("계속 작업", DialogButton::Primary));
+        let cancel_exports = self.cancel_exports_label();
         // The buttons stay under the text, in view however long it is (`dialog_with_choices`).
         let shown = crate::widgets::dialog_with_choices(ctx, &palette, Id::new("held-edit-close-confirmation"), "보류된 변경", crate::widgets::DialogPlace::Modal, |ui| {
             if let Some(text) = warning.as_deref() {
-                ui.label(text);
+                ui.label(crate::i18n::tr(&text));
             }
             if drafts_unsaved {
-                ui.label("초안을 저장하지 못했습니다. 그래도 닫을까요?");
+                ui.label(crate::i18n::tr("초안을 저장하지 못했습니다. 그래도 닫을까요?"));
             }
             let mut answers = Vec::new();
             if self.image_crop_apply_pending() {
-                ui.label("이미지 자르기 적용 결과를 기다리는 동안에는 닫을 수 없습니다.");
+                ui.label(crate::i18n::tr("이미지 자르기 적용 결과를 기다리는 동안에는 닫을 수 없습니다."));
                 answers.push(keep);
             } else if self.video_insert.as_ref().is_some_and(PendingVideoInsert::close_wait_required) {
                 let cancel_allowed = self.video_insert.as_ref().is_some_and(|pending| {
                     !pending.cancel_requested
                         && !matches!(pending.stage, VideoInsertStage::Applying | VideoInsertStage::OutcomeUncertain)
                 });
-                ui.label("동영상 검사·가져오기 또는 노드 추가 결과가 돌아오는 동안에는 닫을 수 없습니다.");
+                ui.label(crate::i18n::tr("동영상 검사·가져오기 또는 노드 추가 결과가 돌아오는 동안에는 닫을 수 없습니다."));
                 if cancel_allowed {
                     answers.push((Answer::CancelVideo, DialogChoice::new("동영상 추가 취소 후 정리 기다리기", DialogButton::Plain)));
                 }
                 answers.push(keep);
             } else if self.board_memo_request_in_flight() || self.page_section_request_in_flight() {
-                ui.label("메모 또는 섹션 저장 결과를 기다리는 동안에는 닫을 수 없습니다.");
+                ui.label(crate::i18n::tr("메모 또는 섹션 저장 결과를 기다리는 동안에는 닫을 수 없습니다."));
                 answers.push(keep);
+            } else if self.export_in_flight() {
+                answers.push(keep);
+            } else if self.export_confirmations_open() {
+                answers.push(keep);
+                answers.push((Answer::CancelExports, DialogChoice::new(&cancel_exports, DialogButton::Danger).human_only()));
             } else if self.close_after_inline_cleanup || self.close_release_pending {
-                ui.label("진행 중인 입력 결과와 예약 해제를 확인 중입니다.");
+                ui.label(crate::i18n::tr("진행 중인 입력 결과와 예약 해제를 확인 중입니다."));
             } else if self.close_release_failed {
                 if self.close_reservation_id.is_some() {
                     answers.push((Answer::RetryRelease, DialogChoice::new("예약 해제 다시 시도", DialogButton::Plain)));
@@ -539,7 +578,7 @@ impl DesktopApp {
             } else {
                 // A figure job that runs on its own is not discarded by closing: the button then only closes.
                 let discard_label = self.close_discard_label(drafts_unsaved);
-                if let Some(note) = self.held_drop_note(drafts_unsaved) { ui.label(note); }
+                if let Some(note) = self.held_drop_note(drafts_unsaved) { ui.label(crate::i18n::tr(&note)); }
                 answers.push(keep);
                 answers.push((Answer::Discard, DialogChoice::new(discard_label, DialogButton::Danger).human_only()));
             }
@@ -552,6 +591,7 @@ impl DesktopApp {
         let keep_working = pressed.contains(&Answer::Keep) || (answers.contains(&Answer::Keep) && (shown.enter || shown.dismissed));
         if keep_working { self.keep_working_after_close_request(ctx); }
         if pressed.contains(&Answer::CancelVideo) { let _ = self.cancel_canvas_video_insert(); }
+        if pressed.contains(&Answer::CancelExports) { self.cancel_exports_and_close(ctx); }
         if pressed.contains(&Answer::Discard) {
             if drafts_unsaved { self.close_discarding(ctx, false); } else { self.discard_held_edits_and_close(ctx); }
         }

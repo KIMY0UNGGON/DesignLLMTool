@@ -158,3 +158,69 @@ fn pending_section_save_blocks_close_until_its_reply() {
     let _ = ctx.run(RawInput::default(), |ctx| app.discard_held_edits_and_close(ctx));
     assert!(app.page_section_mutation.is_some(), "a pending section operation cannot be discarded by closing");
 }
+
+/// A section change the apply preflight held (a video, image replacement or crop being applied) has `can_retry` false and
+/// nothing ever sets it back (S16 evidence: apply.rs, replies.rs). Its notice offers the draft's copy and discard, not a
+/// held-edit check that would do nothing, and the check itself leaves the hold as it was.
+#[test]
+fn a_held_section_change_offers_its_draft_and_no_check_that_could_not_run() {
+    use super::super::state::{ApplyContext, HeldEditState, PendingAction};
+    let section = section("s1", "Intro", "p1");
+    let mut app = app_with_canvas(1, vec![page("p1")], Vec::new());
+    app.held_edits.push(super::super::HeldEdit {
+        id: "held".into(),
+        apply: ApplyContext {
+            request_id: "request".into(),
+            workspace_id: "w1".into(),
+            artifact_id: "a1".into(),
+            base_revision: 1,
+            operations: Vec::new(),
+            allowed_intents: Default::default(),
+            actor: "desktop".into(),
+            user_edit: true,
+            retryable: true,
+            held_edit_id: Some("held".into()),
+            after_action: PendingAction::PageSectionsChange { token: "token".into() },
+        },
+        nodes: Vec::new(),
+        state: HeldEditState::NeedsReview,
+        message: "held".into(),
+        can_retry: false,
+        retry_same_request: false,
+        reservations_checked: false,
+        checked_revision: None,
+    });
+    app.page_section_mutation = Some(SectionMutation {
+        token: "token".into(),
+        artifact_id: "a1".into(),
+        revision: 1,
+        expected: Vec::new(),
+        desired: vec![section.clone()],
+        editor: Some(SectionEditor {
+            artifact_id: "a1".into(),
+            revision: 1,
+            expected: Vec::new(),
+            section,
+            page_index: 0,
+            is_new: true,
+            message: None,
+        }),
+        message: Some("held".into()),
+        pending: false,
+        retry_allowed: false,
+        outcome_uncertain: false,
+        held_edit_id: Some("held".into()),
+    });
+    app.check_held_edit("held");
+    assert_eq!(app.held_edits[0].state, HeldEditState::NeedsReview, "the check does nothing for a hold that cannot be retried");
+    app.board_rect = Some(eframe::egui::Rect::from_min_size(eframe::egui::Pos2::new(0.0, 44.0), eframe::egui::vec2(900.0, 600.0)));
+    let ctx = Context::default();
+    crate::theme::install(&ctx);
+    let mut texts = Vec::new();
+    for _ in 0..2 {
+        let output = ctx.run(crate::app::test_support::screen(1.0, 1280.0, 800.0), |ctx| app.draw_page_section_mutation(ctx));
+        texts = crate::app::test_support::drawn_text(&output);
+    }
+    assert!(texts.iter().any(|text| text == "초안 복사"), "{texts:?}");
+    assert!(!texts.iter().any(|text| text.contains("보류한 섹션")), "{texts:?}");
+}

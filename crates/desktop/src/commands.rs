@@ -49,7 +49,7 @@ const ARTIFACT: &str = r#"{"type":"object","required":["artifact_id"],"propertie
 const BOOL: &str = r#"{"type":"object","required":["on"],"properties":{"on":{"type":"boolean"}}}"#;
 const TEXT_LIST: &str = r#"{"type":"object","required":["list"],"properties":{"list":{"type":"string","enum":["bullet","numbered","none"]}}}"#;
 const TAB: &str = r#"{"type":"object","required":["tab"],"properties":{"tab":{"type":"string","enum":["layers","tools","ai","outline","files","projects","design_systems","templates"]}}}"#;
-const FILE_EXPORT: &str = r#"{"type":"object","required":["format","target_path"],"properties":{"format":{"type":"string","enum":["png","jpeg","svg","pdf","html","pptx","zip"]},"target_path":{"type":"string"},"overwrite":{"type":"boolean"},"expected_target_hash":{"type":"string"},"allowed_losses":{"type":"array","items":{"type":"string"}},"scale":{"type":"integer","enum":[1,2,3]},"dpi":{"type":"integer","minimum":72,"maximum":1200},"background":{"type":"string","enum":["page","transparent"]},"scope":{"type":"string","enum":["page","selection","all","range"]},"pages":{"type":"string","description":"scope가 range일 때 내보낼 쪽 번호. 1부터 세고, 쉼표로 나열하며 a-b로 범위를 씁니다. 예: 1,3-5"}}}"#;
+const FILE_EXPORT: &str = r#"{"type":"object","required":["format","target_path"],"properties":{"format":{"type":"string","enum":["png","jpeg","svg","pdf","html","pptx","zip"]},"target_path":{"type":"string"},"overwrite":{"type":"boolean"},"expected_target_hash":{"type":"string"},"allowed_losses":{"type":"array","items":{"type":"string"}},"scale":{"type":"integer","enum":[1,2,3]},"dpi":{"type":"integer","minimum":72,"maximum":1200},"background":{"type":"string","enum":["page","transparent"]},"scope":{"type":"string","enum":["page","selection","all","range"],"description":"내보낼 범위. 슬라이드 덱의 pptx는 all만 받습니다(모든 슬라이드). 슬라이드 하나는 pdf나 png로 내보냅니다"},"pages":{"type":"string","description":"scope가 range일 때 내보낼 쪽 번호. 1부터 세고, 쉼표로 나열하며 a-b로 범위를 씁니다. 예: 1,3-5"}}}"#;
 const FILE_SAVE: &str = r#"{"type":"object","required":["target_path"],"properties":{"target_path":{"type":"string"},"overwrite":{"type":"boolean"},"expected_target_hash":{"type":"string"}}}"#;
 const AI_CANCEL: &str = r#"{"type":"object","required":["job_id","attempt_id"],"properties":{"job_id":{"type":"string"},"attempt_id":{"type":"string"}}}"#;
 const PROPOSAL_ID: &str = r#"{"type":"object","required":["proposal_id"],"properties":{"proposal_id":{"type":"string","minLength":1}}}"#;
@@ -59,6 +59,8 @@ const CREATE: &str = r#"{"type":"object","required":["tile"],"description":"tile
 /// fixed place of the page. An `at` outside the page is refused.
 const ARG_AT: &str = r#"{"type":"object","properties":{"at":{"type":"object","description":"삽입할 위치. 개체의 가운데 점을 쪽의 왼쪽 위에서 잰 x, y(캔버스·슬라이드는 px)로 줍니다. page_index를 생략하면 현재 쪽입니다. 쪽 밖이면 거부합니다.","required":["x","y"],"properties":{"page_index":{"type":"integer","minimum":0},"x":{"type":"number"},"y":{"type":"number"}}}}}"#;
 const ARG_ICON: &str = r##"{"type":"object","required":["icon"],"properties":{"icon":{"type":"string"},"size":{"type":"number","minimum":8},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"},"at":{"type":"object","description":"삽입할 위치(add.text와 같은 뜻). 아이콘의 가운데 점을 줍니다.","required":["x","y"],"properties":{"page_index":{"type":"integer","minimum":0},"x":{"type":"number"},"y":{"type":"number"}}}}}"##;
+/// `add.shape`: one recipe of the shared shape library (contracts `shape_library`), in library order, and the drop point.
+const ARG_SHAPE: &str = r#"{"type":"object","required":["shape"],"properties":{"shape":{"type":"string","enum":["trapezoid_narrowing_right","trapezoid_widening_right","trapezoid_narrowing_up","trapezoid_widening_up","parallelogram","cylinder","circle_plus","circle_times","circle","diamond","hexagon","cuboid","triangle","block_arrow_right","document"]},"at":{"type":"object","description":"삽입할 위치. 개체의 가운데 점을 쪽의 왼쪽 위에서 잰 x, y(캔버스는 px)로 줍니다. page_index를 생략하면 현재 쪽입니다. 쪽 밖이면 거부합니다.","required":["x","y"],"properties":{"page_index":{"type":"integer","minimum":0},"x":{"type":"number"},"y":{"type":"number"}}}}}"#;
 const ARG_PATH: &str = r#"{"type":"object","required":["d","view_box"],"properties":{"d":{"type":"string"},"view_box":{"type":"string"}}}"#;
 const ARG_NODE_PATH: &str = r#"{"type":"object","required":["d","view_box"],"properties":{"d":{"type":"string"},"view_box":{"type":"string"},"node_id":{"type":"string"}}}"#;
 const TOKEN_PUT_ARGS: &str = r##"{"type":"object","required":["token_id","name","values"],"description":"선택한 캔버스 작업물의 로컬 디자인 토큰을 추가하거나 갱신합니다.","properties":{"token_id":{"type":"string","minLength":1},"name":{"type":"string","minLength":1},"values":{"type":"object","description":"font_size, spacing, radius의 숫자 값은 정수 EMU입니다. 예: 16 CSS px = 152400 EMU. GUI의 px 입력은 한 번만 EMU로 변환됩니다.","oneOf":[{"type":"object","required":["kind","light","dark"],"properties":{"kind":{"type":"string","enum":["color"]},"light":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"},"dark":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}},"additionalProperties":false},{"type":"object","required":["kind","light","dark"],"properties":{"kind":{"type":"string","enum":["font_family"]},"light":{"type":"string","minLength":1},"dark":{"type":"string","minLength":1}},"additionalProperties":false},{"type":"object","required":["kind","light","dark"],"properties":{"kind":{"type":"string","enum":["font_size","spacing","radius"]},"light":{"type":"integer"},"dark":{"type":"integer"}},"additionalProperties":false}]}}}"##;
@@ -166,6 +168,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { id: "data.remove_column", label: "열 삭제", permission: Permission::Data, shortcut: "", args: r#"{"type":"object","required":["column_id"],"properties":{"dataset_id":{"type":"string"},"column_id":{"type":"string"}}}"# },
     CommandSpec { id: "add.icon", label: "아이콘", permission: Permission::Content, shortcut: "", args: ARG_ICON },
     CommandSpec { id: "add.path", label: "경로", permission: Permission::Content, shortcut: "", args: ARG_PATH },
+    CommandSpec { id: "add.shape", label: "다이어그램 도형", permission: Permission::Content, shortcut: "", args: ARG_SHAPE },
     CommandSpec { id: "add.paragraph", label: "문단", permission: Permission::Content, shortcut: "", args: NONE },
     CommandSpec { id: "add.page", label: "페이지 추가", permission: Permission::Content, shortcut: "", args: PRESET },
     CommandSpec { id: "add.slide", label: "슬라이드 추가", permission: Permission::Content, shortcut: "Ctrl+M", args: NONE },
@@ -322,7 +325,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { id: "home.mode", label: "디자인 또는 코드", permission: Permission::Read, shortcut: "", args: r#"{"type":"object","required":["mode"],"properties":{"mode":{"type":"string","enum":["design","code"]}}}"# },
     CommandSpec { id: "home.design_system", label: "디자인 시스템 고르기", permission: Permission::Read, shortcut: "", args: r#"{"type":"object","properties":{"design_system":{"type":"string","enum":[""]}}}"# },
     CommandSpec { id: "home.tile", label: "타일 고르기", permission: Permission::Read, shortcut: "", args: r#"{"type":"object","required":["tile"],"properties":{"tile":{"type":"string","enum":["blank","mobile","ui","wireframe","slides","document","resume","poster","social","figure","diagram","web","animation"]}}}"# },
-    CommandSpec { id: "home.tab", label: "홈 탭", permission: Permission::Read, shortcut: "", args: r#"{"type":"object","required":["tab"],"properties":{"tab":{"type":"string","enum":["projects","design_systems","templates"]}}}"# },
+    CommandSpec { id: "home.tab", label: "홈 탭", permission: Permission::Read, shortcut: "", args: r#"{"type":"object","required":["tab"],"properties":{"tab":{"type":"string","enum":["projects","templates"]}}}"# },
     CommandSpec { id: "home.preset", label: "크기 고르기", permission: Permission::Read, shortcut: "", args: r#"{"type":"object","properties":{"preset":{"type":"string"},"width":{"type":"number","minimum":1},"height":{"type":"number","minimum":1}}}"# },
     CommandSpec { id: "home.runner", label: "실행기 고르기", permission: Permission::Read, shortcut: "", args: r#"{"type":"object","properties":{"runtime":{"type":"string","enum":["claude","agy","codex"]},"model":{"type":"string"},"effort":{"type":"string","enum":["minimal","low","medium","high","xhigh","max"]}}}"# },
     CommandSpec { id: "home.search", label: "프로젝트 찾기", permission: Permission::Read, shortcut: "", args: r#"{"type":"object","required":["text"],"properties":{"text":{"type":"string"}}}"# },
@@ -376,6 +379,12 @@ pub fn ui_intents_for(spec: &CommandSpec, kind: ArtifactKind) -> BTreeSet<Intent
     }
     if spec.id == "add.figure_image" {
         return [Intent::Content, Intent::Design].into_iter().collect();
+    }
+    // An output profile restyles the panels (design) and, when the figure has a common legend whose swatches show the
+    // recoloured series, recolours the legend too (SetCommonLegend, content). The registry names both; the window's published
+    // list names content only while the open figure has a common legend (`DesktopApp::command_intents`).
+    if spec.id == "figure.output_profile" {
+        return [Intent::Design, Intent::Content].into_iter().collect();
     }
     match (ui_permission(spec), spec.permission) {
         (UiPermission::Change, Permission::Design) => [Intent::Design].into_iter().collect(),
@@ -704,6 +713,7 @@ pub(crate) fn core_calls(id: &str) -> Option<&'static [&'static str]> {
         "add.image" => &["asset.import", "changes.apply:add_node"][..],
         "add.icon" => &["changes.apply:add_node", "selection.set"][..],
         "add.path" => &["changes.apply:add_node", "selection.set"][..],
+        "add.shape" => &["changes.apply:add_node", "selection.set"][..],
         "add.figure_image" => &["asset.import", "changes.apply:add_panel", "changes.apply:arrange_panels"][..],
         "data.edit_cell" | "data.add_column" | "data.add_row" | "data.remove_row" | "data.remove_column" => &["figure.dataset.edit"][..],
         "add.table" => &["changes.apply:insert_flow_block", "selection.set"][..],
@@ -738,7 +748,7 @@ pub(crate) fn core_calls(id: &str) -> Option<&'static [&'static str]> {
         "figure.put_evidence" => &["changes.apply:put_evidence"][..],
         "figure.diagram_provenance" => &["changes.apply:set_diagram_provenance"][..],
         "figure.common_legend" => &["changes.apply:set_common_legend"][..],
-        "figure.output_profile" => &["changes.apply:set_style"][..],
+        "figure.output_profile" => &["changes.apply:set_style", "changes.apply:set_common_legend"][..],
         "figure.visual_review" => &["changes.apply:set_figure_visual_review"][..],
         "figure.image_transform" => &["changes.apply:set_figure_image_transform"][..],
         "figure.image_calibration" => &["changes.apply:set_figure_image_calibration"][..],
@@ -828,7 +838,9 @@ pub(crate) fn core_calls(id: &str) -> Option<&'static [&'static str]> {
 /// `changes.apply` call. Any other command's entries are one call each (`repeat_groups_tests` counts the calls).
 /// A table row or column edit is the cells' nodes and the table's structure in one change set (`apply_canvas_table_structure`).
 const ONE_CHANGE_SET: &[&str] =
-    &["repeat.create", "canvas.table.add_row", "canvas.table.remove_row", "canvas.table.add_column", "canvas.table.remove_column"];
+    &["repeat.create", "canvas.table.add_row", "canvas.table.remove_row", "canvas.table.add_column", "canvas.table.remove_column",
+        // The panel styles and, with a common legend, its recolouring: one change set (figure_profile.rs).
+        "figure.output_profile"];
 
 /// Whether the command changes the document with one `changes.apply` call and sends nothing else but `selection.set`, as
 /// `core_calls` and `ONE_CHANGE_SET` declare it. The UI channel follows such a change to its one reply.

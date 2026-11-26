@@ -174,7 +174,8 @@ pub(super) enum PendingAction {
     PathAdd { artifact_id: String, d: String, view_box: String },
     Selection,
     Apply,
-    FigureProfile { artifact_id: String, profile_id: String, dpi: u32 },
+    /// `kept_legend_items`: legend items the profile left as they were (`figure_profile::ProfileChange`), told on success.
+    FigureProfile { artifact_id: String, profile_id: String, dpi: u32, kept_legend_items: Vec<String> },
     PageReorder { token: String },
     TokenChange { baseline: Option<properties::TokenChangeBaseline> },
     ApplyWithSelectionIfUnchanged { node_ids: Vec<String>, expected_selection: Selection, expected_page: u32, expected_selection_generation: u64 },
@@ -777,19 +778,8 @@ pub(super) struct NodeClipboard {
 
 /// The name a document made from a canvas template takes (the home template tab's names, §12).
 pub(super) fn home_template_title(template: &str) -> &'static str {
-    match template {
-        "mobile_app" => "모바일 앱 화면",
-        "login" => "로그인",
-        "dashboard" => "대시보드",
-        "resume" => "이력서",
-        "landing_page" => "랜딩 페이지",
-        "social_post" => "소셜 게시물",
-        "poster_a3" => "포스터",
-        "invitation" => "초대장",
-        "banner" => "배너",
-        "webgl_animation" => "WebGL 애니메이션",
-        _ => "모바일 앱 화면",
-    }
+    // One list of built-in template names, the template tab's (home.rs `TEMPLATE_NAMES`).
+    super::home::built_in_template_name(template).unwrap_or("모바일 앱 화면")
 }
 
 impl TextTarget {

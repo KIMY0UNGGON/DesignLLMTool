@@ -50,7 +50,6 @@ const TILE_MIN_WIDTH: f32 = 96.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum HomeTab {
     Projects,
-    DesignSystems,
     Templates,
 }
 
@@ -180,7 +179,8 @@ impl DesktopApp {
         });
         let size = if tile == "resume" { None } else if template.is_some() { chosen } else { chosen.or(size) };
         let title = if prompt.trim().is_empty() {
-            TILES.iter().find(|item| item.0 == tile).map_or("새 작업물", |item| item.1).to_owned()
+            // The title a person sees first, so it is in the window's language.
+            crate::i18n::tr(TILES.iter().find(|item| item.0 == tile).map_or("새 작업물", |item| item.1)).into_owned()
         } else {
             prompt.chars().take(24).collect()
         };
@@ -250,7 +250,7 @@ impl DesktopApp {
             }
         }
         if let Some(profile) = profile {
-            self.pending_figure_create_profile = Some((create_ticket, Some(profile.id.to_owned()), profile.default_dpi));
+            self.pending_figure_create_profiles.insert(create_ticket, (Some(profile.id.to_owned()), profile.default_dpi));
         }
         self.screen = Screen::Editor;
         Ok(())
@@ -310,14 +310,14 @@ impl DesktopApp {
                     ui.spacing_mut().item_spacing = Vec2::new(6.0, 8.0);
                     let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 16.0), Sense::hover());
                     icon16(ui, line.min, "state-error", palette.danger);
-                    ui.painter().text(Pos2::new(line.left() + 22.0, line.center().y), Align2::LEFT_CENTER, &text, theme::font(theme::Type::Caption), palette.ink);
+                    ui.painter().text(Pos2::new(line.left() + 22.0, line.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&text), theme::font(theme::Type::Caption), palette.ink);
                     let label = "기본 크기로";
                     let font = theme::font(theme::Type::Caption);
                     let (rect, response) = ui.allocate_exact_size(Vec2::new(8.0 + 16.0 + 6.0 + text_width(ui, label, &font) + 10.0, 28.0), Sense::click());
                     ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), if response.hovered() { palette.surface_2 } else { palette.field });
                     ui.painter().rect_stroke(rect, CornerRadius::same(theme::RADIUS_CONTROL), Stroke::new(1.0, palette.derived(theme::Derived::DangerRing)), StrokeKind::Outside);
                     icon16(ui, Pos2::new(rect.left() + 8.0, rect.center().y - 8.0), default_icon, palette.ink_2);
-                    ui.painter().text(Pos2::new(rect.left() + 30.0, rect.center().y), Align2::LEFT_CENTER, label, font, palette.ink);
+                    ui.painter().text(Pos2::new(rect.left() + 30.0, rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&label), font, palette.ink);
                     back = response.clicked();
                 });
         });
@@ -384,7 +384,6 @@ impl DesktopApp {
                                 ui.add_space(16.0);
                                 self.template_grid(ui, &palette, width);
                             }
-                            HomeTab::DesignSystems => {}
                         }
                         ui.add_space(24.0);
                     });
@@ -417,8 +416,8 @@ impl DesktopApp {
             egui::Popup::open_id(ui.ctx(), ui.id().with("home-workspace").with("popup"));
         }
         let name = widgets::truncate_to_width(ui, &self.workspace_name, bar.width() / 3.0, palette.ink);
-        let button = Rect::from_min_max(Pos2::new(bar.left(), middle - 16.0), Pos2::new(bar.left() + 64.0 + text_width(ui, &name, &name_font), middle + 16.0));
-        let response = ui.interact(button, ui.id().with("home-workspace"), Sense::click()).on_hover_text("프로젝트 폴더 및 작업공간 정보");
+        let button = Rect::from_min_max(Pos2::new(bar.left(), middle - 16.0), Pos2::new(bar.left() + 64.0 + verbatim_width(ui, &name, &name_font), middle + 16.0));
+        let response = ui.interact(button, ui.id().with("home-workspace"), Sense::click()).on_hover_text(crate::i18n::tr("프로젝트 폴더 및 작업공간 정보"));
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &self.workspace_name));
         crate::ui_record::note(ui, "작업공간 정보", &response);
         if response.hovered() || popup_open(ui, "home-workspace") {
@@ -437,6 +436,13 @@ impl DesktopApp {
                 ui.close();
                 self.choose_project_folder();
             }
+            // The UI language, each in its own name; the choice shows from the next frame on.
+            widgets::menu_separator(ui, palette);
+            for language in crate::i18n::Language::ALL {
+                if widgets::menu_item(ui, palette, None, language.native_name(), "", self.language == language).clicked() {
+                    self.set_language(language);
+                }
+            }
             if !self.home.workspace_info.is_empty() {
                 widgets::menu_separator(ui, palette);
                 super::workspace_info::show(ui, palette, &self.home.workspace_info);
@@ -448,13 +454,13 @@ impl DesktopApp {
         let open_font = theme::display_font(false, 13.0);
         let open_width = 8.0 + 16.0 + 6.0 + text_width(ui, "열기", &open_font) + 10.0;
         let open = Rect::from_min_size(Pos2::new(bar.right() - open_width, middle - 16.0), Vec2::new(open_width, 32.0));
-        let response = ui.interact(open, ui.id().with("home-open"), Sense::click()).on_hover_text("열기  Ctrl+O");
+        let response = ui.interact(open, ui.id().with("home-open"), Sense::click()).on_hover_text(crate::i18n::tr("열기  Ctrl+O"));
         crate::ui_record::note(ui, "열기", &response);
         if response.hovered() {
             ui.painter().rect_filled(open, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
         }
         icon16(ui, Pos2::new(open.left() + 8.0, middle - 8.0), "open", palette.ink_2);
-        ui.painter().text(Pos2::new(open.left() + 30.0, middle), Align2::LEFT_CENTER, "열기", open_font, palette.ink);
+        ui.painter().text(Pos2::new(open.left() + 30.0, middle), Align2::LEFT_CENTER, crate::i18n::tr("열기"), open_font, palette.ink);
         if response.clicked() {
             self.invoke_ui("nav.open_file", json!({}));
         }
@@ -482,7 +488,9 @@ impl DesktopApp {
             let (state, artifact_id) = if agent.outside { (AgentState::Done, None) } else { self.agent_job(agent.job_id.as_deref()) };
             // An app job shows its runtime's initial; an outside MCP client the plug (§5.5).
             let glyph = if agent.outside { "mcp".to_owned() } else { super::chrome::agent_letter(&agent.runtime).to_owned() };
-            let response = ui.interact(slot, ui.id().with(("home-agent", &agent.name)), Sense::click()).on_hover_text(&agent.name);
+            // A mark with no artifact to open (an outside MCP client, or an app agent without a job) only shows its name.
+            let sense = if artifact_id.is_some() { Sense::click() } else { Sense::hover() };
+            let response = ui.interact(slot, ui.id().with(("home-agent", &agent.name)), sense).on_hover_text(crate::i18n::tr(&agent.name));
             paint_agent(ui, palette, slot.center(), AgentMark::TOP_BAR, colour, &glyph, state);
             if response.clicked() {
                 if let Some(artifact_id) = artifact_id {
@@ -541,6 +549,7 @@ impl DesktopApp {
             }
             let name = template_name(template);
             ui.painter().text(Pos2::new(cell.left(), thumb.bottom() + 8.0 + 9.0), Align2::LEFT_CENTER, &name, theme::font(theme::Type::Body), palette.ink);
+            // The project is made under the name the tile shows.
             if response.clicked() {
                 self.invoke_ui("home.use_template", json!({ "template": template.id, "title": name, "kind": template.kind }));
             }
@@ -596,76 +605,28 @@ impl DesktopApp {
         self.create_refusal_callout(&ctx, palette, rect);
     }
 
-    /// The row under the request text (mockup `.rb`, 40 high, 8 apart): 첨부 · 디자인 시스템 · 디자인/코드,
-    /// then at the right the size, the runner and 만들기.
+    /// The row under the request text (mockup `.rb`, 40 high, 8 apart): 첨부, then at the right the size, the runner and 만들기.
     fn request_row(&mut self, ui: &mut Ui, palette: &theme::Palette, width: f32) {
         let (row, _) = ui.allocate_exact_size(Vec2::new(width, 40.0), Sense::hover());
         if let Some(name) = self.home.smoke_open.take() {
             let id = match name.as_str() {
                 "runner" => "home-runner",
-                "design_system" => "home-design-system",
                 _ => "home-size",
             };
             egui::Popup::open_id(ui.ctx(), ui.id().with(id).with("popup"));
         }
         let body = theme::display_font(false, 13.0);
         let small = theme::display_font(false, 11.0);
-        let mut x = row.left();
+        let x = row.left();
 
         let attach_width = 10.0 + 16.0 + 6.0 + text_width(ui, "첨부", &body) + 12.0;
         let attach = Rect::from_min_size(Pos2::new(x, row.top()), Vec2::new(attach_width, 40.0));
         let response = outlined(ui, palette, attach, "home-attach", false);
         icon16(ui, Pos2::new(attach.left() + 10.0, attach.center().y - 8.0), "attach", palette.ink_2);
-        ui.painter().text(Pos2::new(attach.left() + 32.0, attach.center().y), Align2::LEFT_CENTER, "첨부", body.clone(), palette.ink);
+        ui.painter().text(Pos2::new(attach.left() + 32.0, attach.center().y), Align2::LEFT_CENTER, crate::i18n::tr("첨부"), body.clone(), palette.ink);
         if response.clicked() {
             if let Some(path) = crate::dialogs::open_document(self.parent_hwnd) {
                 self.invoke_ui("home.attach", json!({ "path": path.to_string_lossy() }));
-            }
-        }
-        x = attach.right() + 8.0;
-
-        if shows_design_system(&self.home.tile) {
-            let system = if self.home.design_system.is_empty() { "없음".to_owned() } else { self.home.design_system.clone() };
-            let chip_width = two_line_width(ui, "디자인 시스템", &system, &small, &body);
-            let chip = Rect::from_min_size(Pos2::new(x, row.top()), Vec2::new(chip_width, 40.0));
-            let open = popup_open(ui, "home-design-system");
-            let response = outlined(ui, palette, chip, "home-design-system", open);
-            paint_two_line(ui, palette, chip, "디자인 시스템", &system);
-            // Mockup `home-templates` popover: `없음` and the workspace's design systems (none exist
-            // before D11); `디자인 시스템 만들기` waits for its command.
-            let mut chosen = None;
-            popover(&response, 264.0, |ui| {
-                if crate::widgets::menu_item(ui, palette, None, "없음", "", self.home.design_system.is_empty()).clicked() {
-                    chosen = Some(String::new());
-                    ui.close();
-                }
-            });
-            if let Some(design_system) = chosen {
-                self.invoke_ui("home.design_system", json!({ "design_system": design_system }));
-            }
-            x = chip.right() + 8.0;
-        }
-
-        if shows_mode(&self.home.tile) {
-            let entries = [("kind-canvas", "디자인", false), ("code", "코드", true)];
-            let widths: Vec<f32> = entries.iter().map(|(_, label, _)| 8.0 + 16.0 + 6.0 + text_width(ui, label, &body) + 10.0).collect();
-            let tray = Rect::from_min_size(Pos2::new(x, row.top()), Vec2::new(2.0 + widths[0] + 2.0 + widths[1] + 2.0, 40.0));
-            ui.painter().rect_filled(tray, CornerRadius::same(8), palette.surface_2);
-            let mut left = tray.left() + 2.0;
-            for ((icon, label, code), button_width) in entries.into_iter().zip(widths) {
-                let button = Rect::from_min_size(Pos2::new(left, tray.top() + 2.0), Vec2::new(button_width, 36.0));
-                left = button.right() + 2.0;
-                let on = self.home.code_mode == code;
-                let response = ui.interact(button, ui.id().with(("home-mode", code)), Sense::click());
-                if on {
-                    raised(ui, palette, button);
-                }
-                let ink = if on { palette.ink } else { palette.ink_2 };
-                icon16(ui, Pos2::new(button.left() + 8.0, button.center().y - 8.0), icon, ink);
-                ui.painter().text(Pos2::new(button.left() + 30.0, button.center().y), Align2::LEFT_CENTER, label, body.clone(), ink);
-                if response.clicked() && !on {
-                    self.invoke_ui("home.mode", json!({ "mode": if code { "code" } else { "design" } }));
-                }
             }
         }
 
@@ -673,11 +634,11 @@ impl DesktopApp {
         let bold = theme::display_font(true, 13.0);
         let go_width = 12.0 + 16.0 + 6.0 + text_width(ui, "만들기", &bold) + 14.0;
         let go = Rect::from_min_size(Pos2::new(row.right() - go_width, row.top()), Vec2::new(go_width, 40.0));
-        let response = ui.interact(go, ui.id().with("home-go"), Sense::click()).on_hover_text("만들기  Enter");
+        let response = ui.interact(go, ui.id().with("home-go"), Sense::click()).on_hover_text(crate::i18n::tr("만들기  Enter"));
         let fill = if response.hovered() || response.is_pointer_button_down_on() { palette.accent_ink } else { palette.accent };
         ui.painter().rect_filled(go, CornerRadius::same(8), fill);
         icon16(ui, Pos2::new(go.left() + 12.0, go.center().y - 8.0), "send", palette.on_accent);
-        ui.painter().text(Pos2::new(go.left() + 34.0, go.center().y), Align2::LEFT_CENTER, "만들기", bold, palette.on_accent);
+        ui.painter().text(Pos2::new(go.left() + 34.0, go.center().y), Align2::LEFT_CENTER, crate::i18n::tr("만들기"), bold, palette.on_accent);
         if response.clicked() {
             self.home_create_now();
         }
@@ -708,7 +669,7 @@ impl DesktopApp {
             ui.painter().rect_stroke(chip, CornerRadius::same(8), Stroke::new(1.0, palette.danger), StrokeKind::Outside);
         }
         icon16(ui, Pos2::new(chip.left() + 10.0, chip.center().y - 8.0), icon, palette.ink_2);
-        ui.painter().text(Pos2::new(chip.left() + 32.0, chip.center().y), Align2::LEFT_CENTER, &value, body, palette.ink);
+        ui.painter().text(Pos2::new(chip.left() + 32.0, chip.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&value), body, palette.ink);
         icon16(ui, Pos2::new(chip.right() - 26.0, chip.center().y - 8.0), "chev-down", palette.ink_3);
         // The menu lists the tile's own sizes (§3 table) and, where a size can be typed, `사용자 크기`.
         let presets = tile_presets(&self.home.tile);
@@ -805,8 +766,8 @@ impl DesktopApp {
             ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), palette.field);
             ui.painter().rect_stroke(rect, CornerRadius::same(theme::RADIUS_CONTROL), Stroke::new(1.0, palette.line_strong), StrokeKind::Inside);
             let small = theme::font(theme::Type::Caption);
-            ui.painter().text(Pos2::new(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, prefix, small.clone(), palette.ink_3);
-            ui.painter().text(Pos2::new(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, unit, small, palette.ink_3);
+            ui.painter().text(Pos2::new(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&prefix), small.clone(), palette.ink_3);
+            ui.painter().text(Pos2::new(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, crate::i18n::tr(&unit), small, palette.ink_3);
             let inner = Rect::from_min_max(Pos2::new(rect.left() + 24.0, rect.center().y - 9.0), Pos2::new(rect.right() - 30.0, rect.center().y + 9.0));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
             let response = widgets::edit_line(&mut child, &palette, text, widgets::Field {
@@ -899,7 +860,7 @@ impl DesktopApp {
                 }
             }
             if !any {
-                ui.label(if self.runner_models.checking() { "AI 로그인 확인 중…" } else { "로그인된 AI가 없습니다" });
+                ui.label(crate::i18n::tr(&if self.runner_models.checking() { "AI 로그인 확인 중…" } else { "로그인된 AI가 없습니다" }));
             }
             if !self.runner_models.available(&self.ai_runtime) { return; }
             crate::widgets::menu_separator(ui, palette);
@@ -908,17 +869,17 @@ impl DesktopApp {
             let (list, awaiting) = self.runner_models.shown(kind);
             let current = self.ai_model.as_str();
             // A saved model the list does not name stays selected at the top.
-            if !current.is_empty() && !list.models.iter().any(|model| model.id == current) && crate::widgets::menu_item(ui, palette, None, current, "", true).clicked() {
+            if !current.is_empty() && !list.models.iter().any(|model| model.id == current) && crate::widgets::menu_item_verbatim(ui, palette, None, current, true).clicked() {
                 ui.close();
             }
             for model in &list.models {
-                if crate::widgets::menu_item(ui, palette, None, &model.display_name, "", model.id == current).clicked() {
+                if crate::widgets::menu_item_verbatim(ui, palette, None, &model.display_name, model.id == current).clicked() {
                     picked.push(json!({ "model": model.id }));
                     ui.close();
                 }
             }
             if awaiting {
-                ui.label(egui::RichText::new("목록 불러오는 중").color(palette.ink_3));
+                ui.label(egui::RichText::new(crate::i18n::tr("목록 불러오는 중")).color(palette.ink_3));
             }
             let typing = ui.data(|data| data.get_temp::<bool>(typing_id)).unwrap_or(false);
             // The field takes the focus when it opens: in the click's frame and in the next one (the pending mark).
@@ -1016,7 +977,7 @@ impl DesktopApp {
             // Mockup `.tile`: 12 px padding, the 48 px icon, 8 px, then the 12/16 label.
             icons::paint(ui, Rect::from_min_size(Pos2::new(tile.center().x - 24.0, tile.top() + 12.0), Vec2::splat(48.0)), icon, palette.ink_2);
             let (font, ink) = if selected { (theme::display_font(true, 12.0), palette.accent_ink) } else { (theme::display_font(false, 12.0), palette.ink) };
-            ui.painter().text(Pos2::new(tile.center().x, tile.top() + 12.0 + 48.0 + 8.0 + 8.0), Align2::CENTER_CENTER, *label, font, ink);
+            ui.painter().text(Pos2::new(tile.center().x, tile.top() + 12.0 + 48.0 + 8.0 + 8.0), Align2::CENTER_CENTER, crate::i18n::tr(&*label), font, ink);
             if response.clicked() {
                 clicked = Some(*id);
             }
@@ -1029,7 +990,8 @@ impl DesktopApp {
     fn home_tabs(&mut self, ui: &mut Ui, palette: &theme::Palette, width: f32) {
         let (row, _) = ui.allocate_exact_size(Vec2::new(width, 32.0), Sense::hover());
         let mut x = row.left();
-        for (label, tab, name) in [("프로젝트", HomeTab::Projects, "projects"), ("디자인 시스템", HomeTab::DesignSystems, "design_systems"), ("템플릿", HomeTab::Templates, "templates")] {
+        // No design-system tab: its page has no content in this build.
+        for (label, tab, name) in [("프로젝트", HomeTab::Projects, "projects"), ("템플릿", HomeTab::Templates, "templates")] {
             let selected = self.home.tab == tab;
             let font = theme::display_font(selected, 13.0);
             let color = if selected { palette.ink } else { palette.ink_2 };
@@ -1043,46 +1005,56 @@ impl DesktopApp {
             } else if response.hovered() {
                 ui.painter().rect_filled(rect, corner, palette.surface_2);
             }
-            ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, font, color);
+            ui.painter().text(rect.center(), Align2::CENTER_CENTER, crate::i18n::tr(&label), font, color);
             if response.clicked() && !selected {
                 self.invoke_ui("home.tab", json!({ "tab": name }));
             }
         }
 
-        // From the right: list/grid (`.vseg`), 별표만, the search box; 8 apart.
-        let tray = Rect::from_min_size(Pos2::new(row.right() - 66.0, row.top()), Vec2::new(66.0, 32.0));
-        ui.painter().rect_filled(tray, CornerRadius::same(8), palette.surface_2);
-        for (index, (icon, list, label)) in [("view-list", true, "목록"), ("layout-grid", false, "격자")].into_iter().enumerate() {
-            let button = Rect::from_min_size(tray.min + Vec2::new(2.0 + index as f32 * 32.0, 2.0), Vec2::new(30.0, 28.0));
-            let response = ui.interact(button, ui.id().with(("home-view", index)), Sense::click()).on_hover_text(label);
-            // The template tab is always a grid (lead ruling 26).
-            let shown_list = self.home.list_view && self.home.tab != HomeTab::Templates;
-            let on = list == shown_list;
+        // From the right: list/grid (`.vseg`), 별표만, the search box; 8 apart. List/grid and 별표만 change only the project
+        // list (the template tab is always a grid and has no stars), so the template tab shows only the search box.
+        let projects = self.home.tab == HomeTab::Projects;
+        let mut search_right = row.right();
+        if projects {
+            let tray = Rect::from_min_size(Pos2::new(row.right() - 66.0, row.top()), Vec2::new(66.0, 32.0));
+            ui.painter().rect_filled(tray, CornerRadius::same(8), palette.surface_2);
+            for (index, (icon, list, label)) in [("view-list", true, "목록"), ("layout-grid", false, "격자")].into_iter().enumerate() {
+                let button = Rect::from_min_size(tray.min + Vec2::new(2.0 + index as f32 * 32.0, 2.0), Vec2::new(30.0, 28.0));
+                let response = ui.interact(button, ui.id().with(("home-view", index)), Sense::click()).on_hover_text(crate::i18n::tr(&label));
+                // The template tab is always a grid (lead ruling 26).
+                let shown_list = self.home.list_view && self.home.tab != HomeTab::Templates;
+                let on = list == shown_list;
+                if on {
+                    ui.painter().rect_filled(button, CornerRadius::same(6), palette.raised);
+                    ui.painter().rect_stroke(button, CornerRadius::same(6), Stroke::new(1.0, palette.line), StrokeKind::Outside);
+                }
+                icon16(ui, button.center() - Vec2::splat(8.0), icon, if on { palette.ink } else { palette.ink_2 });
+                if response.clicked() && !on {
+                    self.invoke_ui("home.view", json!({ "view": if list { "list" } else { "grid" } }));
+                }
+            }
+
+            let star = Rect::from_min_size(Pos2::new(tray.left() - 8.0 - 32.0, row.top()), Vec2::splat(32.0));
+            let response = ui.interact(star, ui.id().with("home-starred-only"), Sense::click()).on_hover_text(crate::i18n::tr("별표만"));
+            let on = self.home.starred_only;
             if on {
-                ui.painter().rect_filled(button, CornerRadius::same(6), palette.raised);
-                ui.painter().rect_stroke(button, CornerRadius::same(6), Stroke::new(1.0, palette.line), StrokeKind::Outside);
+                ui.painter().rect_filled(star, CornerRadius::same(theme::RADIUS_CONTROL), palette.accent_soft);
+            } else if response.hovered() {
+                ui.painter().rect_filled(star, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
             }
-            icon16(ui, button.center() - Vec2::splat(8.0), icon, if on { palette.ink } else { palette.ink_2 });
-            if response.clicked() && !on {
-                self.invoke_ui("home.view", json!({ "view": if list { "list" } else { "grid" } }));
+            icon16(ui, star.center() - Vec2::splat(8.0), if on { "star-fill" } else { "star" }, if on { palette.accent } else { palette.ink_2 });
+            if response.clicked() {
+                self.invoke_ui("home.starred_only", json!({ "on": !on }));
             }
+            search_right = star.left() - 8.0;
         }
 
-        let star = Rect::from_min_size(Pos2::new(tray.left() - 8.0 - 32.0, row.top()), Vec2::splat(32.0));
-        let response = ui.interact(star, ui.id().with("home-starred-only"), Sense::click()).on_hover_text("별표만");
-        let on = self.home.starred_only;
-        if on {
-            ui.painter().rect_filled(star, CornerRadius::same(theme::RADIUS_CONTROL), palette.accent_soft);
-        } else if response.hovered() {
-            ui.painter().rect_filled(star, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
+        // The search box (`.search`): 220 × 32, a magnifier and the field, no placeholder. It filters the project list, so the
+        // template tab has none.
+        if !projects {
+            return;
         }
-        icon16(ui, star.center() - Vec2::splat(8.0), if on { "star-fill" } else { "star" }, if on { palette.accent } else { palette.ink_2 });
-        if response.clicked() {
-            self.invoke_ui("home.starred_only", json!({ "on": !on }));
-        }
-
-        // The search box (`.search`): 220 × 32, a magnifier and the field, no placeholder.
-        let search = Rect::from_min_size(Pos2::new(star.left() - 8.0 - 220.0, row.top()), Vec2::new(220.0, 32.0));
+        let search = Rect::from_min_size(Pos2::new(search_right - 220.0, row.top()), Vec2::new(220.0, 32.0));
         ui.painter().rect_filled(search, CornerRadius::same(8), palette.field);
         ui.painter().rect_stroke(search, CornerRadius::same(8), Stroke::new(1.0, palette.line_strong), StrokeKind::Inside);
         icon16(ui, Pos2::new(search.left() + 8.0, search.center().y - 8.0), "search", palette.ink_3);
@@ -1122,14 +1094,14 @@ impl DesktopApp {
     /// from `right`: star, (in rows) the time, the unsaved dot, the agent. Returns the star's response.
     fn project_marks(&mut self, ui: &Ui, palette: &theme::Palette, summary: &ArtifactSummary, right: f32, middle: f32, with_time: bool) -> (Response, f32) {
         let star = Rect::from_min_size(Pos2::new(right - 28.0, middle - 14.0), Vec2::splat(28.0));
-        let response = ui.interact(star, ui.id().with(("home-star", &summary.id)), Sense::click()).on_hover_text("별표");
+        let response = ui.interact(star, ui.id().with(("home-star", &summary.id)), Sense::click()).on_hover_text(crate::i18n::tr("별표"));
         let starred = self.home.starred.contains(&summary.id);
         icon16(ui, star.center() - Vec2::splat(8.0), if starred { "star-fill" } else { "star" }, if starred { palette.star } else { palette.ink_3 });
         let mut cursor = star.left() - 12.0;
         if with_time {
             if let Some(modified) = summary.modified_at_ms {
                 let label = modified_label(modified, now_ms(), local_offset_minutes());
-                ui.painter().text(Pos2::new(cursor, middle), Align2::RIGHT_CENTER, label, theme::display_font(false, 12.0), palette.ink_3);
+                ui.painter().text(Pos2::new(cursor, middle), Align2::RIGHT_CENTER, crate::i18n::tr(&label), theme::display_font(false, 12.0), palette.ink_3);
             }
             cursor -= 72.0 + 12.0;
         }
@@ -1142,7 +1114,7 @@ impl DesktopApp {
             let center = Pos2::new(cursor - 12.0, middle);
             let hover = Rect::from_center_size(center, Vec2::splat(24.0));
             ui.interact(hover, ui.id().with(("home-agent-row", &summary.id)), Sense::hover())
-                .on_hover_text(agent_name(&job.runtime, job.client_name.as_deref()));
+                .on_hover_text(crate::i18n::tr(&agent_name(&job.runtime, job.client_name.as_deref())));
             let glyph = agent_glyph(&job.runtime, job.client_name.as_deref());
             paint_agent(ui, palette, center, AgentMark::ROW, agent_color(palette, &job.runtime), &glyph, job_agent_state(job.state));
             cursor -= 24.0 + 12.0;
@@ -1176,7 +1148,7 @@ impl DesktopApp {
             self.paint_title(ui, palette, summary, Pos2::new(cell.left(), title_y), cell.width() - 84.0);
             if let Some(modified) = summary.modified_at_ms {
                 let label = modified_label(modified, now_ms(), local_offset_minutes());
-                ui.painter().text(Pos2::new(cell.right(), title_y), Align2::RIGHT_CENTER, label, theme::display_font(false, 12.0), palette.ink_3);
+                ui.painter().text(Pos2::new(cell.right(), title_y), Align2::RIGHT_CENTER, crate::i18n::tr(&label), theme::display_font(false, 12.0), palette.ink_3);
             }
             if star.clicked() {
                 self.invoke_ui("home.star", json!({ "artifact_id": summary.id }));
@@ -1192,10 +1164,10 @@ impl DesktopApp {
         let extension = origin_extension(summary.kind);
         let extension_width = if extension.is_empty() { 0.0 } else { 12.0 + text_width(ui, extension, &font) };
         let title = crate::widgets::truncate_to_width(ui, &summary.title, (max_width - extension_width).max(24.0), palette.ink);
-        let title_width = text_width(ui, &title, &font);
+        let title_width = verbatim_width(ui, &title, &font);
         ui.painter().text(left_center, Align2::LEFT_CENTER, &title, font.clone(), palette.ink);
         if !extension.is_empty() {
-            ui.painter().text(left_center + Vec2::new(title_width + 12.0, 0.0), Align2::LEFT_CENTER, extension, font, palette.ink_3);
+            ui.painter().text(left_center + Vec2::new(title_width + 12.0, 0.0), Align2::LEFT_CENTER, crate::i18n::tr(&extension), font, palette.ink_3);
         }
     }
 
@@ -1232,6 +1204,11 @@ impl DesktopApp {
 }
 
 fn text_width(ui: &Ui, text: &str, font: &FontId) -> f32 {
+    verbatim_width(ui, &crate::i18n::tr(text), font)
+}
+
+/// The width of the person's own text (a workspace name, a title), measured as it is shown: untranslated.
+fn verbatim_width(ui: &Ui, text: &str, font: &FontId) -> f32 {
     ui.painter().layout_no_wrap(text.to_owned(), font.clone(), Color32::WHITE).size().x
 }
 
@@ -1291,15 +1268,25 @@ const TEMPLATE_NAMES: &[(&str, &str)] = &[
     ("resume", "이력서"),
     ("invitation", "초대장"),
     ("banner", "배너"),
+    // The web engine's built-in template (canvas/src/web/mod.rs).
+    ("webgl_animation", "WebGL 애니메이션"),
 ];
+
+/// The Korean name of a built-in template (its source text; `tr` gives the English).
+pub(super) fn built_in_template_name(id: &str) -> Option<&'static str> {
+    TEMPLATE_NAMES.iter().find(|(known, _)| *known == id).map(|(_, name)| *name)
+}
 
 fn template_order(id: &str) -> usize {
     TEMPLATE_NAMES.iter().position(|(known, _)| *known == id).unwrap_or(TEMPLATE_NAMES.len())
 }
 
 /// The name the template tab shows: the §12 name, else the engine's title.
+/// A template's name as the tile shows it: a built-in template's name (§12) in the window's language, any other template's
+/// own title as written.
 fn template_name(template: &designllm_contracts::TemplateInfo) -> String {
-    TEMPLATE_NAMES.iter().find(|(id, _)| *id == template.id).map_or_else(|| template.title.clone(), |(_, name)| (*name).to_owned())
+    TEMPLATE_NAMES.iter().find(|(id, _)| *id == template.id)
+        .map_or_else(|| template.title.clone(), |(_, name)| crate::i18n::tr(name).into_owned())
 }
 
 /// The sizes the size menu offers for a tile (§3 table), by frame preset id.
@@ -1366,7 +1353,7 @@ fn preset_menu(ui: &mut Ui, palette: &theme::Palette, ids: &[&str], current: Opt
             };
             let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::hover());
             // tokens `menu.caption`: padding 6 above and 2 below a 16 px line.
-            ui.painter().text(Pos2::new(rect.left() + 8.0, rect.top() + 6.0 + 8.0), Align2::LEFT_CENTER, caption, theme::font(theme::Type::Caption), palette.ink_3);
+            ui.painter().text(Pos2::new(rect.left() + 8.0, rect.top() + 6.0 + 8.0), Align2::LEFT_CENTER, crate::i18n::tr(&caption), theme::font(theme::Type::Caption), palette.ink_3);
         }
         let name = match preset.id {
             "phone" => "휴대폰",
@@ -1412,16 +1399,6 @@ fn preset_value(preset: &designllm_contracts::FramePreset) -> String {
     }
 }
 
-/// The chosen button of a segmented tray: white with a 1 px `line` ring and a faint drop.
-fn raised(ui: &Ui, palette: &theme::Palette, rect: Rect) {
-    let corner = CornerRadius::same(6);
-    // tokens `shadow.raised`: its drop equals the first layer of `float`; its ring is the `line` below.
-    let [drop, _] = theme::shadow(ui.ctx(), theme::Elevation::Float);
-    ui.painter().add(drop.as_shape(rect, corner));
-    ui.painter().rect_filled(rect, corner, palette.raised);
-    ui.painter().rect_stroke(rect, corner, Stroke::new(1.0, palette.line), StrokeKind::Outside);
-}
-
 /// Width of a two-line chip (mockup `.ob` + `.two`): 12 left, the wider line, 6, the chevron, 10.
 fn two_line_width(ui: &Ui, caption: &str, value: &str, small: &FontId, body: &FontId) -> f32 {
     12.0 + text_width(ui, caption, small).max(text_width(ui, value, body)) + 6.0 + 16.0 + 10.0
@@ -1430,19 +1407,9 @@ fn two_line_width(ui: &Ui, caption: &str, value: &str, small: &FontId, body: &Fo
 /// The caption (11/14 `ink-3`) over the value (13/17 `ink`), centred as a 31 px block, and the chevron.
 fn paint_two_line(ui: &Ui, palette: &theme::Palette, rect: Rect, caption: &str, value: &str) {
     let top = rect.center().y - 15.5;
-    ui.painter().text(Pos2::new(rect.left() + 12.0, top + 7.0), Align2::LEFT_CENTER, caption, theme::display_font(false, 11.0), palette.ink_3);
-    ui.painter().text(Pos2::new(rect.left() + 12.0, top + 14.0 + 8.5), Align2::LEFT_CENTER, value, theme::display_font(false, 13.0), palette.ink);
+    ui.painter().text(Pos2::new(rect.left() + 12.0, top + 7.0), Align2::LEFT_CENTER, crate::i18n::tr(&caption), theme::display_font(false, 11.0), palette.ink_3);
+    ui.painter().text(Pos2::new(rect.left() + 12.0, top + 14.0 + 8.5), Align2::LEFT_CENTER, crate::i18n::tr(&value), theme::display_font(false, 13.0), palette.ink);
     icon16(ui, Pos2::new(rect.right() - 26.0, rect.center().y - 8.0), "chev-down", palette.ink_3);
-}
-
-/// Tiles whose artifact can take a design system (§3: canvas, slides and web tiles).
-fn shows_design_system(tile: &str) -> bool {
-    !matches!(tile, "document" | "figure" | "diagram")
-}
-
-/// Tiles that can be made as a design or as code (§3).
-fn shows_mode(tile: &str) -> bool {
-    matches!(tile, "blank" | "mobile" | "ui" | "wireframe" | "poster" | "social")
 }
 
 /// Sizes of an agent mark (§5.5): the top bar's 24 px disc in a 32 px slot with a 2 px ring at
@@ -1503,7 +1470,7 @@ fn paint_agent(ui: &Ui, palette: &theme::Palette, center: Pos2, mark: AgentMark,
     if glyph == "mcp" {
         icons::paint(ui, Rect::from_center_size(center, Vec2::splat(mark.mcp_icon)), "mcp", palette.on_agent);
     } else {
-        painter.text(center, Align2::CENTER_CENTER, glyph, theme::font(mark.glyph_type), palette.on_agent);
+        painter.text(center, Align2::CENTER_CENTER, crate::i18n::tr(&glyph), theme::font(mark.glyph_type), palette.on_agent);
     }
     let tau = std::f32::consts::TAU;
     let ring = Stroke::new(mark.ring_width, color);

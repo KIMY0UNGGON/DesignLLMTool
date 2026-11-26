@@ -153,11 +153,11 @@ impl DesktopApp {
             crate::widgets::DialogPlace::Screen,
             |ui| {
                 if let Some(message) = message.as_deref() {
-                    ui.label(message);
+                    ui.label(crate::i18n::tr(&message));
                 } else if self.run_context.is_some() {
-                    ui.label("앱 요청이 끝난 뒤 편집할 수 있습니다. 초안은 보존됩니다.");
+                    ui.label(crate::i18n::tr("앱 요청이 끝난 뒤 편집할 수 있습니다. 초안은 보존됩니다."));
                 } else {
-                    ui.label(format!("시작 페이지 {} · {}", page_index + 1, start_page_id));
+                    ui.label(crate::i18n::tr(&format!("시작 페이지 {} · {}", page_index + 1, start_page_id)));
                 }
                 ui.add_space(4.0);
                 ui.add_enabled_ui(can_edit, |ui| {
@@ -210,13 +210,13 @@ impl DesktopApp {
         let page_index = mutation.editor.as_ref().map(|editor| editor.page_index).unwrap_or(0);
         let held_edit_id = mutation.held_edit_id.clone();
         use crate::widgets::{dialog_buttons, DialogButton, DialogChoice};
-        let (mut copy, mut retry, mut discard, mut check_held, mut retry_held) = (false, false, false, false, false);
+        let (mut copy, mut retry, mut discard) = (false, false, false);
         let palette = theme::palette(ctx);
         let title = if pending { "섹션 저장 중" } else if mutation.outcome_uncertain { "섹션 결과 확인 필요" } else { "섹션 변경 보존됨" };
         crate::widgets::dialog(ctx, &palette, Id::new("page-section-conflict"), title, crate::widgets::DialogPlace::BoardTop(board_rect), |ui| {
-                ui.label(message.as_deref().unwrap_or("최신 섹션 상태를 확인할 수 없습니다. 초안을 보존했습니다."));
+                ui.label(crate::i18n::tr(&message.as_deref().unwrap_or("최신 섹션 상태를 확인할 수 없습니다. 초안을 보존했습니다.")));
                 if let Some(section) = draft.as_ref() {
-                    ui.label(format!("섹션: {} · 시작 페이지 {}", section.name, page_index + 1));
+                    ui.label(crate::i18n::tr(&format!("섹션: {name} · 시작 페이지 {page}", name = section.name, page = page_index + 1)));
                     let pressed = dialog_buttons(ui, &palette, &[
                         DialogChoice::new("초안 복사", DialogButton::Plain).enabled(!pending),
                         DialogChoice::new("같은 기준으로 다시 시도", DialogButton::Primary).enabled(retry_allowed),
@@ -226,21 +226,13 @@ impl DesktopApp {
                 } else {
                     discard = dialog_buttons(ui, &palette, &[DialogChoice::new("변경 버리기", DialogButton::Danger).enabled(!pending)])[0].clicked();
                 }
-                if let Some(held_id) = held_edit_id.as_deref() {
-                    if let Some(held) = self.held_edits.iter().find(|held| held.id == held_id) {
-                        match held.state {
-                            super::state::HeldEditState::NeedsReview => {
-                                check_held = dialog_buttons(ui, &palette, &[DialogChoice::new("보류한 섹션 상태 확인", DialogButton::Plain)])[0].clicked();
-                            }
-                            super::state::HeldEditState::Ready => {
-                                retry_held = dialog_buttons(ui, &palette, &[DialogChoice::new("보류한 섹션 다시 적용", DialogButton::Primary)])[0].clicked();
-                            }
-                            super::state::HeldEditState::Checking => { ui.label("보류한 섹션의 예약 상태를 확인 중입니다."); }
-                            super::state::HeldEditState::Sending | super::state::HeldEditState::WaitingForJobRelease => {
-                                ui.label("보류한 섹션 변경을 처리 중입니다.");
-                            }
-                        }
-                    }
+                // A held section change never takes the held-edit check: it is held only by the apply preflight (apply.rs: a video,
+                // image replacement or crop being applied), which sets `can_retry` false, and the replies leave its failures out of the
+                // re-hold (replies.rs), so `check_held_edit` would do nothing and `Ready` is never reached. The draft's own copy and
+                // discard buttons above are its way out; only the automatic retry after a job's release is reported.
+                let held = held_edit_id.as_deref().and_then(|held_id| self.held_edits.iter().find(|held| held.id == held_id));
+                if held.is_some_and(|held| matches!(held.state, super::state::HeldEditState::Sending | super::state::HeldEditState::WaitingForJobRelease)) {
+                    ui.label(crate::i18n::tr("보류한 섹션 변경을 처리 중입니다."));
                 }
             });
         if copy {
@@ -250,12 +242,6 @@ impl DesktopApp {
         }
         if retry { self.retry_page_section_mutation(&token); }
         if discard { self.discard_page_section_mutation(&token); }
-        if check_held {
-            if let Some(held_id) = held_edit_id.as_deref() { self.check_held_edit(held_id); }
-        }
-        if retry_held {
-            if let Some(held_id) = held_edit_id.as_deref() { self.confirm_held_edit_retry(held_id); }
-        }
     }
 
     fn canvas_section_snapshot(&self) -> Option<(String, u64, Vec<(String, bool)>, Vec<CanvasPageSection>)> {

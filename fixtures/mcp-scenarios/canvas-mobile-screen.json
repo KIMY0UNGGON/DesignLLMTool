@@ -1,0 +1,96 @@
+{
+  "task": "canvas-mobile-screen",
+  "summary": "A 390 x 844 px screen: a status bar, a title, an image, a row of two buttons inside a group, a bottom navigation row, a second page reached by a click, edits, both pages rendered, HTML and native export. Uses only what the engine supports today; the template-based version comes with the P1 templates.",
+  "steps": [
+    { "id": "workspace", "tool": "workspace_list", "arguments": {}, "bind": { "workspace_id": "/structuredContent/workspace_id" } },
+    { "id": "hero_asset", "tool": "asset_import", "arguments": { "path": "$fixture_file:assets/pixel.png" }, "bind": { "hero_asset": "/structuredContent" } },
+    { "id": "create", "tool": "artifact_create", "arguments": { "request_id": "$request_id", "actor": "scenario", "kind": "canvas", "title": "Mobile screen", "size": { "width": 3714750, "height": 8039100 }, "template": null }, "bind": { "artifact": "/structuredContent/id", "revision": "/structuredContent/revision" } },
+    { "id": "view0", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "view0" },
+    { "select": { "from": "view0", "pointer": "/structuredContent/body/document/pages", "field": "id" }, "as": "page_one" },
+    { "id": "screen", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "add_node", "page_id": "$page_one", "parent_id": null, "node": { "id": "screen-bg", "kind": "rectangle", "bounds": { "x": 0, "y": 0, "width": 3714750, "height": 8039100 }, "text": "", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#20252D", "fill": "#F5F7FB", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} } },
+          { "op": "add_node", "page_id": "$page_one", "parent_id": null, "node": { "id": "status-bar", "kind": "rectangle", "bounds": { "x": 0, "y": 0, "width": 3714750, "height": 228600 }, "text": "", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#FFFFFF", "fill": "#1F2A44", "stroke": "#1F2A44", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} } },
+          { "op": "add_node", "page_id": "$page_one", "parent_id": null, "node": { "id": "title", "kind": "text", "bounds": { "x": 152400, "y": 533400, "width": 3409950, "height": 381000 }, "text": "Inbox", "style": { "font_family": "Pretendard", "font_size": 254000, "color": "#1F2A44", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} } },
+          { "op": "add_node", "page_id": "$page_one", "parent_id": null, "node": { "id": "hero", "kind": "image", "bounds": { "x": 152400, "y": 990600, "width": 3409950, "height": 1714500 }, "text": "", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#20252D", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" }, "asset": "$hero_asset", "children": [], "layout": null, "interactions": [], "variants": {} } },
+          { "op": "add_node", "page_id": "$page_one", "parent_id": null, "node": {
+              "id": "actions", "kind": "group", "bounds": { "x": 152400, "y": 2857500, "width": 3409950, "height": 495300 }, "text": "", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#20252D", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" }, "asset": null,
+              "children": [
+                { "id": "btn-save", "kind": "rectangle", "bounds": { "x": 0, "y": 0, "width": 1619250, "height": 419100 }, "text": "Save", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#FFFFFF", "fill": "#24416D", "stroke": "#24416D", "stroke_width": 12700, "bold": true, "italic": false, "align": "center" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} },
+                { "id": "btn-share", "kind": "rectangle", "bounds": { "x": 0, "y": 0, "width": 1619250, "height": 419100 }, "text": "Share", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#24416D", "fill": "#EAF0FA", "stroke": "#24416D", "stroke_width": 12700, "bold": true, "italic": false, "align": "center" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} }
+              ],
+              "layout": { "mode": "row", "width_mode": "fill", "height_mode": "hug", "gap": 76200, "padding": 0, "align": "center" }, "interactions": [], "variants": {} } },
+          { "op": "add_node", "page_id": "$page_one", "parent_id": null, "node": {
+              "id": "nav", "kind": "group", "bounds": { "x": 0, "y": 7239000, "width": 3714750, "height": 800100 }, "text": "", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#20252D", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" }, "asset": null,
+              "children": [
+                { "id": "tab-inbox", "kind": "text", "bounds": { "x": 0, "y": 0, "width": 1238250, "height": 800100 }, "text": "Inbox", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#1F2A44", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "center" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} },
+                { "id": "tab-sent", "kind": "text", "bounds": { "x": 0, "y": 0, "width": 1238250, "height": 800100 }, "text": "Sent", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#46576F", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "center" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} },
+                { "id": "tab-more", "kind": "text", "bounds": { "x": 0, "y": 0, "width": 1238250, "height": 800100 }, "text": "More", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#46576F", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "center" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} }
+              ],
+              "layout": { "mode": "row", "width_mode": "fill", "height_mode": "hug", "gap": 0, "padding": 0, "align": "center" }, "interactions": [], "variants": {} } }
+        ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "add_detail", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "insert_page", "index": 1, "page": { "id": "page-detail", "size": { "width": 3714750, "height": 8039100 }, "nodes": [
+              { "id": "detail-title", "kind": "text", "bounds": { "x": 152400, "y": 533400, "width": 3409950, "height": 381000 }, "text": "Detail", "style": { "font_family": "Pretendard", "font_size": 254000, "color": "#1F2A44", "fill": "#FFFFFF", "stroke": "#566479", "stroke_width": 12700, "bold": true, "italic": false, "align": "left" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} }
+            ], "notes": "" } }
+        ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "wire_save", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [ { "op": "set_interaction", "node_id": "btn-save", "interaction": { "action": "navigate_page", "page_id": "page-detail" } } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "style", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["design"], "job_ref": null, "read_dependencies": [],
+        "operations": [
+          { "op": "set_variant_style", "node_id": "title", "variant": "dark", "patch": { "color": "#FFFFFF" } },
+          { "op": "set_style", "node_ids": ["title"], "patch": { "bold": true, "font_size": 279400 } },
+          { "op": "set_layout", "node_id": "actions", "layout": { "mode": "row", "width_mode": "fill", "height_mode": "hug", "gap": 152400, "padding": 0, "align": "center" } }
+        ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "edit_title", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [ { "op": "set_text", "node_id": "title", "text": "Inbox (3)" } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "move_hero", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["design"], "job_ref": null, "read_dependencies": [],
+        "operations": [ { "op": "set_geometry", "node_id": "hero", "bounds": { "x": 152400, "y": 990600, "width": 3409950, "height": 1714500 } } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "notes", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [ { "op": "set_page_notes", "page_id": "$page_one", "notes": "Mobile inbox" } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "view1", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "view1" },
+    { "select": { "from": "view1", "pointer": "/structuredContent/body/document/pages/0", "where": { "key_equals": { "id": "btn-save" } } }, "as": "btn_save" },
+    { "select": { "from": "view1", "pointer": "/structuredContent/body/document/pages/0", "where": { "key_equals": { "id": "title" } } }, "as": "title_node" },
+    { "id": "export_html", "tool": "artifact_export", "arguments": {
+        "request_id": "$request_id", "options": { "artifact_id": "$artifact", "expected_revision": "$revision", "format": "html", "required_editability": "none", "allowed_losses": [], "profile": { "dpi": 96, "transparent": false }, "page_indices": null },
+        "target_path": "$scratch/mobile.html", "overwrite": false, "expected_target_hash": null
+      } },
+    { "id": "save_native", "tool": "artifact_save", "arguments": {
+        "request_id": "$request_id", "artifact_id": "$artifact", "expected_revision": "$revision",
+        "target_path": "$scratch/mobile.canvasproject", "overwrite": false, "expected_target_hash": null
+      } },
+    { "id": "final", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "final" }
+  ],
+  "checks": [
+    { "check": "inspect", "pointer": "/structuredContent/body/document/pages", "length": 2 },
+    { "check": "text_present", "text": "Inbox (3)" },
+    { "check": "bound", "name": "btn_save", "pointer": "/interactions/0/page_id", "equals": "page-detail" },
+    { "check": "bound", "name": "title_node", "pointer": "/variants/dark/color", "equals": "#FFFFFF" },
+    { "check": "render", "page": 0, "width_px": 390, "height_px": 844 },
+    { "check": "render", "page": 1, "width_px": 390, "height_px": 844 },
+    { "check": "file", "path": "$scratch/mobile.html", "text_contains": "data-dlm-id" },
+    { "check": "file", "path": "$scratch/mobile.canvasproject", "text_contains": "designllm.canvas" }
+  ]
+}

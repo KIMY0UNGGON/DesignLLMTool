@@ -391,6 +391,11 @@ impl DesktopApp {
                 continue;
             }
             if ctx.input_mut(|input| input.consume_shortcut(&shortcut)) {
+                // Ctrl+E opens the export menu: the format, the scope and the place are chosen there.
+                if spec.id == "file.export" {
+                    self.open_export_menu();
+                    continue;
+                }
                 let args = self.default_args(spec.id);
                 self.invoke_ui(spec.id, args);
             }
@@ -1491,17 +1496,31 @@ impl DesktopApp {
                 if args.get("dpi").is_some_and(|dpi| !dpi.as_u64().is_some_and(|dpi| (72..=1200).contains(&dpi))) {
                     return Err("dpi는 72부터 1200까지의 정수여야 합니다".into());
                 }
-                if let Some(dpi) = args.get("dpi").and_then(Value::as_u64) { self.view().figure_export_dpi = dpi as u32; }
+                // The DPI is this export's, and the view's for the session; an export never writes the settings (only an output
+                // profile choice keeps a Figure's DPI, `figure_profile.rs`).
+                // The open popover's own pick stays its own: another export (an agent's) does not touch it.
+                if let Some(dpi) = args.get("dpi").and_then(Value::as_u64) {
+                    self.view().figure_export_dpi = dpi as u32;
+                }
+                let asked: Result<bool, String> = 'export: {
                 if self.run_context.is_some() || args.get("target_path").is_some() {
-                    return self.export_active_to(args);
+                    break 'export self.export_active_to(args).map(|()| true);
                 }
                 let format = text(args, "format").unwrap_or("pdf").to_owned();
                 self.export_format = format.clone();
                 if let Some(scale) = number(args, "scale") {
                     self.export_scale = scale as u32;
                 }
+                if let Some(error) = self.deck_scope_refusal(&format, text(args, "scope")) {
+                    break 'export Err(error.into());
+                }
                 if let Some(scope) = text(args, "scope") {
                     self.export_scope = scope.to_owned();
+                } else if let Some(kind) = self.active.as_ref().map(|item| item.kind) {
+                    // A deck's PPTX is every slide: a remembered page or range does not stand in for the omitted scope.
+                    if super::save_export::whole_deck(kind, &format) {
+                        self.export_scope = "all".into();
+                    }
                 }
                 if let Some(background) = text(args, "background") {
                     self.export_transparent = background == "transparent";
@@ -1509,19 +1528,27 @@ impl DesktopApp {
                 // A page range is checked before the save dialog opens.
                 let pages = text(args, "pages").unwrap_or_default();
                 if self.export_scope == "range" {
-                    self.check_page_range(&format, pages)?;
+                    if let Err(error) = self.check_page_range(&format, pages) {
+                        break 'export Err(error);
+                    }
+                }
+                // A request that cannot be built is refused before the dialog: the command never reports a file it did not ask for.
+                if self.export_request(String::new(), Some(&self.popover_export_args(pages))).is_none() {
+                    break 'export Err(super::save_export::EXPORT_NOT_BUILT.into());
                 }
                 let extension = format.clone();
-                if let Some(path) = crate::dialogs::save_export(self.parent_hwnd, &extension) {
-                    self.export_path = path.to_string_lossy().into_owned();
-                    // The settings just taken from the arguments, as the popover's own export sends them.
-                    let mut options = self.popover_export_args(pages);
-                    if args.get("dpi").is_none() && args.get("scale").is_some() {
-                        options.as_object_mut().expect("export options are an object").remove("dpi");
-                    }
-                    self.export_active_with(Some(&options));
+                let Some(path) = crate::dialogs::save_export(self.parent_hwnd, &extension) else {
+                    break 'export Ok(false);
+                };
+                self.export_path = path.to_string_lossy().into_owned();
+                // The settings just taken from the arguments, as the popover's own export sends them.
+                let mut options = self.popover_export_args(pages);
+                if args.get("dpi").is_none() && args.get("scale").is_some() {
+                    options.as_object_mut().expect("export options are an object").remove("dpi");
                 }
-                Ok(())
+                self.export_active_with(Some(&options)).map(|()| true)
+                };
+                asked.map(|_| ())
             }
             // The properties panel's `내보내기 ›`: PNG or SVG of the selected nodes only, through the export path.
             "file.export_selection" => {
@@ -1563,9 +1590,9 @@ impl DesktopApp {
             "home.star" => {
                 let artifact_id = text(args, "artifact_id").unwrap_or_default().to_owned();
                 if !self.home.starred.remove(&artifact_id) {
-                    self.home.starred.insert(artifact_id);
+                    self.home.starred.insert(artifact_id.clone());
                 }
-                self.save_settings();
+                self.save_star(&artifact_id);
                 Ok(())
             }
             // No design system exists before D11: the only choice is none.
@@ -1580,7 +1607,8 @@ impl DesktopApp {
             }
             "home.tab" => {
                 self.home.tab = match text(args, "tab") {
-                    Some("design_systems") => super::home::HomeTab::DesignSystems,
+                    // The design-system tab has no page in this build: the home screen no longer shows it.
+                    Some("design_systems") => return Err("디자인 시스템 탭은 이 빌드에 없습니다".into()),
                     Some("templates") => super::home::HomeTab::Templates,
                     _ => super::home::HomeTab::Projects,
                 };
@@ -1633,13 +1661,14 @@ impl DesktopApp {
                 // A runtime change keeps the model only when the new runtime lists it (a model given in the same call is kept as
                 // given); the listed model's effort is fitted to it (`runner_models.rs`).
                 self.fit_runner(runtime_changed, text(args, "model").is_some(), text(args, "effort").is_some());
-                self.save_settings();
+                self.save_runner();
                 Ok(())
             }
             // A template is a canvas made by the engine (`artifact.create` with `template`); the editor opens on it.
             "home.use_template" => {
                 let template = text(args, "template").unwrap_or("mobile_app").to_owned();
-                let title = text(args, "title").map(str::to_owned).unwrap_or_else(|| super::state::home_template_title(&template).to_owned());
+                // Without a title, the built-in template's name in the window's language (as its tile shows it).
+                let title = text(args, "title").map(str::to_owned).unwrap_or_else(|| crate::i18n::tr(super::state::home_template_title(&template)).into_owned());
                 let kind = match text(args, "kind") {
                     Some(kind) => serde_json::from_value(json!(kind)).map_err(|_| format!("unknown template kind {kind}"))?,
                     None => self.home.feeds.templates.iter().find(|info| info.id == template).map(|info| info.kind)

@@ -119,6 +119,69 @@
       "used_by": "그림 보드 하단 막대, 구조도 노드 선택 도구줄"
     },
     {
+      "name": "shape-encoder",
+      "group": "tool",
+      "priority": 2,
+      "purpose": "인코더 도형(좁아지는 사다리꼴)",
+      "used_by": "도구 상자 다이어그램 도형 (add.shape)"
+    },
+    {
+      "name": "shape-decoder",
+      "group": "tool",
+      "priority": 2,
+      "purpose": "디코더 도형(넓어지는 사다리꼴)",
+      "used_by": "도구 상자 다이어그램 도형 (add.shape)"
+    },
+    {
+      "name": "shape-parallelogram",
+      "group": "tool",
+      "priority": 2,
+      "purpose": "데이터·잠재 변수 도형(평행사변형)",
+      "used_by": "도구 상자 다이어그램 도형 (add.shape)"
+    },
+    {
+      "name": "shape-cylinder",
+      "group": "tool",
+      "priority": 2,
+      "purpose": "저장소 도형(원통)",
+      "used_by": "도구 상자 다이어그램 도형 (add.shape)"
+    },
+    {
+      "name": "shape-circle-plus",
+      "group": "tool",
+      "priority": 2,
+      "purpose": "더하기·잔차 결합 도형(원 안 +)",
+      "used_by": "도구 상자 다이어그램 도형 (add.shape)"
+    },
+    {
+      "name": "shape-circle-times",
+      "group": "tool",
+      "priority": 2,
+      "purpose": "곱하기·게이트 도형(원 안 ×)",
+      "used_by": "도구 상자 다이어그램 도형 (add.shape)"
+    },
+    {
+      "name": "shape-diamond",
+      "group": "tool",
+      "priority": 2,
+      "purpose": "분기·라우터 도형(마름모)",
+      "used_by": "도구 상자 다이어그램 도형 (add.shape)"
+    },
+    {
+      "name": "shape-hexagon",
+      "group": "tool",
+      "priority": 2,
+      "purpose": "고정 모듈·손실 도형(육각형)",
+      "used_by": "도구 상자 다이어그램 도형 (add.shape)"
+    },
+    {
+      "name": "shape-cuboid",
+      "group": "tool",
+      "priority": 2,
+      "purpose": "텐서·특징 맵 도형(직육면체)",
+      "used_by": "도구 상자 다이어그램 도형 (add.shape)"
+    },
+    {
       "name": "add",
       "group": "add",
       "priority": 1,

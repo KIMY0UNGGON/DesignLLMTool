@@ -1,0 +1,91 @@
+{
+  "base_file": "p0-v1_1.json",
+  "base_sha256": "488212c8de3a896244e314f8f1f89c527bc979fcddda7c5c7abe688aa2176603",
+  "reason": "User-verified DOCX picture alt-text outputs only: 7 allowlisted records, one nonblocking position diagnostic (+191 bytes) and six alt-text-derived outputs; preserve the v1.1 baseline.",
+  "entries": [
+    {
+      "case": "fixture.docx.basic-preserve",
+      "output": "digest",
+      "from": {
+        "sha256": "b28920e6bfe51dd26abe699dc39674c30dec1c8b6f7938d69764996d4321995b",
+        "size": 152
+      },
+      "to": {
+        "sha256": "c30fb31f6fab4e78140f8ad351a4c08abad964b31ebb0ad3561cafacd8922fbd",
+        "size": 152
+      }
+    },
+    {
+      "case": "fixture.docx.basic-preserve",
+      "output": "inspect",
+      "from": {
+        "sha256": "65ad42f5a31ea3bda3beb8a1e9794c9098089bbb2c694b05a392412952449b04",
+        "size": 4368
+      },
+      "to": {
+        "sha256": "201345528115535760338bb9390d5ee1162ad4b3d8014009923eef91667fcce0",
+        "size": 4406
+      }
+    },
+    {
+      "case": "fixture.docx.basic-preserve",
+      "output": "inspect@r1",
+      "from": {
+        "sha256": "65ad42f5a31ea3bda3beb8a1e9794c9098089bbb2c694b05a392412952449b04",
+        "size": 4368
+      },
+      "to": {
+        "sha256": "201345528115535760338bb9390d5ee1162ad4b3d8014009923eef91667fcce0",
+        "size": 4406
+      }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "change/03/result",
+      "from": {
+        "sha256": "92e85067aaad77480fa5d17b4a8ef39fadf603e3d2a388fe39e4c490a8a007db",
+        "size": 434
+      },
+      "to": {
+        "sha256": "66ba9c73367b64faaa6b823e4ec88a36248f2033f46f8902e118bfb1b53e56d0",
+        "size": 625
+      }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "digest",
+      "from": {
+        "sha256": "bf5ae1b6fbbbb272854f6db1335a9c4e3925b75a33e1325c523c60413c94acde",
+        "size": 152
+      },
+      "to": {
+        "sha256": "d6e454c0813dfa0f535a22935726acd352b2710b88c8df1118c22a5b127664df",
+        "size": 152
+      }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "inspect",
+      "from": {
+        "sha256": "342856b9cb4c9de6203e41db25045f4c6838b6ac325b809604d6feca63b4eb76",
+        "size": 5025
+      },
+      "to": {
+        "sha256": "e5ee1f44ec4f8fa0114fbf63fdec4ec5d8a4ef0713354552aaa8aaf9e1cbe3ca",
+        "size": 5063
+      }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "inspect@r1",
+      "from": {
+        "sha256": "342856b9cb4c9de6203e41db25045f4c6838b6ac325b809604d6feca63b4eb76",
+        "size": 5025
+      },
+      "to": {
+        "sha256": "e5ee1f44ec4f8fa0114fbf63fdec4ec5d8a4ef0713354552aaa8aaf9e1cbe3ca",
+        "size": 5063
+      }
+    }
+  ]
+}

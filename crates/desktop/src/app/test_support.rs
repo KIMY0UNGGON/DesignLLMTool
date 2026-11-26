@@ -642,7 +642,8 @@ pub(super) struct Mcp(McpServer);
 
 impl Mcp {
     pub(super) fn connect(backend: Arc<HostBackend>) -> Self {
-        let server = McpServer::new(backend, Scope::Workspace);
+        // Parity tests compare engine results; the design-guide gate is tested in the bridge.
+        let server = McpServer::new(backend, Scope::Workspace).without_guide_gate();
         let initialize = json!({
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": { "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": { "name": "desktop-parity", "version": "1" } }

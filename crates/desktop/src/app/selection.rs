@@ -264,7 +264,7 @@ impl DesktopApp {
             }
         }
         if let Some(board_rect) = self.board_rect {
-            let tools = node_tools(&node);
+            let tools = node_tools(&node, self.command_enabled_for_current_kind("props.corner_radius"));
             let mut toolbar = self.place_toolbar(board_rect, rect, toolbar_size(ui, &tools));
             // tokens.json `ctx.avoid-tag`: a toolbar above the node that meets the agent's name tag moves up so that
             // its bottom is 6 above the tag.
@@ -461,7 +461,7 @@ impl DesktopApp {
                             ui.horizontal(|ui| {
                                 let (icon_rect, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
                                 icons::paint(ui, icon_rect, "state-warn", palette.warn);
-                                ui.add(egui::Label::new(egui::RichText::new(line).font(theme::display_font(false, 12.0)).color(palette.ink)).wrap());
+                                ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr(&line)).font(theme::display_font(false, 12.0)).color(palette.ink)).wrap());
                             });
                             if !fixes.is_empty() {
                                 ui.horizontal(|ui| {
@@ -540,7 +540,8 @@ impl DesktopApp {
         if self.selected_nodes.len() >= 3 {
             tools.push(Tool::Split { icon: "distribute-v", action: Action::Distribute });
         }
-        if commands::available("edit.group") {
+        // Grouping is Canvas only (a deck refuses it).
+        if commands::available("edit.group") && self.active.as_ref().is_some_and(|item| item.kind == designllm_contracts::ArtifactKind::Canvas) {
             tools.push(Tool::Icon { icon: "group", action: Action::Group, active: false });
         }
         tools.extend([Tool::Sep, Tool::Icon { icon: "ai-agent", action: Action::Ai, active: false }, Tool::Icon { icon: "more", action: Action::More, active: false }]);
@@ -583,7 +584,7 @@ impl DesktopApp {
             _ => None,
         };
         let font = theme::display_font(false, 13.0);
-        let kind_width = chart_kind.map(|label| 10.0 + ui.painter().layout_no_wrap(label.to_owned(), font.clone(), palette.ink).size().x + 2.0 + 16.0 + 4.0);
+        let kind_width = chart_kind.map(|label| 10.0 + ui.painter().layout_no_wrap(crate::i18n::tr(&label).into_owned(), font.clone(), palette.ink).size().x + 2.0 + 16.0 + 4.0);
         let sheet_toggle = commands::available("figure.toggle_sheet");
         let sheet_width = if sheet_toggle { 32.0 + 2.0 } else { 0.0 };
         let width = kind_width.map_or(0.0, |width| width + 2.0 + sheet_width + 9.0 + 2.0) + 32.0 + 2.0 + 32.0 + 8.0 + 2.0;
@@ -610,9 +611,9 @@ impl DesktopApp {
                                 if response.hovered() {
                                     ui.painter().rect_filled(button, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
                                 }
-                                ui.painter().text(Pos2::new(button.left() + 10.0, button.center().y), Align2::LEFT_CENTER, label, font.clone(), palette.ink);
+                                ui.painter().text(Pos2::new(button.left() + 10.0, button.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&label), font.clone(), palette.ink);
                                 icons::paint(ui, Rect::from_min_size(Pos2::new(button.right() - 20.0, button.center().y - 8.0), Vec2::splat(16.0)), "chev-down", palette.ink_3);
-                                let response = response.on_hover_text("차트 종류");
+                                let response = response.on_hover_text(crate::i18n::tr("차트 종류"));
                                 menu(&response, |ui| {
                                     for (value, name) in [("line", "선"), ("bar", "막대"), ("scatter", "점")] {
                                         let chosen = name == label;
@@ -739,14 +740,14 @@ impl DesktopApp {
             }
             Tool::Size(label) => {
                 let font = theme::display_font(false, 13.0);
-                let text = ui.painter().layout_no_wrap(label.clone(), font.clone(), palette.ink).size().x;
+                let text = ui.painter().layout_no_wrap(crate::i18n::tr(&label).into_owned(), font.clone(), palette.ink).size().x;
                 let (rect, response) = ui.allocate_exact_size(Vec2::new(10.0 + text + 2.0 + 16.0 + 4.0, 32.0), Sense::click());
                 if response.hovered() {
                     ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
                 }
-                ui.painter().text(Pos2::new(rect.left() + 10.0, rect.center().y), Align2::LEFT_CENTER, label, font, palette.ink);
+                ui.painter().text(Pos2::new(rect.left() + 10.0, rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(&label), font, palette.ink);
                 icons::paint(ui, Rect::from_min_size(Pos2::new(rect.right() - 20.0, rect.center().y - 8.0), Vec2::splat(16.0)), "chev-down", palette.ink_3);
-                let response = response.on_hover_text("글자 크기");
+                let response = response.on_hover_text(crate::i18n::tr("글자 크기"));
                 popup(&response, |ui| {
                     let size = node.style.font_size as f64 / designllm_contracts::EMU_PER_PT as f64;
                     if let Some(new) = super::properties::row(ui, palette, Some("크기"), |ui| {
@@ -860,12 +861,6 @@ impl DesktopApp {
                     }
                     self.invoke_ui("props.stroke_width", json!({ "value": (new.max(0.0) * per).round() }));
                 }
-                // tokens `component.stroke-rows.toolbar-popover`: the same 모양 row as the panel.
-                if commands::available("props.stroke_style") && self.feature_edit_supported(designllm_contracts::Feature::Effects) {
-                    if let Some(dash) = super::properties::stroke_dash_row(ui, palette, &[], node) {
-                        self.invoke_ui("props.stroke_style", json!({ "dash": dash }));
-                    }
-                }
             }),
             Action::Radius => popup(response, |ui| {
                 let radius = style.corner_radius.unwrap_or(0) as f64 / super::properties::EMU_PER_PX;
@@ -959,8 +954,9 @@ enum Tool {
     Sep,
 }
 
-/// The toolbar of one selected node by its kind (§9.3).
-fn node_tools(node: &NodeProperties) -> Vec<Tool> {
+/// The toolbar of one selected node by its kind (§9.3). `radius` is whether the document's engine takes a corner radius (the
+/// slides engine refuses one).
+fn node_tools(node: &NodeProperties, radius: bool) -> Vec<Tool> {
     use designllm_contracts::NodeKind;
     let icon = |icon: &'static str, action: Action| Tool::Icon { icon, action, active: false };
     let mut tools = Vec::new();
@@ -986,7 +982,7 @@ fn node_tools(node: &NodeProperties) -> Vec<Tool> {
             let fill = widgets::parse_hex(&node.style.fill).unwrap_or(Color32::WHITE);
             tools.push(Tool::Fill(fill));
             tools.push(icon("border-weight", Action::Stroke));
-            if node.kind == NodeKind::Rectangle {
+            if node.kind == NodeKind::Rectangle && radius {
                 tools.push(icon("radius", Action::Radius));
             }
             let frame = node.kind == NodeKind::Rectangle && (node.has_children || node.layout.is_some());
@@ -998,10 +994,11 @@ fn node_tools(node: &NodeProperties) -> Vec<Tool> {
             }
             tools.push(Tool::Sep);
         }
-        NodeKind::Image => {
+        NodeKind::Image if radius => {
             tools.push(icon("radius", Action::Radius));
             tools.push(Tool::Sep);
         }
+        NodeKind::Image => {}
         NodeKind::Line => {
             tools.push(icon("border-weight", Action::Stroke));
             tools.push(Tool::Sep);
@@ -1020,7 +1017,7 @@ fn toolbar_size(ui: &Ui, tools: &[Tool]) -> Vec2 {
         .map(|tool| match tool {
             Tool::Sep => 9.0,
             Tool::Split { .. } => 46.0,
-            Tool::Size(label) => 10.0 + ui.painter().layout_no_wrap(label.clone(), theme::display_font(false, 13.0), Color32::BLACK).size().x + 2.0 + 16.0 + 4.0,
+            Tool::Size(label) => 10.0 + ui.painter().layout_no_wrap(crate::i18n::tr(&label).into_owned(), theme::display_font(false, 13.0), Color32::BLACK).size().x + 2.0 + 16.0 + 4.0,
             _ => 32.0,
         })
         .sum();
@@ -1041,7 +1038,7 @@ fn tool_button(ui: &mut Ui, palette: &theme::Palette, icon: Option<&str>, active
     if let Some(icon) = icon {
         icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_IN_BUTTON)), icon, if active { palette.accent } else { palette.ink_2 });
     }
-    response.on_hover_text(hint)
+    response.on_hover_text(crate::i18n::tr(&hint))
 }
 
 /// A small popover under a toolbar control with its value fields.
@@ -1166,7 +1163,7 @@ fn refusal_callout_with(
                     ui.horizontal(|ui| {
                         let (icon_rect, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
                         icons::paint(ui, icon_rect, "state-error", palette.danger);
-                        ui.add(egui::Label::new(egui::RichText::new(reason).font(theme::display_font(false, 12.0)).color(palette.ink)).wrap());
+                        ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr(&reason)).font(theme::display_font(false, 12.0)).color(palette.ink)).wrap());
                     });
                     if buttons {
                         ui.horizontal(|ui| {
@@ -1204,13 +1201,13 @@ fn callout_button(ui: &mut Ui, palette: &theme::Palette, icon: &str, label: &str
 /// A callout button with the ring of its box (`danger-ring` on a refusal, `warn-ring` on a warning).
 fn callout_button_ring(ui: &mut Ui, palette: &theme::Palette, icon: &str, label: &str, ring: Color32) -> egui::Response {
     let font = theme::display_font(false, 12.0);
-    let text_width = ui.painter().layout_no_wrap(label.to_owned(), font.clone(), palette.ink).size().x;
+    let text_width = ui.painter().layout_no_wrap(crate::i18n::tr(&label).into_owned(), font.clone(), palette.ink).size().x;
     let (rect, response) = ui.allocate_exact_size(Vec2::new(8.0 + 16.0 + 6.0 + text_width + 10.0, 28.0), Sense::click());
     let fill = if response.hovered() { palette.surface_2 } else { palette.field };
     // The ring sits outside the 28 px button, as the mockup's `box-shadow: 0 0 0 1px` does (outer 30).
     ui.painter().rect(rect, CornerRadius::same(theme::RADIUS_CONTROL), fill, Stroke::new(1.0, ring), StrokeKind::Outside);
     icons::paint(ui, Rect::from_min_size(rect.min + Vec2::new(8.0, 6.0), Vec2::splat(16.0)), icon, palette.ink_2);
-    ui.painter().text(rect.min + Vec2::new(30.0, 14.0), Align2::LEFT_CENTER, label, font, palette.ink);
+    ui.painter().text(rect.min + Vec2::new(30.0, 14.0), Align2::LEFT_CENTER, crate::i18n::tr(&label), font, palette.ink);
     response
 }
 
@@ -1282,14 +1279,14 @@ const AGENT_OUTSET: f32 = 3.0;
 /// The rectangle of an agent's name tag for a node frame (tokens.json `agent-tag`): 18 high, 6 px side padding,
 /// left = frame.left − 3, bottom = frame.top − 5 (2 above the outline's outer edge).
 fn tag_rect(painter: &egui::Painter, frame_top_left: Pos2, text: &str) -> Rect {
-    let width = painter.layout_no_wrap(text.to_owned(), theme::display_font(true, 11.0), Color32::WHITE).size().x + 12.0;
+    let width = painter.layout_no_wrap(crate::i18n::tr(&text).into_owned(), theme::display_font(true, 11.0), Color32::WHITE).size().x + 12.0;
     Rect::from_min_size(Pos2::new(frame_top_left.x - AGENT_OUTSET, frame_top_left.y - AGENT_OUTSET - 2.0 - 18.0), Vec2::new(width, 18.0))
 }
 
 /// The agent's name tag (§5.5, mockup `.atag`): 11 px bold `on-agent` text on the agent colour, corners 4·4·4·0.
 fn name_tag(painter: &egui::Painter, frame_top_left: Pos2, text: &str, fill: Color32, ink: Color32) {
     let tag = tag_rect(painter, frame_top_left, text);
-    let galley = painter.layout_no_wrap(text.to_owned(), theme::display_font(true, 11.0), ink);
+    let galley = painter.layout_no_wrap(crate::i18n::tr(&text).into_owned(), theme::display_font(true, 11.0), ink);
     painter.rect_filled(tag, CornerRadius { nw: 4, ne: 4, se: 4, sw: 0 }, fill);
     let text_top = tag.center().y - galley.size().y / 2.0;
     painter.galley(Pos2::new(tag.left() + 6.0, text_top), galley, ink);

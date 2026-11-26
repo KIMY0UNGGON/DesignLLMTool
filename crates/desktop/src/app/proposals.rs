@@ -227,7 +227,7 @@ impl DesktopApp {
                     select |= response.clicked();
                     ui.vertical(|ui| {
                         if let Some(reason) = block {
-                            let words = egui::RichText::new(reason).font(theme::display_font(false, 12.0)).color(palette.ink_3);
+                            let words = egui::RichText::new(crate::i18n::tr(&reason)).font(theme::display_font(false, 12.0)).color(palette.ink_3);
                             ui.add(egui::Label::new(words).wrap());
                         }
                     });

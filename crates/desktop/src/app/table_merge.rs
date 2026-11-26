@@ -806,7 +806,7 @@ impl DesktopApp {
                         }
                         Ok(_) => {}
                         Err(reason) => {
-                            item.on_disabled_hover_text(reason.as_str());
+                            item.on_disabled_hover_text(crate::i18n::tr(&reason.as_str()));
                         }
                     }
                 }

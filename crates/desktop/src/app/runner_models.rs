@@ -274,7 +274,7 @@ impl DesktopApp {
         }
         let waiting_check = self.runner_models.recheck == Some(kind);
         if self.fit_runner(waiting_check, false, false) {
-            self.save_settings();
+            self.save_runner();
         }
     }
 }

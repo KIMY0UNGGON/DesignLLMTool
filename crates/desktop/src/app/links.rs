@@ -373,7 +373,7 @@ impl DesktopApp {
                 ui.set_min_width(200.0);
                 egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                     for (id, title) in &figures {
-                        if crate::widgets::menu_item(ui, &palette, Some("kind-figure"), &super::truncate(title, 30), "", false).clicked() {
+                        if crate::widgets::menu_item_verbatim(ui, &palette, Some("kind-figure"), &super::truncate(title, 30), false).clicked() {
                             self.invoke_ui("add.figure_link", serde_json::json!({ "figure_id": id }));
                         }
                     }
@@ -516,14 +516,14 @@ impl DesktopApp {
         let updatable = supported && !self.link_in_progress();
         let palette = crate::theme::palette(ui.ctx());
         ui.horizontal_wrapped(|ui| {
-            if crate::widgets::labeled_button(ui, &palette, None, &super::truncate(&figure.title, 22), false).clicked() {
+            if crate::widgets::labeled_button_verbatim(ui, &palette, None, &super::truncate(&figure.title, 22)).clicked() {
                 self.activate(figure.clone());
             }
             if let Some(current) = newer {
                 let label = format!("갱신 r{} → r{}", link.figure_revision, current);
                 let mut update = ui.add_enabled_ui(updatable, |ui| crate::widgets::labeled_button(ui, &palette, None, &label, false)).inner;
                 if !supported && !reason.is_empty() {
-                    update = update.on_disabled_hover_text(reason);
+                    update = update.on_disabled_hover_text(crate::i18n::tr(&reason));
                 }
                 if update.clicked() {
                     self.begin_figure_update(&node_id);

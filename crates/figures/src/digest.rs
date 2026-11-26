@@ -37,7 +37,16 @@ fn design_fingerprint(doc: &FigureDocument) -> Value {
                     "nodes": dg.nodes.iter().map(|n| json!({"id": n.id, "kind": n.kind, "bounds": n.bounds, "style": n.style})).collect::<Vec<_>>(),
                     "edges": dg.edges.iter().map(|e| json!({"id": e.id, "style": e.style})).collect::<Vec<_>>(),
                 }),
-                PanelBody::Plot(pl) => json!({"x_tick_step": pl.x_axis.tick_step, "y_tick_step": pl.y_axis.tick_step, "display": pl.display}),
+                PanelBody::Plot(pl) => {
+                    let mut body = json!({"x_tick_step": pl.x_axis.tick_step, "y_tick_step": pl.y_axis.tick_step, "display": pl.display});
+                    // Only a plot whose series colours the current rule draws differently from the earlier one carries them,
+                    // so every other approval stays valid and a changed one is reviewed again.
+                    let colours = crate::layout::series_colors(&p.style.fill, pl.y_columns.len());
+                    if colours != crate::layout::legacy_series_colors(&p.style.fill, pl.y_columns.len()) {
+                        body["series_colors"] = json!(colours);
+                    }
+                    body
+                }
                 PanelBody::Image(img) => json!({"crop_pixel_rect": img.crop_pixel_rect, "rotation_millidegrees": img.rotation_millidegrees}),
             };
             json!({"id": p.id, "bounds": p.bounds, "style": p.style, "body": body})
@@ -137,4 +146,39 @@ pub fn digests(doc: &FigureDocument) -> DltResult<ContentDigest> {
     let data = json!({"datasets": datasets, "plots": plots, "calibrations": calibrations});
 
     Ok(ContentDigest { content: json_hash(&content)?, data: json_hash(&data)? })
+}
+
+#[cfg(test)]
+mod series_colour_digest_tests {
+    use super::*;
+
+    /// One plot panel with `series` y columns and the given fill.
+    fn plot(fill: &str, series: usize) -> FigureDocument {
+        let y_columns: Vec<String> = (0..series).map(|i| format!("y{i}")).collect();
+        serde_json::from_value(json!({
+            "size": {"width": 3_060_000, "height": 2_340_000},
+            "panels": [{
+                "id": "p1", "bounds": {"x": 0, "y": 0, "width": 3_060_000, "height": 2_340_000}, "label": "a",
+                "body": {"type": "plot", "value": {
+                    "kind": "line", "dataset_ref": {"dataset_id": "d", "version_hash": "h"}, "x_column": "x", "y_columns": y_columns,
+                    "x_axis": {"label": "x", "unit": null, "scale": "linear", "minimum": null, "maximum": null},
+                    "y_axis": {"label": "y", "unit": null, "scale": "linear", "minimum": null, "maximum": null},
+                    "error": null
+                }},
+                "style": {"fill": fill}
+            }],
+            "caption": "", "datasets": [], "evidence": []
+        }))
+        .expect("a figure")
+    }
+
+    #[test]
+    fn only_plots_whose_series_colours_changed_carry_them_into_the_approval() {
+        assert!(design_fingerprint(&plot("#1F4E79", 3)).pointer("/panels/0/body/series_colors").is_none(), "unchanged colours: same approval");
+        let changed = design_fingerprint(&plot("#C0504D", 2));
+        assert_eq!(changed.pointer("/panels/0/body/series_colors"), Some(&json!(["#C0504D", "#4F9B3C"])), "{changed}");
+        let profiled = design_fingerprint(&plot("#D55E00", 2));
+        assert!(profiled.pointer("/panels/0/body/series_colors").is_some(), "a profile's Okabe-Ito fill gets the new order");
+        assert!(design_fingerprint(&plot("#D55E00", 1)).pointer("/panels/0/body/series_colors").is_none(), "one series has nothing to change");
+    }
 }

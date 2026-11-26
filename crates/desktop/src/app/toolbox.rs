@@ -60,6 +60,8 @@ enum Action {
     Video,
     /// The icon picker opens at the tile or the drop point; the picked icon is centred on the point.
     Icon,
+    /// A diagram shape of the shared shape library (`add.shape`), centred on the point.
+    Shape(&'static str),
 }
 
 /// One tile: what it does, its name, and its icon.
@@ -167,13 +169,21 @@ impl DesktopApp {
         if self.feature_write_supported(Feature::VectorPaths) {
             media.push(tile(Action::Icon, "아이콘", "ins-icon"));
         }
-        [("기본", basic), ("도형", shapes), ("미디어", media)]
+        // Diagram shapes (encoder, decoder, data, store, operators ...) are Canvas paths from the shared shape library.
+        let mut diagram = Vec::new();
+        if canvas && self.feature_write_supported(Feature::VectorPaths) {
+            for (shape, label, icon) in super::shape_insert::TOOLBOX_SHAPES {
+                diagram.push(tile(Action::Shape(shape), label, icon));
+            }
+        }
+        [("기본", basic), ("도형", shapes), ("미디어", media), ("다이어그램 도형", diagram)]
             .into_iter()
             .map(|(group, tiles)| {
                 let tiles: Vec<Tile> = tiles
                     .into_iter()
                     .filter(|tile| match tile.action {
                         Action::Command(id) => commands::available(id),
+                        Action::Shape(_) => commands::available("add.shape"),
                         _ => true,
                     })
                     .collect();
@@ -342,6 +352,7 @@ impl DesktopApp {
             Action::Video => (320 * px, 180 * px),
             Action::Memo => (super::board_memos::DEFAULT_MEMO_WIDTH, super::board_memos::DEFAULT_MEMO_HEIGHT),
             Action::Icon => (48 * px, 48 * px),
+            Action::Shape(shape) => super::shape_insert::shape_size(shape),
         }
     }
 
@@ -366,7 +377,7 @@ impl DesktopApp {
         let tile_width = (width - TILE_GAP) / 2.0;
         for (group, tiles) in self.toolbox_groups() {
             let (head, _) = ui.allocate_exact_size(Vec2::new(width, theme::LAYER_ROW), Sense::hover());
-            ui.painter().text(head.left_center(), Align2::LEFT_CENTER, group, theme::display_font(false, 12.0), palette.ink_3);
+            ui.painter().text(head.left_center(), Align2::LEFT_CENTER, crate::i18n::tr(&group), theme::display_font(false, 12.0), palette.ink_3);
             for (index, row) in tiles.chunks(2).enumerate() {
                 if index > 0 {
                     ui.add_space(TILE_GAP);
@@ -394,7 +405,7 @@ impl DesktopApp {
             ui.painter().rect_filled(rect, corner, palette.surface_2);
         }
         icons::paint(ui, Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 6.0 + 12.0), Vec2::splat(24.0)), tile.icon, palette.ink_2);
-        ui.painter().text(Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_CENTER, tile.label, theme::display_font(false, 12.0), palette.ink);
+        ui.painter().text(Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_CENTER, crate::i18n::tr(&tile.label), theme::display_font(false, 12.0), palette.ink);
         crate::ui_record::note(ui, tile.label, &response);
         let ctx = ui.ctx().clone();
         if response.clicked() {
@@ -465,6 +476,10 @@ impl DesktopApp {
                 let artifact_id = self.active.as_ref().map(|active| active.id.clone()).unwrap_or_default();
                 ctx.data_mut(|data| data.insert_temp(Id::new(PENDING_ICON), PendingIcon { at, artifact_id, anchor, frame, drawn: frame }));
                 Ok(true)
+            }
+            Action::Shape(shape) => {
+                let args = json!({ "shape": shape, "at": self.at_value(at) });
+                self.invoke("add.shape", args).map(|()| true)
             }
         };
         match result {

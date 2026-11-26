@@ -43,7 +43,7 @@ impl PdfCoverage {
         let read = if self.read_pages.is_empty() {
             "없음".to_owned()
         } else {
-            self.read_pages.iter().map(|page| format!("{}쪽", page.saturating_add(1))).collect::<Vec<_>>().join(", ")
+            self.read_pages.iter().map(|page| crate::i18n::page_label(page.saturating_add(1))).collect::<Vec<_>>().join(", ")
         };
         match self.page_count {
             Some(count) if self.complete() => format!("전체 읽음 · 전체 {count}쪽"),

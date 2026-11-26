@@ -615,7 +615,7 @@ impl DesktopApp {
         ui.painter().text(
             rect.right_bottom() + Vec2::new(-2.0, -1.0),
             egui::Align2::RIGHT_BOTTOM,
-            "반영 중…",
+            crate::i18n::tr("반영 중…"),
             egui::FontId::proportional(10.0),
             palette.ink_2,
         );

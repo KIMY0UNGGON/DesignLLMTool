@@ -106,9 +106,9 @@ impl DesktopApp {
         };
         let mut action: Option<(&'static str, Value)> = None;
         ui.add_space(8.0);
-        ui.label(RichText::new(current).color(palette.ink_2));
+        ui.label(RichText::new(crate::i18n::tr(&current)).color(palette.ink_2));
         if state.design_systems_error {
-            ui.small(RichText::new("공유 디자인 시스템 목록을 읽지 못했습니다").color(palette.danger));
+            ui.small(RichText::new(crate::i18n::tr("공유 디자인 시스템 목록을 읽지 못했습니다")).color(palette.danger));
         }
         if !state.design_systems_loaded || state.design_systems_error {
             let label = if state.design_systems_error { "다시 읽기" } else { "공유 목록 읽기" };
@@ -120,13 +120,13 @@ impl DesktopApp {
                 action = Some(("canvas.design_system.set", json!({ "design_system": null })));
             }
             if state.design_systems.is_empty() {
-                ui.small(RichText::new("공유 디자인 시스템이 없습니다").color(palette.ink_3));
+                ui.small(RichText::new(crate::i18n::tr("공유 디자인 시스템이 없습니다")).color(palette.ink_3));
             }
             for system in &state.design_systems {
                 let picked = link.as_ref().is_some_and(|(source, revision)| *source == system.artifact_id && *revision == system.revision);
                 let color = if picked { palette.accent } else { palette.ink_2 };
                 let label = format!("{} · r{}", system.title, system.revision);
-                if widgets::text_button(ui, palette, &label, color).clicked() && !picked {
+                if widgets::text_button_verbatim(ui, palette, &label, color).clicked() && !picked {
                     action = Some((
                         "canvas.design_system.set",
                         json!({ "design_system": system.artifact_id, "expected_system_revision": system.revision }),
@@ -170,7 +170,7 @@ impl DesktopApp {
             ui.data_mut(|data| data.remove::<MappingEdit>(key));
             // A file whose HTML the engine cannot scan carries `mapping_error`; its list is empty for that reason.
             let unscanned = item.get("mapping_error").is_some_and(|error| error.get("code").and_then(Value::as_str) == Some("WEB_HTML_UNSCANNED"));
-            ui.label(if unscanned { "HTML을 읽지 못해 매핑을 찾을 수 없습니다" } else { "매핑된 요소가 없습니다" });
+            ui.label(crate::i18n::tr(&if unscanned { "HTML을 읽지 못해 매핑을 찾을 수 없습니다" } else { "매핑된 요소가 없습니다" }));
             return;
         }
         let mut edit: MappingEdit = ui.data_mut(|data| data.remove_temp(key)).unwrap_or_default();

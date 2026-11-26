@@ -56,17 +56,6 @@ pub(super) fn agent_letter(runtime: &str) -> &'static str {
     match runtime { "agy" => "A", "codex" => "X", _ => "C" }
 }
 
-/// The state word of an agent mark in a tooltip (§5.5 states).
-fn agent_state_word(state: AgentState) -> &'static str {
-    match state {
-        AgentState::Waiting => "대기",
-        AgentState::Running => "실행 중",
-        AgentState::Review => "검토 중",
-        AgentState::Done => "완료",
-        AgentState::Failed => "실패",
-    }
-}
-
 /// Whether the host still runs a job of this status (queued, running or validating).
 pub(super) fn job_status_running(status: JobStatus) -> bool {
     matches!(status, JobStatus::Queued | JobStatus::Running | JobStatus::Validating)
@@ -179,10 +168,11 @@ impl DesktopApp {
         FrameLayout { top: geometry.top, left: left_rect, right: right_rect, center }
     }
 
+    /// The editor's top bar. The home screen draws its own (`home_top_bar`); this one is only drawn with the editor
+    /// (`draw_frame`).
     fn draw_top_bar(&mut self, ctx: &Context, palette: &theme::Palette) {
-        let editor = self.screen_is_editor();
         // tokens `layout.top-bar`: 44 high including its 1 px bottom line (y = 43); no other edge has a line.
-        let padding = if editor { Margin::symmetric(8, 0) } else { Margin { left: 12, right: 8, top: 0, bottom: 0 } };
+        let padding = Margin::symmetric(8, 0);
         let shown = TopBottomPanel::top("top-bar")
             .exact_height(theme::TOP_BAR_HEIGHT)
             .show_separator_line(false)
@@ -190,11 +180,7 @@ impl DesktopApp {
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = theme::GROUP_GAP;
-                    if editor {
-                        self.top_bar_editor(ui, palette);
-                    } else {
-                        self.top_bar_home(ui, palette);
-                    }
+                    self.top_bar_editor(ui, palette);
                 });
             });
         let rect = shown.response.rect;
@@ -217,7 +203,7 @@ impl DesktopApp {
                 let items: Vec<(String, String, ArtifactKind)> = self.artifacts.iter().map(|item| (item.id.clone(), item.title.clone(), item.kind)).collect();
                 for (id, title, kind) in items {
                     let checked = current.as_deref() == Some(id.as_str());
-                    if widgets::menu_item(ui, palette, Some(kind_icon(kind)), &title, "", checked).clicked() {
+                    if widgets::menu_item_verbatim(ui, palette, Some(kind_icon(kind)), &title, checked).clicked() {
                         self.invoke_ui("nav.open_project", json!({ "artifact_id": id }));
                         ui.close();
                     }
@@ -231,7 +217,7 @@ impl DesktopApp {
             self.invoke_ui("edit.redo", json!({}));
         }
         if let Some(status) = self.agent_status(std::time::Instant::now()) {
-            ui.label(egui::RichText::new(status).color(palette.ink_3));
+            ui.label(egui::RichText::new(crate::i18n::tr(&status)).color(palette.ink_3));
         }
         // The optional agent status must not change the action buttons' popup IDs.
         ui.scope_builder(egui::UiBuilder::new().id("editor-top-actions").layout(Layout::right_to_left(Align::Center)), |ui| {
@@ -255,36 +241,17 @@ impl DesktopApp {
                 .frame(Frame::popup(&ui.ctx().style()).inner_margin(Margin::same(8)))
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show(|ui| self.export_menu(ui, palette));
+            // A closed popover drops its DPI pick: the view keeps the DPI it had.
+            if !egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&export)) {
+                self.export_dpi_draft = None;
+            }
             if let Some((kind, dirty)) = self.active.as_ref().map(|item| (item.kind, item.dirty)) {
                 let show_save = is_file_backed(kind) || (self.home.project_folder.is_some() && self.feature_write_supported(Feature::NativeRoundtrip));
                 if show_save && widgets::labeled_button_with(ui, palette, Some("save"), "저장", false, false, dirty).clicked() {
                     self.invoke_ui("file.save", json!({}));
                 }
             }
-            // Agents sit 10 before the buttons, 4 apart (tokens `layout.top-bar`).
-            ui.add_space(10.0 - theme::GROUP_GAP);
-            // The agent is always shown (waiting when idle, §5.5); its state follows the running job.
-            let state = self.job.as_ref().map_or(AgentState::Waiting, |job| job_agent_state(job.status));
-            // The letter is the runtime's mark, not an account: the tooltip says what the press does (GUI_DESIGN §5.5).
-            let runtime = self.active_runtime();
-            let tooltip = format!("AI 패널 열기 · {} {}", super::home::agent_name(&runtime, None), agent_state_word(state));
-            let response = widgets::avatar(ui, palette, agent_letter(&runtime), super::home::agent_color(palette, &runtime), state, 24.0).on_hover_text(tooltip);
-            if response.clicked() {
-                self.left_tab_to(LeftTab::Ai);
-            }
-        });
-    }
-
-    fn top_bar_home(&mut self, ui: &mut Ui, palette: &theme::Palette) {
-        let app_icon = egui::Rect::from_min_size(ui.cursor().min + Vec2::new(4.0, 10.0), Vec2::splat(24.0));
-        icons::paint(ui, app_icon, "app-24", egui::Color32::WHITE);
-        ui.add_space(30.0);
-        ui.label(egui::RichText::new(self.workspace_name.clone()).font(theme::display_font(true, 14.0)).color(palette.ink));
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            if widgets::labeled_button(ui, palette, Some("open"), "열기", false).clicked() {
-                self.invoke_ui("nav.open_file", json!({}));
-            }
+            // No agent mark here: the AI tab of the left panel already opens the AI panel and shows the job state.
         });
     }
 
@@ -325,7 +292,7 @@ impl DesktopApp {
         ui.painter().text(Pos2::new(x, rect.center().y), egui::Align2::LEFT_CENTER, shown, title_font, palette.ink);
         x += title_width;
         if !extension.is_empty() {
-            ui.painter().text(Pos2::new(x + 2.0, rect.center().y), egui::Align2::LEFT_CENTER, extension, extension_font, palette.ink_3);
+            ui.painter().text(Pos2::new(x + 2.0, rect.center().y), egui::Align2::LEFT_CENTER, crate::i18n::tr(&extension), extension_font, palette.ink_3);
         }
         let chevron = Rect::from_min_size(Pos2::new(rect.right() - 6.0 - 16.0, rect.center().y - 8.0), Vec2::splat(16.0));
         icons::paint(ui, chevron, "chev-down", palette.ink_2);
@@ -358,10 +325,12 @@ impl DesktopApp {
             }
         }
         widgets::menu_separator(ui, palette);
-        let pages = self.page_sizes().len();
         let scopes = self.export_scopes();
         if !scopes.iter().any(|(key, _)| *key == self.export_scope) {
-            self.export_scope = String::from("page");
+            self.export_scope = scopes[0].0.to_owned();
+        }
+        if super::save_export::whole_deck(kind, &self.export_format) {
+            ui.label(egui::RichText::new(crate::i18n::tr("PPTX는 모든 슬라이드를 내보냅니다")).font(theme::font(theme::Type::Caption)).color(palette.ink_2));
         }
         if scopes.len() > 1 {
             let labels: Vec<&str> = scopes.iter().map(|(_, label)| *label).collect();
@@ -381,25 +350,28 @@ impl DesktopApp {
             ui.allocate_ui_with_layout(Vec2::new(width, 36.0), Layout::left_to_right(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(52.0, 36.0), Sense::hover());
-                ui.painter().text(Pos2::new(rect.left() + 8.0, rect.center().y), egui::Align2::LEFT_CENTER, "쪽", theme::font(theme::Type::Caption), palette.ink_2);
+                ui.painter().text(Pos2::new(rect.left() + 8.0, rect.center().y), egui::Align2::LEFT_CENTER, crate::i18n::tr("쪽"), theme::font(theme::Type::Caption), palette.ink_2);
                 widgets::text_field(ui, palette, &mut text, "예: 1, 3-5", width - 52.0);
             });
             ui.data_mut(|data| data.insert_temp(range_id, text.clone()));
-            range_error = print_range::parse_page_range(&text, pages).err();
+            range_error = print_range::validate_page_range(&text, self.range_check_count()).err();
             if let Some(error) = &range_error {
-                ui.label(egui::RichText::new(error.to_string()).font(theme::font(theme::Type::Caption)).color(palette.danger));
+                ui.label(egui::RichText::new(crate::i18n::tr(&error.to_string())).font(theme::font(theme::Type::Caption)).color(palette.danger));
             }
             pages_text = text;
         }
         if self.export_format == "png" {
             if kind == ArtifactKind::Figure {
                 let choices = [150, 300, 600];
-                let current = choices.iter().position(|dpi| *dpi == self.view_ref().figure_export_dpi).unwrap_or(usize::MAX);
-                if let Some(index) = widgets::option_row(ui, palette, "DPI", &["150", "300", "600"], current) { self.view().figure_export_dpi = choices[index]; }
-                if current == usize::MAX { ui.label(format!("{} DPI", self.view_ref().figure_export_dpi)); }
+                let current = choices.iter().position(|dpi| *dpi == self.export_dpi()).unwrap_or(usize::MAX);
+                if let Some(index) = widgets::option_row(ui, palette, "DPI", &["150", "300", "600"], current) {
+                    // The popover's own pick until its export is sent (`export_dpi_draft`).
+                    self.export_dpi_draft = Some(choices[index]);
+                }
+                if current == usize::MAX { ui.label(crate::i18n::tr(&format!("{} DPI", self.export_dpi()))); }
                 if let Some(Artifact { body: ArtifactBody::Figure(figure), .. }) = self.artifact.as_ref() {
-                    if let Ok((width, height)) = designllm_contracts::figure_rules::figure_png_pixels(figure.size, self.view_ref().figure_export_dpi) {
-                        ui.label(format!("예상 크기: {width} × {height} px"));
+                    if let Ok((width, height)) = designllm_contracts::figure_rules::figure_png_pixels(figure.size, self.export_dpi()) {
+                        ui.label(crate::i18n::tr(&format!("예상 크기: {width} × {height} px")));
                     }
                 }
             } else {
@@ -429,6 +401,8 @@ impl DesktopApp {
             .inner;
         if clicked {
             let args = self.popover_export_args(&pages_text);
+            // Submitted: the pick goes with this export (and into the view, `file.export`).
+            self.export_dpi_draft = None;
             ui.close();
             self.invoke_ui("file.export", args);
         }
@@ -524,7 +498,7 @@ impl DesktopApp {
                 let reason = self.web_runtime_unavailable.clone();
                 let mut play = ui.add_enabled_ui(reason.is_none(), |ui| widgets::icon_button(ui, palette, "play", &tooltip_for("view.play"), false)).inner;
                 if let Some(reason) = reason {
-                    play = play.on_disabled_hover_text(reason);
+                    play = play.on_disabled_hover_text(crate::i18n::tr(&reason));
                 }
                 if play.clicked() {
                     self.invoke_ui("view.play", json!({}));
@@ -576,7 +550,8 @@ impl DesktopApp {
                         for index in 0..count {
                             let label = self.page_title(index);
                             let icon = if slides { "layer-slide" } else { "layer-page" };
-                            if widgets::menu_item(ui, palette, Some(icon), &label, "", index == view.page_index).clicked() {
+                            // A page's own name as written; an unnamed page's `page_title` is already in the window's language.
+                            if widgets::menu_item_verbatim(ui, palette, Some(icon), &label, index == view.page_index).clicked() {
                                 self.invoke_ui("nav.page", json!({ "page_index": index }));
                                 ui.close();
                             }
@@ -750,14 +725,20 @@ impl DesktopApp {
     /// (formats with pages).
     pub(super) fn export_scopes(&self) -> Vec<(&'static str, &'static str)> {
         let kind = self.active.as_ref().map_or(ArtifactKind::Canvas, |item| item.kind);
-        let pages = self.page_sizes().len();
+        // The count read for the shown revision decides, not the board's fallback page; while it is unknown, every page and a
+        // range stay offered (`shown_document_multipage`).
+        let multipage = self.shown_document_multipage();
         let single_page = matches!(self.export_format.as_str(), "png" | "svg");
+        // A deck's PPTX writes the whole deck, however many slides it has.
+        if super::save_export::whole_deck(kind, &self.export_format) {
+            return vec![("all", "모든 페이지")];
+        }
         let mut scopes: Vec<(&'static str, &'static str)> = vec![("page", "이 페이지")];
         // Only the canvas engine writes some nodes of a page (`EngineAdapter::exports_nodes`); a deck writes whole pages.
         if single_page && !self.selected_nodes.is_empty() && kind == ArtifactKind::Canvas {
             scopes.push(("selection", "선택"));
         }
-        if pages > 1 && !single_page {
+        if multipage && !single_page {
             scopes.push(("all", "모든 페이지"));
             if print_range::range_supported(kind, &self.export_format) {
                 scopes.push(("range", "쪽 범위"));

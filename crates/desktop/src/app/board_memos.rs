@@ -154,7 +154,7 @@ impl DesktopApp {
             ui.painter().text(
                 page_rect.left_top() + Vec2::new(8.0, 8.0),
                 Align2::LEFT_TOP,
-                "메모 위치를 갱신하는 중입니다",
+                crate::i18n::tr("메모 위치를 갱신하는 중입니다"),
                 egui::FontId::proportional(12.0),
                 theme::palette(ctx).ink_2,
             );
@@ -574,16 +574,14 @@ impl DesktopApp {
         let mut discard = false;
         let mut copy = false;
         let mut retry = false;
-        let mut check_held = false;
-        let mut retry_held = false;
         let retry_allowed = self.board_memo_mutation_retry_allowed(mutation);
         use crate::widgets::{dialog_buttons, DialogButton, DialogChoice};
         let palette = theme::palette(ctx);
         let title = if pending { "메모 저장 중" } else if outcome_uncertain { "메모 결과 확인 필요" } else { "메모 변경 보존됨" };
         // A notice at the top middle of the board, stacked with the board's other notices (68d).
         crate::widgets::dialog(ctx, &palette, Id::new("board-memo-conflict"), title, crate::widgets::DialogPlace::BoardTop(board_rect), |ui| {
-                        ui.label(message.as_deref().unwrap_or("작업물의 최신 상태를 확인하고 있습니다. 메모를 보존했습니다."));
-                        ui.label(format!(
+                        ui.label(crate::i18n::tr(&message.as_deref().unwrap_or("작업물의 최신 상태를 확인하고 있습니다. 메모를 보존했습니다.")));
+                        ui.label(crate::i18n::tr(&format!(
                             "작업물 {} · 페이지 {} ({}) · 기준 revision {} · 페이지 메모 {}개 → {}개",
                             artifact_id,
                             page_index + 1,
@@ -591,9 +589,9 @@ impl DesktopApp {
                             revision,
                             expected_count,
                             desired_count,
-                        ));
+                        )));
                         if let Some((_, _, _, memo)) = draft.as_ref() {
-                            ui.label("저장되지 않은 메모 초안:");
+                            ui.label(crate::i18n::tr("저장되지 않은 메모 초안:"));
                             ui.label(egui::RichText::new(truncate(&memo.text, 240)).monospace());
                             let pressed = dialog_buttons(ui, &palette, &[
                                 DialogChoice::new("초안과 위치 복사", DialogButton::Plain).enabled(!pending),
@@ -602,28 +600,20 @@ impl DesktopApp {
                             ]);
                             (copy, retry, discard) = (pressed[0].clicked(), pressed[1].clicked(), pressed[2].clicked());
                         } else {
-                            ui.label("이동 변경은 최신 상태에 자동 적용하지 않습니다.");
+                            ui.label(crate::i18n::tr("이동 변경은 최신 상태에 자동 적용하지 않습니다."));
                             let pressed = dialog_buttons(ui, &palette, &[
                                 DialogChoice::new("같은 기준으로 다시 시도", DialogButton::Primary).enabled(retry_allowed),
                                 DialogChoice::new("이동 변경 버리기", DialogButton::Danger).enabled(!pending),
                             ]);
                             (retry, discard) = (pressed[0].clicked(), pressed[1].clicked());
                         }
-                        if let Some(held_id) = held_edit_id.as_deref() {
-                            if let Some(held) = self.held_edits.iter().find(|held| held.id == held_id) {
-                                match held.state {
-                                    super::state::HeldEditState::NeedsReview => {
-                                        check_held = dialog_buttons(ui, &palette, &[DialogChoice::new("보류한 메모 상태 확인", DialogButton::Plain)])[0].clicked();
-                                    }
-                                    super::state::HeldEditState::Ready => {
-                                        retry_held = dialog_buttons(ui, &palette, &[DialogChoice::new("보류한 메모 다시 적용", DialogButton::Primary)])[0].clicked();
-                                    }
-                                    super::state::HeldEditState::Checking => { ui.label("보류한 메모의 예약 상태를 확인 중입니다."); }
-                                    super::state::HeldEditState::Sending | super::state::HeldEditState::WaitingForJobRelease => {
-                                        ui.label("보류한 메모 변경을 처리 중입니다.");
-                                    }
-                                }
-                            }
+                        // A held memo change never takes the held-edit check: it is held only by the apply preflight (apply.rs: a video,
+                        // image replacement or crop being applied), which sets `can_retry` false, and the replies leave its failures out of the
+                        // re-hold (replies.rs), so `check_held_edit` would do nothing and `Ready` is never reached. The draft's own copy and
+                        // discard buttons above are its way out; only the automatic retry after a job's release is reported.
+                        let held = held_edit_id.as_deref().and_then(|held_id| self.held_edits.iter().find(|held| held.id == held_id));
+                        if held.is_some_and(|held| matches!(held.state, super::state::HeldEditState::Sending | super::state::HeldEditState::WaitingForJobRelease)) {
+                            ui.label(crate::i18n::tr("보류한 메모 변경을 처리 중입니다."));
                         }
             });
         if copy {
@@ -633,12 +623,6 @@ impl DesktopApp {
         }
         if retry { self.retry_board_memo_mutation(&token); }
         if discard { self.discard_board_memo_mutation(&token); }
-        if check_held {
-            if let Some(held_id) = held_edit_id.as_deref() { self.check_held_edit(held_id); }
-        }
-        if retry_held {
-            if let Some(held_id) = held_edit_id.as_deref() { self.confirm_held_edit_retry(held_id); }
-        }
     }
 
     pub(super) fn finish_board_memo_gesture_if_released(&mut self, ctx: &Context) {
@@ -1378,7 +1362,7 @@ impl MemoBar<'_> {
                         });
                         if let Some(notice) = self.notice {
                             ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new(notice).font(theme::font(theme::Type::Caption)).color(palette.ink_2));
+                                ui.label(egui::RichText::new(crate::i18n::tr(&notice)).font(theme::font(theme::Type::Caption)).color(palette.ink_2));
                                 if crate::widgets::text_button(ui, palette, "초안 복사", palette.ink_2).clicked() { actions.copy = true; }
                                 if crate::widgets::text_button(ui, palette, "초안 버리기", palette.ink_2).clicked() { actions.discard = true; }
                             });

@@ -469,7 +469,7 @@ impl DesktopApp {
         let mut remove = None;
         let mut cancel = false;
         ui.horizontal_wrapped(|ui| {
-            ui.label(format!("근거 자료 ({})", self.figure_ai_files().len()));
+            ui.label(crate::i18n::tr(&format!("근거 자료 ({})", self.figure_ai_files().len())));
             if widgets::dialog_button(ui, &palette, "첨부", DialogButton::Plain, busy.is_none()).clicked() {
                 attach = true;
             }
@@ -485,9 +485,9 @@ impl DesktopApp {
         if let Some((imported, total)) = busy {
             ui.horizontal_wrapped(|ui| {
                 if imported < total {
-                    ui.label(format!("근거 자료 가져오는 중 {imported}/{total}"));
+                    ui.label(crate::i18n::tr(&format!("근거 자료 가져오는 중 {imported}/{total}")));
                 } else {
-                    ui.label("AI 요청을 보내는 중");
+                    ui.label(crate::i18n::tr("AI 요청을 보내는 중"));
                 }
                 if widgets::dialog_button(ui, &palette, "취소", DialogButton::Plain, imported < total).clicked() {
                     cancel = true;

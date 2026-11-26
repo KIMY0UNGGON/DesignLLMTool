@@ -87,8 +87,8 @@ impl DesktopApp {
         });
         let mut selected = None;
         for entry in &self.design_themes {
-            ui.label(&entry.summary);
-            if !entry.tags.is_empty() { ui.label(entry.tags.join(" · ")); }
+            ui.label(crate::i18n::tr(&entry.summary));
+            if !entry.tags.is_empty() { ui.label(crate::i18n::tr(&entry.tags.join(" · "))); }
             ui.horizontal_wrapped(|ui| {
                 for color in entry.colors.values() {
                     if let Ok(rgb) = u32::from_str_radix(color.trim_start_matches('#'), 16) {

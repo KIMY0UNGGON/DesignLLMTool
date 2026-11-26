@@ -162,9 +162,15 @@ fn window_on(artifact: Artifact, kind: &str, pages: u32) -> Harness {
     read["capabilities"]["page_setup"] = supported();
     harness.answer(&opening, "context.read", Ok(read));
     harness.answer(&opening, "artifact.inspect", Ok(serde_json::to_value(&artifact).expect("the document")));
-    harness.app.total_pages = pages;
+    set_pages(&mut harness, pages);
     harness.sent();
     harness
+}
+
+/// The document `a1` at revision 1 has `pages` pages, as a render of that revision reports them.
+fn set_pages(harness: &mut Harness, pages: u32) {
+    harness.app.total_pages = pages;
+    harness.app.page_count_read = Some(("a1".into(), 1, pages));
 }
 
 /// A window on the Word document `a1` of `sections`, which the core reports as `pages` pages.
@@ -272,7 +278,7 @@ fn a_document_that_lost_pages_after_the_range_was_chosen_is_not_sent() {
         .export_request("C:/out/a.pdf".into(), Some(&json!({ "format": "pdf", "scope": "range", "pages": "2,4" })))
         .expect("pages 2 and 4 of four");
     harness.app.export_scope = "range".into();
-    harness.app.total_pages = 2;
+    set_pages(&mut harness, 2);
     harness.sent();
     harness.app.send_export(request);
     assert!(requests_of(&harness.sent(), "artifact.export").is_empty(), "page 4 is gone, so nothing is sent");
@@ -292,8 +298,9 @@ fn the_words_for_pages_that_are_gone_follow_the_request_not_the_menu() {
         .export_request("C:/out/a.pdf".into(), Some(&json!({ "format": "pdf", "scope": "range", "pages": "2,4" })))
         .expect("pages 2 and 4 of four");
     harness.app.page_index = 3;
+    harness.app.view().page_index = 3;
     let page = harness.app.export_request("C:/out/a.pdf".into(), Some(&json!({ "format": "pdf", "scope": "page" }))).expect("the fourth page");
-    harness.app.total_pages = 2;
+    set_pages(&mut harness, 2);
     harness.app.export_scope = "page".into();
     harness.app.send_export(range);
     assert_eq!(
@@ -310,9 +317,10 @@ fn the_words_for_pages_that_are_gone_follow_the_request_not_the_menu() {
 fn a_page_that_is_gone_is_refused_under_its_own_message() {
     let mut harness = document_window(vec![section("s1")], 4);
     harness.app.page_index = 3;
+    harness.app.view().page_index = 3;
     let request = harness.app.export_request("C:/out/a.pdf".into(), Some(&json!({ "format": "pdf", "scope": "page" }))).expect("the fourth page");
     assert_eq!(request.options.page_indices, Some(vec![3]));
-    harness.app.total_pages = 2;
+    set_pages(&mut harness, 2);
     harness.sent();
     harness.app.send_export(request);
     assert!(requests_of(&harness.sent(), "artifact.export").is_empty(), "the page is gone, so nothing is sent");
@@ -325,11 +333,14 @@ fn a_deck_offers_no_page_range_for_pptx_and_refuses_one_before_anything_is_sent(
     harness.app.export_format = "pptx".into();
     harness.app.export_scope = "all".into();
     let shown = drawn_text(&draw_export_menu(&mut harness));
-    assert!(shown.iter().any(|text| text == "모든 페이지"), "all pages is offered");
+    // The pptx writes the whole deck: there is no scope to choose, neither one slide nor a page range (S29).
+    assert_eq!(harness.app.export_scopes(), [("all", "모든 페이지")]);
+    assert!(!shown.iter().any(|text| text == "이 페이지"), "one slide is not offered");
     assert!(!shown.iter().any(|text| text == "쪽 범위"), "the pptx writes the whole deck, so no page range is offered");
     harness.sent();
-    // The window's own export and the command with a target both refuse the range before any request is made.
-    let refused = "이 작업물과 형식은 쪽 범위 내보내기를 지원하지 않습니다";
+    // The window's own export and the command with a target both refuse the range before any request is made (S30: as a
+    // deck's PPTX, which writes every slide).
+    let refused = super::super::save_export::DECK_PPTX_SCOPE;
     let error = harness.app.invoke("file.export", json!({ "format": "pptx", "scope": "range", "pages": "2" })).expect_err("refused before the dialog");
     assert_eq!(error, refused);
     let error = harness
@@ -479,7 +490,7 @@ fn a_named_range_of_a_word_document_gives_the_same_pdf_by_command_by_menu_and_by
     window.app.export_scope = "range".into();
     window.app.export_path = by_menu.to_string_lossy().into_owned();
     let options = window.app.popover_export_args("2,4");
-    window.app.export_active_with(Some(&options));
+    window.app.export_active_with(Some(&options)).expect("the export is sent");
     window.settle(&mut host);
     drop(window);
 

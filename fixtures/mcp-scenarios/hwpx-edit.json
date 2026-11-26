@@ -1,0 +1,27 @@
+{
+  "task": "hwpx-edit",
+  "summary": "Open the shared HWPX fixture, insert text into the paragraph that the round-trip test edits, save an HWPX file and render the first page.",
+  "steps": [
+    { "id": "workspace", "tool": "workspace_list", "arguments": {}, "bind": { "workspace_id": "/structuredContent/workspace_id" } },
+    { "id": "open", "tool": "artifact_open", "arguments": { "request_id": "$request_id", "actor": "scenario", "path": "$fixture:hwpx.image-and-opaque-preserve", "kind": "hwpx" }, "bind": { "artifact": "/structuredContent/id", "revision": "/structuredContent/revision" } },
+    { "id": "view0", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "view0" },
+    { "select": { "from": "view0", "pointer": "/structuredContent/body/document/sections", "where": { "text_contains": "어울림" }, "field": "id" }, "as": "paragraph" },
+    { "select": { "from": "view0", "pointer": "/structuredContent/body/document/sections", "where": { "text_contains": "어울림" }, "field": "@text" }, "as": "paragraph_before" },
+    { "id": "insert_text", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [ { "op": "replace_text", "range": { "paragraph_id": "$paragraph", "start": 0, "end": 0 }, "text": "P0 " } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "save_hwpx", "tool": "artifact_save", "arguments": {
+        "request_id": "$request_id", "artifact_id": "$artifact", "expected_revision": "$revision",
+        "target_path": "$scratch/edited.hwpx", "overwrite": false, "expected_target_hash": null
+      }, "bind": { "saved_hash": "/structuredContent/target_hash" } },
+    { "id": "final", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "final" },
+    { "select": { "from": "final", "pointer": "/structuredContent/body/document/sections", "where": { "key_equals": { "id": "$paragraph" } }, "field": "@text" }, "as": "paragraph_after" }
+  ],
+  "checks": [
+    { "check": "text_prefix", "before": "paragraph_before", "after": "paragraph_after", "text": "P0 " },
+    { "check": "render", "page": 0 },
+    { "check": "file", "path": "$scratch/edited.hwpx", "magic": "PK", "sha256": "$saved_hash" }
+  ]
+}

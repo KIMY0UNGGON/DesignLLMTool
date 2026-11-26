@@ -14,8 +14,8 @@ impl DesktopApp {
         }
         for reply in replies {
             self.note_host_reply(reply.ticket, reply.result.as_ref().err());
-            if reply.result.is_err() && self.pending_figure_create_profile.as_ref().is_some_and(|(ticket, _, _)| *ticket == reply.ticket) {
-                self.pending_figure_create_profile.take();
+            if reply.result.is_err() {
+                self.pending_figure_create_profiles.remove(&reply.ticket);
             }
             if let Some(sent) = self.job_starts.remove(&reply.ticket) {
                 self.remember_job_prompt(&sent, &reply.result);
@@ -27,6 +27,9 @@ impl DesktopApp {
             if reply.result.is_err() {
                 self.ui.take_agent_commit(reply.ticket);
             }
+            // The host has the outcome of an agent's export (the close guard no longer waits for it), or the report did not reach
+            // it and is sent again.
+            self.retry_export_completion(reply.ticket, &reply.result);
             let Some(pending) = self.pending.remove(&reply.ticket) else {
                 if self.late_starts.remove(&reply.ticket).is_some() {
                     self.late_start_answered(reply.result);
@@ -50,10 +53,21 @@ impl DesktopApp {
             if pending.require_active && pending.artifact_id.as_ref().is_some_and(|id| {
                 self.active.as_ref().is_none_or(|active| active.id != *id)
             }) {
-                if let (PendingAction::FigureProfile { artifact_id, profile_id, dpi }, Ok(RpcPayload::Json(_))) = (&pending.action, &reply.result) {
+                // The preview is not used, and its key is free again: coming back to the document previews it anew.
+                if let PendingAction::ExportPreview { key } = &pending.action {
+                    if self.export_preview_pending.as_deref() == Some(key.as_str()) {
+                        self.export_preview_pending = None;
+                    }
+                }
+                if let (PendingAction::FigureProfile { artifact_id, profile_id, dpi, kept_legend_items }, Ok(RpcPayload::Json(_))) = (&pending.action, &reply.result) {
                     let view = self.editor_views.entry(artifact_id.clone()).or_default();
                     view.figure_output_profile = Some(profile_id.clone());
                     view.figure_export_dpi = *dpi;
+                    self.remember_figure_output(artifact_id);
+                    // The Figure is not shown: what the profile left as it was is told when it is shown again.
+                    if let Some(message) = super::figure_profile::kept_legend_notice(kept_legend_items) {
+                        self.figure_notices.insert(artifact_id.clone(), message);
+                    }
                 }
                 self.figure_ai_reply_dropped(&pending.action);
                 self.pdf_evidence_reply_dropped(&pending.action, reply.ticket, &reply.result);
@@ -353,8 +367,15 @@ impl DesktopApp {
                         }
                         PendingAction::UiComplete | PendingAction::UiAsset { .. } | PendingAction::GetParkedJob { .. } | PendingAction::HostProbe => continue,
                         // A failed loss preview leaves the list empty; the export itself still dry-runs first.
-                        PendingAction::ExportPreview { .. } => {
-                            self.export_preview_pending = None;
+                        // A refusal is not asked again for the same settings (the open menu would ask every frame); a passing
+                        // failure (the host busy, the link) is asked again after a short wait. Other settings are asked at once.
+                        PendingAction::ExportPreview { key } => {
+                            if self.export_preview_pending.as_deref() == Some(key.as_str()) {
+                                self.export_preview_pending = None;
+                            }
+                            let retry = (!super::save_export::preview_refusal_is_permanent(&error.code))
+                                .then(|| Instant::now() + super::save_export::PREVIEW_RETRY);
+                            self.export_preview_failed = Some((key.clone(), retry));
                             continue;
                         }
                         // A region the core could not render leaves the whole-page texture on screen; it is not asked again
@@ -392,11 +413,17 @@ impl DesktopApp {
                         self.smoke_failure = Some(smoke::smoke_failure_text(&method, &friendly, &error));
                     }
                     self.smoke_note_pdf_refusal(&action, &method, &friendly, &error);
+                    // The request of a refused export goes with its own reply (a later export keeps its own).
+                    let refused_export = if matches!(&action, PendingAction::Export | PendingAction::ExportDryRun) {
+                        self.pending_exports.remove(&reply.ticket)
+                    } else {
+                        None
+                    };
                     if matches!(&action, PendingAction::Export)
                         && error.code == ErrorCode::ExportLossRequired
                     {
-                        if let Some(request) = self.pending_export.take() {
-                            self.export_confirmation = Some(ExportConfirmation {
+                        if let Some(request) = refused_export {
+                            self.ask_export_losses(ExportConfirmation {
                                 request,
                                 diagnostics: error.diagnostics.clone(),
                                 allowed: BTreeSet::new(),
@@ -512,6 +539,8 @@ impl DesktopApp {
             }
         }
         self.show_dropped_unknown_starts();
+        // A report of an agent's export that did not reach the host goes again once the host answers.
+        self.send_waiting_export_reports();
         self.resume_selection_after_reconnect();
     }
 

@@ -1,0 +1,631 @@
+{
+  "base_file": "p0-v1_1.json",
+  "base_sha256": "488212c8de3a896244e314f8f1f89c527bc979fcddda7c5c7abe688aa2176603",
+  "reason": "Task 41: accepted output changes after the P0 v1.1 baseline, 78 allowlisted outputs (46 changed, 32 new), each entry naming its cause bundles. a = page breaks applied (tasks 12, 20): hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages, outputs for the added pages are new; b = PERCENT line spacing (task 25): line pitch from the largest font size x percent instead of 160 EMU overlapping glyphs, inspect gains line_spacing_percent; c = FIGURE_CAPTION_NOT_RENDERED nonblocking export diagnostic (task 18 2b); d = upper-case diagnostic codes FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING (task 49f); e = page-range export diagnostics: hwp and hwpx duplicate removal, page loss filter, floating object per object (11b), anchor and object node ids (11c), allowed losses nonblocking (11d); f = ZIP local headers of unchanged entries kept on save (task 24). Evidence per bundle: md/05-decisions/p0-baseline.md (revert hash proofs for b inspect, c, d, e 11d; independent verification for e 11b, 11c; fixed-list decision for f). User decision 2026-11-16 (overlay file, option ga), delegation 2026-11-17, orchestrator decision 2026-11-19. The v1.1 baseline file is unchanged.",
+  "entries": [
+    {
+      "case": "created.docx.document",
+      "output": "change/01/result",
+      "bundles": ["d"],
+      "note": "d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "3c1eeacbe281f35aa44e128b23446601dc03eb856965f5ad54c064c3f06e0dd2", "size": 580 },
+      "to": { "sha256": "11eba24a597e50a5461a0a5418e09f1c35a96381ae65b5bfb7f4dd6ea6e26c4e", "size": 580 }
+    },
+    {
+      "case": "created.figure.mixed",
+      "output": "export/pdf/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "397b2b5bdce9b1636c507ff6a145ee2563fdeaec95f8d656033eb2d5a4a07544", "size": 298 },
+      "to": { "sha256": "6e7a5ecb0475ef63af2273e38231857e035ff39fc174b22d7cf14db024221f94", "size": 480 }
+    },
+    {
+      "case": "created.figure.mixed",
+      "output": "export/png/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "6026a4837fdc8570cf5f03cd7eb86cb9821dfbee8feedcafd734097a6315d8c1", "size": 290 },
+      "to": { "sha256": "05da84c141708abbd066da60f8f96d15ca725e364243b2b74b3cafe23e15dc5b", "size": 472 }
+    },
+    {
+      "case": "created.figure.mixed",
+      "output": "export/pptx/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "48d996eb331f79f540ca94fe1b3fc2070e4e1d06453be7c78408ef17b418e558", "size": 527 },
+      "to": { "sha256": "64fb999d7a62ba37553b9b3c88c84f7c6883a14810828c3730da4f997d1a45af", "size": 710 }
+    },
+    {
+      "case": "created.figure.mixed",
+      "output": "export/svg/p0/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "a378f2caf3c3b3eb463dce704e8553a77b5c3c552723cd3c8a7dbbd30ee42368", "size": 370 },
+      "to": { "sha256": "a90c8d32a64b4e3859c7b94f0871913f3d90f3add614e2336c228d1a7d3250b6", "size": 553 }
+    },
+    {
+      "case": "fixture.docx.basic-preserve",
+      "output": "export/pdf/result",
+      "bundles": ["d"],
+      "note": "d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "732b4ede14ec157aa918a92b7330c7d4d2152b5c08bef9b4f3225ddca3bb25bd", "size": 753 },
+      "to": { "sha256": "2b85bf14f3b82faedabf0893eb2b067724d3ab4f504feb252cada88c26ad3311", "size": 753 }
+    },
+    {
+      "case": "fixture.docx.basic-preserve",
+      "output": "export/svg/p0/result",
+      "bundles": ["d"],
+      "note": "d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "0123217ddf5e3844a5461e4fad7eff2bf9481a333f42529e4101a1fa1be4f198", "size": 826 },
+      "to": { "sha256": "be25933884a1698ba55cea931a9a3a1c2a906885ae4e4d478a54bad2ea276f26", "size": 826 }
+    },
+    {
+      "case": "fixture.docx.basic-preserve",
+      "output": "render/p0/snapshot",
+      "bundles": ["d"],
+      "note": "d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "b5f1ee4ada7308e597498d10a1545dd0e0c7813c3aa291d8968e3fdcc1920649", "size": 22715 },
+      "to": { "sha256": "9db2d2c156545ba548a2df6d06491b2d5c062d33d25dbde89378a70d74cb29be", "size": 22715 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "digest",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash",
+      "from": { "sha256": "f4541193ff071cbbbe09f8efe18b9cf65930387a06b7337edaf311f80e5e5d78", "size": 152 },
+      "to": { "sha256": "1ff83e94ac2fd1d2fe9889b632f68de6c53d9a5a516cf1263f9f01d509806c4e", "size": 152 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/pdf/result",
+      "bundles": ["a", "d"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "c2e30aee4689b99801b330317384cc8c96c05b40687aa28497d768235acfdd12", "size": 706 },
+      "to": { "sha256": "8c8c8ae6919fc618db4044d239c9765cdef28aed2d4ba01319795d4b8b98735d", "size": 707 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/pdf",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash",
+      "from": { "sha256": "75ea093d964706ab48a4ad5241183bb6fbbc4682f00ee352ddac6f3501542601", "size": 9649 },
+      "to": { "sha256": "2b6031b31e37daa559392cf0e93828acb982f37b9965bd8d7656dd6c13ec5592", "size": 10697 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p0/result",
+      "bundles": ["a", "d"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "99a4b54e66182ed2a9d6b5a70d7ff8149af71459da6201df28d893397ef3f006", "size": 763 },
+      "to": { "sha256": "bdf9f205d29c216eab3ccf1e7296c92964c489903c6951907b3983763b954c90", "size": 763 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p0",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash",
+      "from": { "sha256": "db10cdbaf54a6f5f79a99d13abc9edcbfc0dca716c80929a2e6e09dec6562b89", "size": 3659876 },
+      "to": { "sha256": "33840320181a075265dde08a14609fd587e15d9ee9220e853bb1f52b7919a35f", "size": 3644576 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p1/result",
+      "bundles": ["a", "d", "e"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value; e page-range export diagnostics (11b): loss of node i0.0.2 dropped outside its page, independent JSON verification",
+      "from": { "sha256": "4146001f19875abf1600bdbe8e8e7a123b58de69019d4c4f6d284dde3d581a6d", "size": 763 },
+      "to": { "sha256": "ce72fcbd62ba83a867afb1a65fdafc98a39a1a768d85acffb8cc7d273f342f5c", "size": 629 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p1",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash",
+      "from": { "sha256": "d661b3456627b969da7c60c61f063306ff6483268e1c02e503935f66890395a0", "size": 3644787 },
+      "to": { "sha256": "789dcdf57a2ef4015fb97d37c297ae38c72844e965a7930c95deea902f671c64", "size": 3644570 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p2/result",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "25b06d9f93fc754d2c7348116cae0faa32872239adbdb64a8832895c6afb6300", "size": 629 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p2",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "6aa439433e04e273eabaf09d392295437c1e5dfd22360ac3c4d348b3740bb06a", "size": 3644573 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p3/result",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "ade7cdec0f4485bab9fed0acd2833ad6f9df3ae7d3c3682f66e5264b4a4336a7", "size": 629 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p3",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "92ae87b6d57d2bd729e8649e36ac8aca6b0e3a1484fe41f36fe292c862b499db", "size": 3644570 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p4/result",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "9db52596c104eb89226e976f39bf51353da6537df73f71257b68f0a5211a17e3", "size": 629 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "export/svg/p4",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "47996d76bf9e19c2cff6a07514716963109e4edfa297d25a8cc23b9186f3a2f3", "size": 3644580 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "inspect",
+      "bundles": ["a", "b"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): removing the five ,\"line_spacing_percent\":160 fields gives the previous fixed-list value",
+      "from": { "sha256": "322b1ae1204159a53ae3469a0542f01a6cf2a3e8dae2dc7b96acc08351093697", "size": 5040 },
+      "to": { "sha256": "89a22cb118d74b7ce4c2352d63a1b8a9a2a4b4a852fc581f4656dac7b1fdd020", "size": 5275 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "inspect@r1",
+      "bundles": ["a", "b"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): removing the five ,\"line_spacing_percent\":160 fields gives the previous fixed-list value",
+      "from": { "sha256": "322b1ae1204159a53ae3469a0542f01a6cf2a3e8dae2dc7b96acc08351093697", "size": 5040 },
+      "to": { "sha256": "89a22cb118d74b7ce4c2352d63a1b8a9a2a4b4a852fc581f4656dac7b1fdd020", "size": 5275 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p0/png",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash",
+      "from": { "sha256": "0361e119e2d0d58580e0b2a9b9d6f0bed93fff82299784e65ad257926fcc4b66", "size": 35004 },
+      "to": { "sha256": "c9d739c7fb6304e5ec3981889b3afec31259b91b5793dc1537f4c35667e9ab1f", "size": 13895 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p0/snapshot",
+      "bundles": ["a", "d"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "4d64fdd90df87fa52cf4e217e717fc0074da10d750126f2e6103e2cabb744f54", "size": 9237 },
+      "to": { "sha256": "ba943ae441ece7ebc04bb84f668f25d753f2634a345ab3bfc97d614a023d8cd5", "size": 4331 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p1/png",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash",
+      "from": { "sha256": "db939ed132eb0644e9caccb9824c11d7a96a10beae87f0e548c25eeffdd18f8d", "size": 14270 },
+      "to": { "sha256": "64acdb67499b7bf140bcc7523ab1bb93e503a562eea80f96fd3ff8034e283729", "size": 13607 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p1/snapshot",
+      "bundles": ["a", "d"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "c336a449f1ab77fd0acebca7b5afba4210a444b9164bc782f2fc816de0d9c993", "size": 6135 },
+      "to": { "sha256": "6dcbeda1c93f06dc9eeb379e5cb57a3a7786cf7ca68c42b8b498ff7e4835c813", "size": 3317 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p2/png",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "dc03b9d64466f304fc8b0a294aae0a2ead6e80ba9855378a6920b3b42dea4fa3", "size": 13689 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p2/snapshot",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof; the scene diagnostics also carry the 49f code case",
+      "from": null,
+      "to": { "sha256": "e3a8f64a5afa29302b014036f5deeb656a4dcaa24a101bf74202880239309e28", "size": 3575 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p3/png",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "cc6ab9a8d35acbbe77b921eb06e460a3a2144aed0d38d855ab18b653b2b9c545", "size": 13491 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p3/snapshot",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof; the scene diagnostics also carry the 49f code case",
+      "from": null,
+      "to": { "sha256": "3e48e6d3d867ea179f1c282d7a9b580d3ead08b682cacb681ddc17def03bb505", "size": 3317 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p4/png",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "f138fa33fcf9d5e4566821183316f9c7d761d30152faaa8a196129cf24e3bcc4", "size": 13948 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "render/p4/snapshot",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof; the scene diagnostics also carry the 49f code case",
+      "from": null,
+      "to": { "sha256": "8637c134af49f1573e78ef3f00e2a883d03f75e761f9fc7d92a4e299ae03a9ef", "size": 4342 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "save/hwp/result",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash",
+      "from": { "sha256": "3eec4d12103e1a8951e85809886e28ec03e62efaf4cba6e58105299a5ba65bf1", "size": 259 },
+      "to": { "sha256": "5059c6cb3e120f32d685a762b8536bd2e1b4370e71fc740ae787391ecbc28576", "size": 259 }
+    },
+    {
+      "case": "fixture.hwp.binary-source",
+      "output": "save/hwp",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash",
+      "from": { "sha256": "3449337af7427d42715492bfe3118343e5ab13cda2b9560294a80d326c0f123a", "size": 43520 },
+      "to": { "sha256": "a51b7885fab1213639d1f69e8c206cbfefe92296869f64e9746ef40e14e95d7d", "size": 23552 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/pdf/refused",
+      "bundles": ["e"],
+      "note": "e page-range export diagnostics (11b, 11c): equal to the baseline until 11b, independent JSON verification of both",
+      "from": { "sha256": "eba4eafb571c572d83e86fbc1e29f85b5033e3efe7b06c2f0244d89222dd2fcd", "size": 780 },
+      "to": { "sha256": "9dfdb66ac31ea5cfe5557f995a2d6aa531b8ab9239e98d48ef6015aba11a2653", "size": 1820 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/pdf/result",
+      "bundles": ["a", "b", "d", "e"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): one of the first 8 hwpx outputs, all restored by reverting the PERCENT line (355/355); d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value; e page-range export diagnostics (11b, 11c, 11d): 11b and 11c independent JSON verification, 11d r2 revert proof (blocking false -> true)",
+      "from": { "sha256": "cbe432768f041371594231f227305c36f0e5bfd45731f1a05a16bec6f4ca8525", "size": 1492 },
+      "to": { "sha256": "ea45e607e47f62ddd82a163cf22e81afea5576700bb4c2e3166dfb54141ad20c", "size": 2242 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/pdf",
+      "bundles": ["a", "b"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): one of the first 8 hwpx outputs, all restored by reverting the PERCENT line (355/355)",
+      "from": { "sha256": "0ea4c4bd1a011210174565d2941c34f3c3c40f454d2f0706c74130b9ff0128c3", "size": 6755 },
+      "to": { "sha256": "5bfadd6b94eaf5639d00d2d4fd5f529b2c58b29ecb6d027aceae359425807160", "size": 8090 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p0/refused",
+      "bundles": ["e"],
+      "note": "e page-range export diagnostics (11b, 11c): equal to the baseline until 11b, independent JSON verification of both",
+      "from": { "sha256": "eba4eafb571c572d83e86fbc1e29f85b5033e3efe7b06c2f0244d89222dd2fcd", "size": 780 },
+      "to": { "sha256": "53d1b0cf993df73c6f3e7b24034cdb0e9f804ab506a7986f9f7eb712cd09b873", "size": 1378 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p0/result",
+      "bundles": ["a", "b", "d", "e"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): one of the first 8 hwpx outputs, all restored by reverting the PERCENT line (355/355); d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value; e page-range export diagnostics (11b, 11c, 11d): 11b and 11c independent JSON verification, 11d r2 revert proof (blocking false -> true)",
+      "from": { "sha256": "4883a321cf5bd3c682a14172cf8d43c79f1fa812310d1487fe1ff433e2b3d127", "size": 1549 },
+      "to": { "sha256": "6fdff642f98198941d4c8d654ede32bd68e55a2d96d8fff312bbc364e01da579", "size": 1856 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p0",
+      "bundles": ["a", "b"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): one of the first 8 hwpx outputs, all restored by reverting the PERCENT line (355/355)",
+      "from": { "sha256": "474c2b09e5f8402e9589e5fb7429767ea7018f2162af20fb62389599ed7cebea", "size": 3640882 },
+      "to": { "sha256": "4b12e74c4a4b19ddfb16bb0815936e49f8cc5cbb329c491c4e0ef1c4b5c46cb3", "size": 3639688 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p1/refused",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 11c, 11d, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "53d1b0cf993df73c6f3e7b24034cdb0e9f804ab506a7986f9f7eb712cd09b873", "size": 1378 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p1/result",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 11c, 11d, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "e0f6bcf1cbcd92a4b2735d9677a7e582aa6d6fa943fda9f08180a6bff515dcba", "size": 1856 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p1",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "d61fb3b87ae802ac849794c67a27fc2cd30fe0de36427d532123db44365b41b1", "size": 3639679 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p2/refused",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 11c, 11d, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "53d1b0cf993df73c6f3e7b24034cdb0e9f804ab506a7986f9f7eb712cd09b873", "size": 1378 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p2/result",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 11c, 11d, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "7aaeabc94976f9aecad1ee1b6451e18da0724c8f652f4bb53608a60aac39af15", "size": 1856 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p2",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "481e414a06a0a3c76c61b5323e8090afb8e7f7467ce551e8eb429c5276224100", "size": 3639679 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p3/refused",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 11c, 11d, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "53d1b0cf993df73c6f3e7b24034cdb0e9f804ab506a7986f9f7eb712cd09b873", "size": 1378 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p3/result",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 11c, 11d, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "e914bd8515cf8bf0bc379637cbbe5e661b0fea90d6e681734aee1f35a946c3ad", "size": 1856 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p3",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "5f4d19401bf534fafdb1eff53a266cb4430b2d7a3795eb83788b8bb47e521548", "size": 3639676 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p4/refused",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 11c, 11d, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "9dfdb66ac31ea5cfe5557f995a2d6aa531b8ab9239e98d48ef6015aba11a2653", "size": 1820 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p4/result",
+      "bundles": ["a"],
+      "note": "content hash revert proof not possible - the key is created by page breaks (a); the content includes 11b, 11c, 11d, 49f. a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "7fd39fd519e36b8fabc63bc234bffbb7598ce675919463c2235fc70d29fab5bc", "size": 2299 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "export/svg/p4",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "83684fcb7920f141dbfa49b66b4218bc7886c6b9c9843c1d03878d5755ef5bc0", "size": 3639864 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "inspect",
+      "bundles": ["a", "b"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): removing the five ,\"line_spacing_percent\":160 fields gives the previous fixed-list value",
+      "from": { "sha256": "b3c340485612e93d5ca7d7428dca93b62bac79602e23ac7b96f813961fefde23", "size": 7629 },
+      "to": { "sha256": "bf4c21d135069e3f20a9f5ff7f08064ee6714fceb36609d412658f48dad9b8f1", "size": 7879 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "inspect@r1",
+      "bundles": ["a", "b"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): removing the five ,\"line_spacing_percent\":160 fields gives the previous fixed-list value",
+      "from": { "sha256": "b3c340485612e93d5ca7d7428dca93b62bac79602e23ac7b96f813961fefde23", "size": 7629 },
+      "to": { "sha256": "bf4c21d135069e3f20a9f5ff7f08064ee6714fceb36609d412658f48dad9b8f1", "size": 7879 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p0/png",
+      "bundles": ["a", "b"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): one of the first 8 hwpx outputs, all restored by reverting the PERCENT line (355/355)",
+      "from": { "sha256": "063197be79b70c145ce438d6a1278b28aed5294e3ede93cc681281f47cf7a09c", "size": 8216 },
+      "to": { "sha256": "c012017f6ab37323b0bd319080fcb4c7aef9dc463b651c2e766eed3d675e0861", "size": 6568 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p0/snapshot",
+      "bundles": ["a", "b", "d"],
+      "note": "a page breaks (12, 20): in the 2026-11-17 page-break re-dump (hwp.binary-source 27, hwpx 28); no single-cause revert hash; b PERCENT line spacing (25): one of the first 8 hwpx outputs, all restored by reverting the PERCENT line (355/355); d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "a7507297c57353f2a396a3ff0b5c62a02dd4fdf930ddcefc5ddb7704a502130e", "size": 14008 },
+      "to": { "sha256": "217c452fcbcad6caad7d722ea02a5dc64cfb9a6cbddfc73d207f16f8e5f7aaef", "size": 3584 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p1/png",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "d615ffc60d74a318a82a095baf4e9c54a6d355dfcaf9d6639980c7fa03f67a5d", "size": 6724 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p1/snapshot",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof; the scene diagnostics also carry the 49f code case",
+      "from": null,
+      "to": { "sha256": "3295436d502742d8c7ca0154b147fc1308dc7c380e17362b01ea6af59941283f", "size": 4041 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p2/png",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "4512e05b23e457eb0cce516dcd1f788db946c5bff113db65d951930220310dfa", "size": 6621 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p2/snapshot",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof; the scene diagnostics also carry the 49f code case",
+      "from": null,
+      "to": { "sha256": "6d38a5976de6c04ae7cc66bad28f3d2a1924912c481da718c34aacfc679b34b4", "size": 3548 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p3/png",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "a532391c2875780e11555b5ba10022c973ede5cc64270cf8f75f5a701996dd36", "size": 6388 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p3/snapshot",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof; the scene diagnostics also carry the 49f code case",
+      "from": null,
+      "to": { "sha256": "73dd94d644ce78b6184d2e2ea11efb2db3c5d0d0638c1121540e00fb5c80a5d1", "size": 3291 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p4/png",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof",
+      "from": null,
+      "to": { "sha256": "eb31b11d409fef23090c165ce115bc060b6b45fbe0a2cbc246ad11cdefbc9982", "size": 7023 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "render/p4/snapshot",
+      "bundles": ["a"],
+      "note": "a page breaks (12, 20): new output for an added page (hwp.binary-source 2 -> 5 pages, hwpx 1 -> 5 pages); not in the baseline, so no content hash revert proof; the scene diagnostics also carry the 49f code case",
+      "from": null,
+      "to": { "sha256": "dcefd3860fd8b0d89500199d8c02259041ea1ba2bbb5e9120a8e519b3fb39cc6", "size": 4956 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "save/hwpx/result",
+      "bundles": ["f"],
+      "note": "f ZIP local headers (24): same size, unchanged ZIP entries keep their original local headers, g6 reopen",
+      "from": { "sha256": "db5054912fd1f73d5aeb4ee3fc33256e059724aa2a7867b7c71f36e05d5a66a4", "size": 274 },
+      "to": { "sha256": "2493a01ce305b84245311dff5ae566b747886810aa06d84330f68d1d34a977dc", "size": 274 }
+    },
+    {
+      "case": "fixture.hwpx.image-and-opaque-preserve",
+      "output": "save/hwpx",
+      "bundles": ["f"],
+      "note": "f ZIP local headers (24): same size, unchanged ZIP entries keep their original local headers, g6 reopen",
+      "from": { "sha256": "460bb3221052879aa21e26c33a2056b521b763ef61dc655c6e67a225f61226b0", "size": 10919 },
+      "to": { "sha256": "f70370515d56dff501234abd4138ec41186661fc9a7201e4df59a7d83865cf7b", "size": 10919 }
+    },
+    {
+      "case": "fixture.pdf.evidence-p12",
+      "output": "export/pdf/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "6f2c0f6a5cbf928b80459ec25ab3df88398e0789da6a1adc9dc03261c0929fef", "size": 300 },
+      "to": { "sha256": "d760528a2093fb872cb09f95a73f120a6e987c66008df9ebc0a77681b2da75e9", "size": 482 }
+    },
+    {
+      "case": "fixture.pdf.evidence-p12",
+      "output": "export/png/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "a19c852fd44ca5190167962263cd5f149ade94cdb1bb95308a066323cc146989", "size": 293 },
+      "to": { "sha256": "43ed4b394b198af6f2f39a25ab3f4f5ae1c3b71370a675cf90535eab8d78ca6a", "size": 475 }
+    },
+    {
+      "case": "fixture.pdf.evidence-p12",
+      "output": "export/pptx/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "d293675fbc2d3502f80015a4dae40e295a694cf96df1e134d5bfadfffcc43eac", "size": 363 },
+      "to": { "sha256": "ff3721b78b3c7b8c68f5afc4bcea257f7c1b44634d7b3f954fc94ebca9d43dd0", "size": 545 }
+    },
+    {
+      "case": "fixture.pdf.evidence-p12",
+      "output": "export/svg/p0/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "b349e39a834813c935f46a3267682539c7e4f1f6bbc001e32f5530a419291d00", "size": 226 },
+      "to": { "sha256": "7dbe5114794cb0bca123e5fa934a9f2ae1e60874f36b6581094f0b43975a0274", "size": 408 }
+    },
+    {
+      "case": "fixture.pdf.evidence-p12-userunit2",
+      "output": "export/pdf/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "9cea71fd47ec2bbfe6151bf0ea6017732b1953f87b30a09cbd8629c9751cc0c6", "size": 310 },
+      "to": { "sha256": "e4629114b3a131bc8cc2a02a05395b4176b27964002cb139ca734af383865cbd", "size": 492 }
+    },
+    {
+      "case": "fixture.pdf.evidence-p12-userunit2",
+      "output": "export/png/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "a37202cac9f7f806a539c8573cf229f4d6620e9eca17bcc9549f5c99b5a0268a", "size": 303 },
+      "to": { "sha256": "c2ab842c742528fbddd90fcd4aa370a9911ed23203f4a68c66c8f14433cd417d", "size": 485 }
+    },
+    {
+      "case": "fixture.pdf.evidence-p12-userunit2",
+      "output": "export/pptx/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "05f14081322b59b47e527c72b9e5863f50d77e023c9857d486241045c7baa688", "size": 373 },
+      "to": { "sha256": "8b8784c0d4c444ac0784fa75bd60ec4b0b27026207e8e94a6cae8fdf6072e94b", "size": 555 }
+    },
+    {
+      "case": "fixture.pdf.evidence-p12-userunit2",
+      "output": "export/svg/p0/result",
+      "bundles": ["c"],
+      "note": "c FIGURE_CAPTION_NOT_RENDERED (18 2b): removing that one nonblocking diagnostic gives the baseline sha256 and size (12/12)",
+      "from": { "sha256": "73747bc9d6907001a7091838b64bc39423962ebe5e6f20f4b4636c122167ef1d", "size": 236 },
+      "to": { "sha256": "c3829f9aff33d6e7de86b6de1295be5915256d98944e28d911b91cae5ef0476e", "size": 418 }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "export/pdf/result",
+      "bundles": ["d"],
+      "note": "d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "41ad8db763a4c9627c877daf7ab08d65886df335f7a03fcf7090ae14d57b0c04", "size": 749 },
+      "to": { "sha256": "77efa8ff24d69bf760226dfbad24da501fd613bf0826d89ec4b35ed39ccd806e", "size": 749 }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "export/svg/p0/result",
+      "bundles": ["d"],
+      "note": "d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "43cf5c31e1d5b0a9306360072e525cd4917daf7cad002ebd8051f67405859aea", "size": 822 },
+      "to": { "sha256": "38ca661393fd0b47fd43250c9d0de2e0a9f622485314d699ff4c46731caae643", "size": 822 }
+    },
+    {
+      "case": "linked.docx.figure-link",
+      "output": "render/p0/snapshot",
+      "bundles": ["d"],
+      "note": "d upper-case diagnostic codes (49f): FONT_SUBSTITUTED, NATIVE_UNIT_ROUNDING back to lower case gives the previous value",
+      "from": { "sha256": "202670362f31cb09ac3095ef5f8485fe7b66d129606baacf1a3ecd0577f396a7", "size": 22309 },
+      "to": { "sha256": "9aa1bf502e056feb88deefe3894b28082ef33acc5be8cda1ea8949f5382c19e0", "size": 22309 }
+    }
+  ]
+}

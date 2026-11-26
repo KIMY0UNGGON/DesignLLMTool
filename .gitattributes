@@ -1,0 +1,5 @@
+# Test fixtures are checked byte for byte (SHA-256 hashes, PDF xref offsets): never convert their line endings.
+fixtures/** -text
+tests/integration/baseline/** -text
+crates/formats/hwp/tests/fixtures/** -text
+crates/canvas/tests/fixtures/** -text

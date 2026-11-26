@@ -131,7 +131,8 @@ impl DesktopApp {
             id: new_id(),
             kind,
             bounds: designllm_contracts::Rect { x, y, width, height },
-            text: if is_text { "텍스트".into() } else { String::new() },
+            // The placeholder of a new text box is the window's word, written in the window's language.
+            text: if is_text { crate::i18n::tr("텍스트").into_owned() } else { String::new() },
             style: Style::default(),
             asset: None,
             children: Vec::new(),

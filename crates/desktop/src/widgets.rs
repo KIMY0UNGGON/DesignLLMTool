@@ -10,6 +10,7 @@ use eframe::egui::{
 };
 
 use crate::{
+    i18n::tr,
     icons,
     theme::{self, Palette},
 };
@@ -50,7 +51,7 @@ pub fn icon_button(ui: &mut Ui, palette: &Palette, icon: &str, tooltip: &str, ac
     let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_IN_BUTTON));
     icons::paint(ui, icon_rect, icon, color);
     crate::ui_record::note(ui, tooltip, &response);
-    response.on_hover_text(tooltip)
+    response.on_hover_text(tr(tooltip))
 }
 
 /// A 16 px icon and a label (tokens `component.label-button`: no fill and no border, `surface-2` on
@@ -61,11 +62,22 @@ pub fn labeled_button(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label:
 
 /// `labeled_button` with the open state (its menu is showing) and an unsaved-changes dot after the label.
 pub fn labeled_button_with(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, primary: bool, open: bool, dot: bool) -> Response {
+    labeled_button_shown(ui, palette, icon, label, primary, open, dot, true)
+}
+
+/// A `labeled_button` whose label is the person's own text (a figure's title): shown as written.
+pub fn labeled_button_verbatim(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str) -> Response {
+    labeled_button_shown(ui, palette, icon, label, false, false, false, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn labeled_button_shown(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, primary: bool, open: bool, dot: bool, translate: bool) -> Response {
     let font = theme::font(if primary { theme::Type::Strong } else { theme::Type::Body });
     // A disabled button (`add_enabled_ui`) keeps its shape and takes `ink-3` with no hover; a disabled main button drops to `surface-2`.
     let enabled = ui.is_enabled();
     let ink = if !enabled { palette.ink_3 } else if primary { palette.on_accent } else { palette.ink };
-    let label_width = text_width(ui, label, font.clone(), ink);
+    let shown = if translate { tr(label) } else { std::borrow::Cow::Borrowed(label) };
+    let label_width = text_width(ui, &shown, font.clone(), ink);
     let left = if icon.is_some() { 8.0 } else { 10.0 };
     let icon_width = if icon.is_some() { theme::ICON_SMALL + 6.0 } else { 0.0 };
     let dot_width = if dot { 4.0 + 6.0 } else { 0.0 };
@@ -100,7 +112,7 @@ pub fn labeled_button_with(ui: &mut Ui, palette: &Palette, icon: Option<&str>, l
         icons::paint(ui, icon_rect, icon, if !enabled { palette.ink_3 } else if primary { palette.on_accent } else { palette.ink_2 });
         x += theme::ICON_SMALL + 6.0;
     }
-    ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, label, font, ink);
+    ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, &shown, font, ink);
     if dot {
         ui.painter().circle_filled(Pos2::new(x + label_width + 4.0 + 3.0, rect.center().y), 3.0, palette.accent);
     }
@@ -142,7 +154,7 @@ pub fn split_chevron(ui: &mut Ui, palette: &Palette, tooltip: &str) -> Response 
     }
     icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_SMALL)), "chev-down", palette.ink_3);
     crate::ui_record::note(ui, tooltip, &response);
-    response.on_hover_text(tooltip)
+    response.on_hover_text(tr(tooltip))
 }
 
 /// The 1 × 20 separator between groups of a floating bar, 4 on each side (tokens `layout.board.separator`).
@@ -160,7 +172,7 @@ pub fn mini_button(ui: &mut Ui, palette: &Palette, icon: &str, tooltip: &str) ->
     }
     icons::paint(ui, Rect::from_center_size(rect.center(), Vec2::splat(theme::ICON_SMALL)), icon, palette.ink_2);
     crate::ui_record::note(ui, tooltip, &response);
-    response.on_hover_text(tooltip)
+    response.on_hover_text(tr(tooltip))
 }
 
 /// A sidebar or panel tab (tokens `component.sidebar-tab`): 30 high, `surface-2` pill and bold when on,
@@ -168,7 +180,8 @@ pub fn mini_button(ui: &mut Ui, palette: &Palette, icon: &str, tooltip: &str) ->
 pub fn tab(ui: &mut Ui, palette: &Palette, label: &str, on: bool, dot: Option<Color32>) -> Response {
     let font = theme::font(if on { theme::Type::Strong } else { theme::Type::Body });
     let ink = if on { palette.ink } else { palette.ink_2 };
-    let label_width = text_width(ui, label, font.clone(), ink);
+    let shown = tr(label);
+    let label_width = text_width(ui, &shown, font.clone(), ink);
     let dot_width = if dot.is_some() { 6.0 + 6.0 } else { 0.0 };
     let width = theme::SIDEBAR_TAB_PADDING_X * 2.0 + label_width + dot_width;
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, theme::SIDEBAR_TAB_HEIGHT), Sense::click());
@@ -178,7 +191,7 @@ pub fn tab(ui: &mut Ui, palette: &Palette, label: &str, on: bool, dot: Option<Co
         ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2.gamma_multiply(0.6));
     }
     let x = rect.left() + theme::SIDEBAR_TAB_PADDING_X;
-    ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, label, font, ink);
+    ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, &shown, font, ink);
     if let Some(color) = dot {
         ui.painter().circle_filled(Pos2::new(x + label_width + 6.0 + 3.0, rect.center().y), 3.0, color);
     }
@@ -188,13 +201,23 @@ pub fn tab(ui: &mut Ui, palette: &Palette, label: &str, on: bool, dot: Option<Co
 
 /// A small text button for callouts and headers (no border).
 pub fn text_button(ui: &mut Ui, palette: &Palette, label: &str, color: Color32) -> Response {
+    text_button_shown(ui, palette, label, color, true)
+}
+
+/// A `text_button` whose label is the person's own text (a design system's title): shown as written.
+pub fn text_button_verbatim(ui: &mut Ui, palette: &Palette, label: &str, color: Color32) -> Response {
+    text_button_shown(ui, palette, label, color, false)
+}
+
+fn text_button_shown(ui: &mut Ui, palette: &Palette, label: &str, color: Color32, translate: bool) -> Response {
     let font = theme::display_font(false, 12.0);
-    let width = text_width(ui, label, font.clone(), color) + 12.0;
+    let shown = if translate { tr(label) } else { std::borrow::Cow::Borrowed(label) };
+    let width = text_width(ui, &shown, font.clone(), color) + 12.0;
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), Sense::click());
     if response.hovered() {
         ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
     }
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, font, color);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, &shown, font, color);
     crate::ui_record::note(ui, label, &response);
     response
 }
@@ -209,19 +232,31 @@ pub fn menu_item(
     shortcut: &str,
     checked: bool,
 ) -> Response {
-    menu_row(ui, palette, icon, label, shortcut, checked, theme::Type::Micro)
+    menu_row(ui, palette, icon, label, shortcut, checked, theme::Type::Micro, true)
+}
+
+/// A menu row whose label is the person's own text (a project title): shown as written in every UI language.
+pub fn menu_item_verbatim(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, checked: bool) -> Response {
+    menu_row(ui, palette, icon, label, "", checked, theme::Type::Micro, false)
 }
 
 /// A menu row whose right text is a value (a size, a unit), set in `caption` 12 rather than the shortcut's `micro` 11
 /// (tokens `menu.item.value`).
 pub fn menu_item_value(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, value: &str, checked: bool) -> Response {
-    menu_row(ui, palette, icon, label, value, checked, theme::Type::Caption)
+    menu_row(ui, palette, icon, label, value, checked, theme::Type::Caption, true)
 }
 
-fn menu_row(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, shortcut: &str, checked: bool, right: theme::Type) -> Response {
+#[allow(clippy::too_many_arguments)]
+fn menu_row(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, shortcut: &str, checked: bool, right: theme::Type, translate: bool) -> Response {
     // tokens `component.menu.item`: 30 high, radius 8, gap 8; the chosen item is accent-soft with accent-ink text.
     let width = ui.available_width().max(200.0);
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, theme::MENU_ITEM_HEIGHT), Sense::click());
+    let shown = if translate { tr(label) } else { std::borrow::Cow::Borrowed(label) };
+    let ink = if checked { palette.accent_ink } else { palette.ink };
+    // A label of several lines (a connector menu's node text) takes the height its lines need, 6 above and below them, so
+    // that it does not run over the rows next to it. A one-line label keeps the 30 px row.
+    let lines = shown.contains('\n').then(|| ui.painter().layout_no_wrap(shown.to_string(), theme::font(theme::Type::Body), ink));
+    let height = lines.as_ref().map_or(theme::MENU_ITEM_HEIGHT, |galley| (galley.size().y + 12.0).max(theme::MENU_ITEM_HEIGHT));
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), Sense::click());
     let corner = CornerRadius::same(theme::RADIUS_MENU_ITEM);
     if checked {
         ui.painter().rect_filled(rect, corner, palette.accent_soft);
@@ -234,13 +269,15 @@ fn menu_row(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, sho
         icons::paint(ui, icon_rect, icon, if checked { palette.accent } else { palette.ink_2 });
         x += theme::ICON_SMALL + 8.0;
     }
-    ui.painter().text(
-        Pos2::new(x, rect.center().y),
-        Align2::LEFT_CENTER,
-        label,
-        theme::font(theme::Type::Body),
-        if checked { palette.accent_ink } else { palette.ink },
-    );
+    match lines {
+        Some(galley) => {
+            let top = rect.center().y - galley.size().y / 2.0;
+            ui.painter().galley(Pos2::new(x, top), galley, ink);
+        }
+        None => {
+            ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, shown, theme::font(theme::Type::Body), ink);
+        }
+    }
     // Values and shortcuts end in one column for every row, before the check's place (home-presets).
     // home-presets: the value ends 37 inside the menu's right border (item edge + padding 4 + border 1 + 32).
     let right_edge = rect.right() - 32.0;
@@ -248,7 +285,7 @@ fn menu_row(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, sho
         ui.painter().text(
             Pos2::new(right_edge, rect.center().y),
             Align2::RIGHT_CENTER,
-            shortcut,
+            tr(shortcut),
             theme::font(right),
             palette.ink_3,
         );
@@ -266,6 +303,7 @@ fn menu_row(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &str, sho
 pub fn segmented(ui: &mut Ui, palette: &Palette, labels: &[&str], selected: usize) -> Option<usize> {
     let mut clicked = None;
     let font = theme::display_font(false, 12.0);
+    let labels = crate::i18n::tr_all(labels);
     let widths: Vec<f32> = labels
         .iter()
         .map(|label| text_width(ui, label, font.clone(), palette.ink) + 20.0)
@@ -321,7 +359,7 @@ pub fn segmented_fill(ui: &mut Ui, palette: &Palette, labels: &[&str], selected:
         } else if response.hovered() {
             ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_3);
         }
-        ui.painter().text(rect.center(), Align2::CENTER_CENTER, *label, font.clone(), if on { palette.ink } else { palette.ink_2 });
+        ui.painter().text(rect.center(), Align2::CENTER_CENTER, tr(label), font.clone(), if on { palette.ink } else { palette.ink_2 });
         if response.clicked() {
             clicked = Some(index);
         }
@@ -336,7 +374,7 @@ pub fn option_row(ui: &mut Ui, palette: &Palette, label: &str, options: &[&str],
     ui.allocate_ui_with_layout(egui::vec2(width, 36.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing = Vec2::ZERO;
         let (rect, _) = ui.allocate_exact_size(egui::vec2(52.0, 36.0), Sense::hover());
-        ui.painter().text(Pos2::new(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, label, theme::font(theme::Type::Caption), palette.ink_2);
+        ui.painter().text(Pos2::new(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, tr(label), theme::font(theme::Type::Caption), palette.ink_2);
         clicked = segmented_fill(ui, palette, options, selected, width - 52.0);
     });
     clicked
@@ -369,7 +407,7 @@ pub fn loss_list(ui: &mut Ui, palette: &Palette, losses: &[designllm_contracts::
         let row = Rect::from_min_size(Pos2::new(rect.left() + 10.0, top), egui::vec2(width - 20.0, 24.0));
         icons::paint(ui, Rect::from_min_size(Pos2::new(row.left(), row.center().y - 8.0), Vec2::splat(16.0)), "state-warn", palette.warn);
         let text = if *count > 1 { format!("{message} ({count})") } else { message };
-        let shown = truncate_to_width(ui, &text, row.width() - 24.0, palette.ink);
+        let shown = truncate_to_width(ui, &tr(&text), row.width() - 24.0, palette.ink);
         ui.painter().text(Pos2::new(row.left() + 24.0, row.center().y), Align2::LEFT_CENTER, shown, theme::font(theme::Type::Caption), palette.ink);
     }
 }
@@ -381,14 +419,15 @@ pub fn wide_primary(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &
     let fill = if response.hovered() { fill.gamma_multiply(0.92) } else { fill };
     ui.painter().rect_filled(rect, CornerRadius::same(theme::RADIUS_CONTROL), fill);
     let font = theme::font(theme::Type::Strong);
-    let label_width = text_width(ui, label, font.clone(), ink);
+    let shown = tr(label);
+    let label_width = text_width(ui, &shown, font.clone(), ink);
     let icon_width = if icon.is_some() { 16.0 + 6.0 } else { 0.0 };
     let mut x = rect.center().x - (icon_width + label_width) / 2.0;
     if let Some(icon) = icon {
         icons::paint(ui, Rect::from_min_size(Pos2::new(x, rect.center().y - 8.0), Vec2::splat(16.0)), icon, ink);
         x += icon_width;
     }
-    ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, label, font, ink);
+    ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, &shown, font, ink);
     crate::ui_record::note(ui, label, &response);
     response
 }
@@ -396,6 +435,15 @@ pub fn wide_primary(ui: &mut Ui, palette: &Palette, icon: Option<&str>, label: &
 /// A field-like button that shows a value and a chevron. The caller opens its menu from the
 /// response with `egui::Popup::from_toggle_button_response`.
 pub fn dropdown(ui: &mut Ui, palette: &Palette, value: &str, icon: Option<&str>, width: f32) -> Response {
+    dropdown_shown(ui, palette, value, icon, width, true)
+}
+
+/// A `dropdown` whose value is the person's own text (a name, a column, a title): shown as written in every UI language.
+pub fn dropdown_verbatim(ui: &mut Ui, palette: &Palette, value: &str, icon: Option<&str>, width: f32) -> Response {
+    dropdown_shown(ui, palette, value, icon, width, false)
+}
+
+fn dropdown_shown(ui: &mut Ui, palette: &Palette, value: &str, icon: Option<&str>, width: f32, translate: bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, theme::FIELD_HEIGHT), Sense::click());
     // A disabled dropdown paints its own colours (`ink-3` text and icons, a `line` border on `surface`), so the half opacity
     // egui gives a disabled ui is taken back for the painting and restored after it.
@@ -418,7 +466,15 @@ pub fn dropdown(ui: &mut Ui, palette: &Palette, value: &str, icon: Option<&str>,
     );
     icons::paint(ui, chevron, "chev-down", palette.ink_3);
     let room = (rect.right() - 26.0 - x).max(0.0);
-    let shown = truncate_to_width(ui, value, room, ink);
+    let full = if translate { tr(value) } else { std::borrow::Cow::Borrowed(value) };
+    // A value of several lines (a node's text) shows its first line in the one-line field, the whole text as the tooltip.
+    let first_line = full.lines().next().unwrap_or_default();
+    let several = full.contains('\n');
+    let shown = if several {
+        truncate_to_width(ui, &format!("{first_line}…"), room, ink)
+    } else {
+        truncate_to_width(ui, &full, room, ink)
+    };
     ui.painter().text(
         Pos2::new(x, rect.center().y),
         Align2::LEFT_CENTER,
@@ -428,7 +484,7 @@ pub fn dropdown(ui: &mut Ui, palette: &Palette, value: &str, icon: Option<&str>,
     );
     ui.set_opacity(opacity);
     crate::ui_record::note(ui, value, &response);
-    response
+    if several { response.on_hover_text(full.into_owned()) } else { response }
 }
 
 /// Cuts `text` with an ellipsis so that it fits `width` points.
@@ -473,7 +529,7 @@ pub fn text_field(ui: &mut Ui, palette: &Palette, text: &mut String, hint: &str,
     let response = ui.add_sized(
         egui::vec2(width, theme::FIELD_HEIGHT),
         TextEdit::singleline(text)
-            .hint_text(egui::RichText::new(hint).color(palette.ink_3))
+            .hint_text(egui::RichText::new(tr(hint)).color(palette.ink_3))
             .font(house_font(ui, theme::Type::Body))
             .margin(egui::Margin::symmetric(8, 4)),
     );
@@ -538,7 +594,7 @@ pub fn edit_line(ui: &mut Ui, palette: &Palette, text: &mut String, field: Field
         .font(font.clone())
         .text_color(field.color.unwrap_or(palette.ink))
         .horizontal_align(field.align)
-        .hint_text(egui::RichText::new(field.hint).font(font).color(palette.ink_3))
+        .hint_text(egui::RichText::new(tr(field.hint)).font(font).color(palette.ink_3))
         .margin(field_margin(&field, egui::Margin::symmetric(8, 4)));
     if let Some(id) = field.id {
         edit = edit.id(id);
@@ -573,7 +629,7 @@ pub fn edit_area(ui: &mut Ui, palette: &Palette, text: &mut String, field: Field
         .font(font.clone())
         .text_color(field.color.unwrap_or(palette.ink))
         .horizontal_align(field.align)
-        .hint_text(egui::RichText::new(field.hint).font(font).color(palette.ink_3))
+        .hint_text(egui::RichText::new(tr(field.hint)).font(font).color(palette.ink_3))
         .desired_rows(field.rows.max(1))
         .desired_width(field.width)
         .margin(field_margin(&field, egui::Margin::symmetric(8, 4)));
@@ -613,7 +669,7 @@ pub fn number_stepper(ui: &mut Ui, palette: &Palette, id: impl std::hash::Hash, 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         if !prefix.trim().is_empty() {
-            ui.label(egui::RichText::new(prefix.trim()).font(theme::font(theme::Type::Caption)).color(palette.ink_2));
+            ui.label(egui::RichText::new(tr(prefix.trim())).font(theme::font(theme::Type::Caption)).color(palette.ink_2));
             ui.add_space(4.0);
         }
         let id = egui::Id::new(("number-stepper", id));
@@ -678,17 +734,18 @@ fn step_button(ui: &mut Ui, palette: &Palette, id: egui::Id, plus: bool, tooltip
     let enabled = ui.is_enabled();
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, tooltip));
     crate::ui_record::note(ui, tooltip, &response);
-    if enabled { response.on_hover_text(tooltip) } else { response.on_disabled_hover_text(tooltip) }
+    if enabled { response.on_hover_text(tr(tooltip)) } else { response.on_disabled_hover_text(tr(tooltip)) }
 }
 
 /// A compact outlined button for a dense row (task 68h): 24 high, `ink-2` label, `surface-2` on hover.
 pub fn compact_button(ui: &mut Ui, palette: &Palette, label: &str) -> Response {
     let font = theme::font(theme::Type::Caption);
-    let width = text_width(ui, label, font.clone(), palette.ink) + 16.0;
+    let shown = tr(label);
+    let width = text_width(ui, &shown, font.clone(), palette.ink) + 16.0;
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 24.0), Sense::click());
     let opacity = undo_disabled_fade(ui);
     let ink = paint_compact_frame(ui, palette, rect, &response);
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, font, ink);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, &shown, font, ink);
     ui.set_opacity(opacity);
     let enabled = ui.is_enabled();
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
@@ -756,7 +813,8 @@ pub fn normalise_hex(text: &str) -> String {
 /// diameter (24 in the top bar and the AI tab).
 pub fn avatar(ui: &mut Ui, palette: &Palette, letter: &str, color: Color32, state: AgentState, size: f32) -> Response {
     // tokens `component.avatar`: box 32, circle 24, ring radius 14.5 and 2 wide (scaled for smaller avatars).
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size + 8.0), Sense::click());
+    // A mark, not a button: the row it sits in takes the clicks.
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size + 8.0), Sense::hover());
     let center = rect.center();
     let radius = size / 2.0;
     let ring_radius = radius * 14.5 / 12.0;
@@ -831,7 +889,7 @@ pub fn callout(ui: &mut Ui, palette: &Palette, text: &str, buttons: &[&str], war
         .inner_margin(egui::Margin::symmetric(12, 8))
         .show(ui, |ui| {
             ui.set_max_width(280.0);
-            ui.label(egui::RichText::new(text).font(theme::display_font(false, 12.0)).color(palette.ink));
+            ui.label(egui::RichText::new(tr(text)).font(theme::display_font(false, 12.0)).color(palette.ink));
             if !buttons.is_empty() {
                 ui.add_space(6.0);
                 ui.horizontal_wrapped(|ui| {
@@ -1014,7 +1072,7 @@ fn dialog_with_footer<B, R>(
         ui.set_max_height(title_room + body_room + footer_room);
         ui.vertical_centered(|ui| {
             if !title.is_empty() {
-                ui.label(egui::RichText::new(title).font(house_font(ui, theme::Type::Title)).color(palette.ink));
+                ui.label(egui::RichText::new(tr(title)).font(house_font(ui, theme::Type::Title)).color(palette.ink));
                 ui.add_space(DIALOG_GAP);
             }
             let inner = egui::ScrollArea::vertical()
@@ -1142,7 +1200,7 @@ fn dialog_button_font(ui: &Ui, kind: DialogButton) -> FontId {
 
 /// The width `dialog_button` takes for `label`: the label and 16 on each side, at least 88. A row that must not wrap is sized with it.
 pub fn dialog_button_width(ui: &Ui, label: &str, kind: DialogButton) -> f32 {
-    (text_width(ui, label, dialog_button_font(ui, kind), Color32::WHITE) + 2.0 * DIALOG_BUTTON_PADDING).max(DIALOG_BUTTON_MIN_WIDTH)
+    (text_width(ui, &tr(label), dialog_button_font(ui, kind), Color32::WHITE) + 2.0 * DIALOG_BUTTON_PADDING).max(DIALOG_BUTTON_MIN_WIDTH)
 }
 
 /// The buttons of a dialog (GUI_DESIGN §5.1): 8 under what precedes them, 8 apart, each line centred, and wrapped onto a new
@@ -1230,7 +1288,7 @@ fn dialog_button_shape(ui: &mut Ui, palette: &Palette, label: &str, kind: Dialog
         if let Some(outline) = outline {
             painter.rect_stroke(rect, corner, Stroke::new(1.0, outline), StrokeKind::Inside);
         }
-        painter.text(rect.center(), Align2::CENTER_CENTER, label, font, ink);
+        painter.text(rect.center(), Align2::CENTER_CENTER, tr(label), font, ink);
         if response.has_focus() {
             painter.rect_stroke(
                 rect.expand(2.0),
@@ -1247,6 +1305,15 @@ fn dialog_button_shape(ui: &mut Ui, palette: &Palette, label: &str, kind: Dialog
 /// One row of a dialog form, centred in the dialog: a `DIALOG_FORM_WIDTH` block, 32 high, with `label` in the 76 column
 /// (caption, `ink-2`, cut to fit) and `field` after it, given the width left. With an empty label the field has the block.
 pub fn dialog_row<R>(ui: &mut Ui, palette: &Palette, label: &str, field: impl FnOnce(&mut Ui, f32) -> R) -> R {
+    dialog_row_shown(ui, palette, &tr(label), field)
+}
+
+/// A `dialog_row` whose label is the data's own (an imported column's name): shown as written.
+pub fn dialog_row_verbatim<R>(ui: &mut Ui, palette: &Palette, label: &str, field: impl FnOnce(&mut Ui, f32) -> R) -> R {
+    dialog_row_shown(ui, palette, label, field)
+}
+
+fn dialog_row_shown<R>(ui: &mut Ui, palette: &Palette, label: &str, field: impl FnOnce(&mut Ui, f32) -> R) -> R {
     let width = DIALOG_FORM_WIDTH.min(ui.available_width());
     ui.allocate_ui_with_layout(
         egui::vec2(width, theme::PROPERTY_ROW),
@@ -1274,23 +1341,52 @@ pub fn dropdown_menu(ui: &mut Ui, palette: &Palette, options: &[&str], current: 
     select_menu(ui, palette, shown, options, current, width)
 }
 
+/// A `dropdown_menu` of the data's own names (imported columns): the value and the options are shown as written.
+pub fn dropdown_menu_verbatim(ui: &mut Ui, palette: &Palette, options: &[&str], current: Option<usize>, width: f32) -> Option<usize> {
+    let shown = current.and_then(|index| options.get(index)).copied().unwrap_or_default();
+    select_menu_verbatim(ui, palette, shown, options, current, width)
+}
+
 /// A selection list: a `dropdown` that shows `shown` and whose menu lists `options`, the `current` one checked (task 68h: the
 /// place of a combo box). Returns the index picked this frame.
 pub fn select_menu(ui: &mut Ui, palette: &Palette, shown: &str, options: &[&str], current: Option<usize>, width: f32) -> Option<usize> {
-    let button = dropdown(ui, palette, shown, None, width);
+    select_menu_shown(ui, palette, shown, options, current, width, true)
+}
+
+/// A `select_menu` of the person's own names (pages, columns, sources): the value and the options are shown as written.
+pub fn select_menu_verbatim(ui: &mut Ui, palette: &Palette, shown: &str, options: &[&str], current: Option<usize>, width: f32) -> Option<usize> {
+    select_menu_shown(ui, palette, shown, options, current, width, false)
+}
+
+fn select_menu_shown(ui: &mut Ui, palette: &Palette, shown: &str, options: &[&str], current: Option<usize>, width: f32, translate: bool) -> Option<usize> {
+    let button = dropdown_shown(ui, palette, shown, None, width, translate);
     let mut picked = None;
     egui::Popup::from_toggle_button_response(&button)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.set_width(width.max(200.0));
-            for (index, label) in options.iter().enumerate() {
-                if menu_item(ui, palette, None, label, "", Some(index) == current).clicked() {
-                    picked = Some(index);
-                    ui.close();
+            // Rows of several lines can make the list taller than the window: past `menu_list_height` it scrolls, so every
+            // choice stays reachable. A shorter list keeps its own height.
+            egui::ScrollArea::vertical().max_height(menu_list_height(ui.ctx())).show(ui, |ui| {
+                for (index, label) in options.iter().enumerate() {
+                    let item = if translate {
+                        menu_item(ui, palette, None, label, "", Some(index) == current)
+                    } else {
+                        menu_item_verbatim(ui, palette, None, label, Some(index) == current)
+                    };
+                    if item.clicked() {
+                        picked = Some(index);
+                        ui.close();
+                    }
                 }
-            }
+            });
         });
     picked
+}
+
+/// The most height a choice list takes before it scrolls: the window's height less a margin, never under 120.
+fn menu_list_height(ctx: &egui::Context) -> f32 {
+    (ctx.content_rect().height() - 96.0).clamp(120.0, 480.0)
 }
 
 /// A check box in the house style: a 16 px box (radius 4, `line-strong` border; on: `accent` with an `on-accent` check)
@@ -1303,6 +1399,16 @@ pub fn checkbox(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str)
 /// `checkbox` whose name is `record` where the drawn `label` is empty or not the name (a box beside a row label). The name is
 /// the accessible name and the `ui.layout` record; the drawn text stays `label`.
 pub fn checkbox_recorded(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str, record: &str) -> Response {
+    checkbox_shown(ui, palette, checked, &tr(label), record)
+}
+
+/// A `checkbox` whose label holds the person's own text (a figure's title): shown as written. The caller translates the
+/// window's own words in it.
+pub fn checkbox_verbatim(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str) -> Response {
+    checkbox_shown(ui, palette, checked, label, label)
+}
+
+fn checkbox_shown(ui: &mut Ui, palette: &Palette, checked: &mut bool, label: &str, record: &str) -> Response {
     let width = ui.available_width().min(DIALOG_FORM_WIDTH);
     let enabled = ui.is_enabled();
     // A disabled check box paints `ink-3` and its own `line` and `surface-3`: the half opacity of a disabled ui is taken back.
@@ -1381,7 +1487,11 @@ pub const CELL_MAX_WIDTH: f32 = 120.0;
 const CELL_PADDING: f32 = 6.0;
 
 /// The header of a table column: its text 6 in from the left, as the values under it are (`table_cell`).
-pub fn table_head(ui: &mut Ui, text: &str) {
+///
+/// The text is the data's own (an imported column's name and unit) and is shown as written: in English a column called
+/// `제목` is not shown as a `Title` column. The window has no fixed table headers of its own; one would translate its words
+/// before passing them.
+pub fn table_head_verbatim(ui: &mut Ui, text: &str) {
     ui.horizontal(|ui| {
         ui.add_space(CELL_PADDING);
         ui.label(text);

@@ -2,7 +2,7 @@
     "format":  "designllm-assets",
     "version":  1,
     "icon_sets":  {
-                      "ui":  182,
+                      "ui":  191,
                       "content":  43,
                       "app":  5
                   },
@@ -338,8 +338,8 @@
                   {
                       "path":  "assets\\icons\\ui\\index.json",
                       "set":  "ui",
-                      "bytes":  37219,
-                      "sha256":  "511a63ccd57015609b763b7feed915f1e12b56e5a98d770dac7ffd878b17df1d"
+                      "bytes":  39179,
+                      "sha256":  "f313319b420bd5ae55dac9b4c4135d111e5c9d329574fc8b7d8e96b871a91837"
                   },
                   {
                       "path":  "assets\\icons\\ui\\ins-chart.svg",
@@ -1402,6 +1402,60 @@
                       "set":  "app",
                       "bytes":  1040,
                       "sha256":  "6158cab6f60a14abbbc72828e0e5c58ab228e47b99e7c7b839c6ebaade4b0381"
+                  },
+                  {
+                      "path":  "assets\\icons\\ui\\shape-circle-plus.svg",
+                      "set":  "ui",
+                      "bytes":  254,
+                      "sha256":  "d19be37a2bcd398714eba37d0eacf4de9e2b4a549bb2ecba47cbe241715c2c89"
+                  },
+                  {
+                      "path":  "assets\\icons\\ui\\shape-circle-times.svg",
+                      "set":  "ui",
+                      "bytes":  282,
+                      "sha256":  "d83108f381e5406c48dbc2a407379ead6047ae0fdd8b928d505ad281b1a241e3"
+                  },
+                  {
+                      "path":  "assets\\icons\\ui\\shape-cuboid.svg",
+                      "set":  "ui",
+                      "bytes":  244,
+                      "sha256":  "c02033f2fc236d47142db2a441f4d19661da4fe2b3d3222715656d2c926cd58c"
+                  },
+                  {
+                      "path":  "assets\\icons\\ui\\shape-cylinder.svg",
+                      "set":  "ui",
+                      "bytes":  338,
+                      "sha256":  "da4b098ac4f3028062d83f16f5739b7a99b84a8654a3741b499ae9a90da8d908"
+                  },
+                  {
+                      "path":  "assets\\icons\\ui\\shape-decoder.svg",
+                      "set":  "ui",
+                      "bytes":  223,
+                      "sha256":  "aeb2ec702d95dce3a8f05a9685121f3633d6b3e11c38a3401e35a75083b08883"
+                  },
+                  {
+                      "path":  "assets\\icons\\ui\\shape-diamond.svg",
+                      "set":  "ui",
+                      "bytes":  224,
+                      "sha256":  "99b40c571425fafb565b682baa44a7136dd7d179cc11d0448517b8072ddca22d"
+                  },
+                  {
+                      "path":  "assets\\icons\\ui\\shape-encoder.svg",
+                      "set":  "ui",
+                      "bytes":  223,
+                      "sha256":  "843bc469b2439c1762ab8c8bcc7e4095b258852d30666c4c092cb5676178fa3b"
+                  },
+                  {
+                      "path":  "assets\\icons\\ui\\shape-hexagon.svg",
+                      "set":  "ui",
+                      "bytes":  228,
+                      "sha256":  "96ca25d2031f1b3b28cf916c4e58b658ad06a13aa739766ca580c3681376d324"
+                  },
+                  {
+                      "path":  "assets\\icons\\ui\\shape-parallelogram.svg",
+                      "set":  "ui",
+                      "bytes":  217,
+                      "sha256":  "a88591c4e79371be2430cd07d2f5caeaf7c41bdaeaa3aac29d2c668a2b83859d"
                   }
               ]
 }

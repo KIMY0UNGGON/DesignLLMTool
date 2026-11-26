@@ -1,0 +1,36 @@
+{
+  "task": "slides-edit",
+  "summary": "Open the shared PPTX fixture, change its text shape, add a rectangle, render the slide, save a PPTX and export a PDF.",
+  "steps": [
+    { "id": "workspace", "tool": "workspace_list", "arguments": {}, "bind": { "workspace_id": "/structuredContent/workspace_id" } },
+    { "id": "open", "tool": "artifact_open", "arguments": { "request_id": "$request_id", "actor": "scenario", "path": "$fixture:pptx.basic-preserve", "kind": "slides" }, "bind": { "artifact": "/structuredContent/id", "revision": "/structuredContent/revision" } },
+    { "id": "view0", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "view0" },
+    { "select": { "from": "view0", "pointer": "/structuredContent/body/document/pages", "where": { "text_contains": "기본 텍스트" }, "field": "id" }, "as": "text_node" },
+    { "select": { "from": "view0", "pointer": "/structuredContent/body/document/pages", "field": "id" }, "as": "page_one" },
+    { "id": "edit_text", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [ { "op": "set_text", "node_id": "$text_node", "text": "P0 slides edit" } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "add_box", "tool": "changes_apply", "arguments": {
+        "request_id": "$request_id", "actor": "scenario", "workspace_id": "$workspace_id", "artifact_id": "$artifact", "base_revision": "$revision",
+        "allowed_intents": ["content"], "job_ref": null, "read_dependencies": [],
+        "operations": [ { "op": "add_node", "page_id": "$page_one", "parent_id": null, "node": { "id": "p0-box", "kind": "rectangle", "bounds": { "x": 914400, "y": 4572000, "width": 3657600, "height": 914400 }, "text": "", "style": { "font_family": "Pretendard", "font_size": 152400, "color": "#20252D", "fill": "#EAF0FA", "stroke": "#566479", "stroke_width": 12700, "bold": false, "italic": false, "align": "left" }, "asset": null, "children": [], "layout": null, "interactions": [], "variants": {} } } ]
+      }, "bind": { "revision": "/structuredContent/revision" } },
+    { "id": "save_pptx", "tool": "artifact_save", "arguments": {
+        "request_id": "$request_id", "artifact_id": "$artifact", "expected_revision": "$revision",
+        "target_path": "$scratch/edited.pptx", "overwrite": false, "expected_target_hash": null
+      }, "bind": { "saved_hash": "/structuredContent/target_hash" } },
+    { "id": "export_pdf", "tool": "artifact_export", "arguments": {
+        "request_id": "$request_id", "options": { "artifact_id": "$artifact", "expected_revision": "$revision", "format": "pdf", "required_editability": "none", "allowed_losses": [], "profile": { "dpi": 96, "transparent": false }, "page_indices": null },
+        "target_path": "$scratch/edited.pdf", "overwrite": false, "expected_target_hash": null
+      } },
+    { "id": "final", "tool": "artifact_inspect", "arguments": { "artifact_id": "$artifact" }, "save": "final" }
+  ],
+  "checks": [
+    { "check": "text_present", "text": "P0 slides edit" },
+    { "check": "render", "page": 0 },
+    { "check": "file", "path": "$scratch/edited.pptx", "magic": "PK", "sha256": "$saved_hash", "zip_entry": "ppt/slides/slide1.xml" },
+    { "check": "file", "path": "$scratch/edited.pdf", "magic": "%PDF-" }
+  ]
+}

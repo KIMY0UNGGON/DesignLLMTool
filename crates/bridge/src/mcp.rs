@@ -14,7 +14,9 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use designllm_contracts::{DltError, DltResult, ErrorCode, JobRef};
+use std::collections::{BTreeMap, BTreeSet};
+
+use designllm_contracts::{ArtifactKind, DltError, DltResult, ErrorCode, JobRef};
 use serde_json::{json, Value};
 
 use crate::assets::{base64_encode, fetch_asset};
@@ -137,6 +139,66 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Error code of a change refused because this connection has not yet received the artifact's design guide.
+pub const GUIDE_REQUIRED: &str = "GUIDE_REQUIRED";
+/// Methods that change an artifact's design or content: the first one per guide is held until the guide is delivered.
+/// Undo and redo restore earlier states and are not held; GUI commands act on what a person sees and are not held either.
+const GUIDED_METHODS: &[&str] = &[
+    "changes.validate", "changes.apply", "proposal.create", "proposal.apply", "design_themes.apply", "figure.dataset.edit",
+    "design_system.set", "design_system.publish",
+];
+/// Methods whose answer introduces an artifact to the agent: their result carries the artifact's guide once.
+const INTRODUCING_METHODS: &[&str] = &["artifact.create", "artifact.open", "artifact.inspect", "context.read", "artifact.validate"];
+/// Design-quality warnings attached after an apply, at most this many.
+const QUALITY_NOTE_LIMIT: usize = 20;
+
+/// Which guides this connection has delivered, which are on their way to the client, and what it knows of each artifact.
+#[derive(Default)]
+struct GuideState {
+    /// Guides whose response reached the client (or an in-process caller).
+    delivered: BTreeSet<&'static str>,
+    /// Guides put into a response that has not been written yet: changes for them are held until it is.
+    pending: BTreeSet<&'static str>,
+    artifacts: BTreeMap<String, (ArtifactKind, String)>,
+}
+
+/// What a guide check found for one artifact.
+enum Claim {
+    /// The client has the guide.
+    Delivered,
+    /// Another response of this connection carries it and has not been written yet.
+    Pending,
+    /// This call delivers it: the text goes into its response.
+    Claimed(&'static str, String),
+}
+
+
+/// Records the id, kind and title of one artifact summary.
+fn learn_summary(guides: &mut GuideState, item: &Value) {
+    let id = item.get("id").or_else(|| item.get("artifact_id")).and_then(Value::as_str);
+    let kind = item.get("kind").cloned().and_then(|kind| serde_json::from_value::<ArtifactKind>(kind).ok());
+    if let (Some(id), Some(kind)) = (id, kind) {
+        let title = item.get("title").and_then(Value::as_str).unwrap_or_default().to_string();
+        guides.artifacts.insert(id.to_string(), (kind, title));
+    }
+}
+
+/// An optional string argument of a tool the bridge answers itself: absent or null is None, any other type is refused.
+fn text_argument<'a>(arguments: &'a Value, name: &str) -> DltResult<Option<&'a str>> {
+    match arguments.get(name) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => Ok(Some(text.as_str())),
+        Some(_) => Err(DltError::invalid(format!("{name} must be a string"))),
+    }
+}
+
+/// A failed lookup behind the guide gate: the change is refused with the backend's own error (code, retryability, ids and
+/// diagnostics kept), its message saying that nothing was applied.
+fn lookup_failed(mut error: DltError) -> DltError {
+    error.message = format!("the design guide for this change could not be checked, so nothing was applied: {}", error.message);
+    error
+}
+
 /// Protocol state for one stdio session.
 pub struct McpServer {
     backend: Arc<dyn ToolBackend>,
@@ -146,6 +208,10 @@ pub struct McpServer {
     /// The connection of an app job: `initialize` reports the MCP client to the job (`job.set_client`).
     job_bound: bool,
     startup: Option<Startup>,
+    /// Whether this connection must deliver an artifact's design guide before its first change (workspace clients). A job's
+    /// connection does not: the job's prompt already carries the guide (`manual::job_design_guidance`).
+    guide_gate: bool,
+    guides: Mutex<GuideState>,
 }
 
 impl McpServer {
@@ -153,6 +219,7 @@ impl McpServer {
     pub fn new(backend: Arc<dyn ToolBackend>, scope: Scope) -> Self {
         let mut server = Self::with_tools(backend, tools_for(scope));
         server.job_bound = scope == Scope::JobBound;
+        server.guide_gate = scope == Scope::Workspace;
         server
     }
 
@@ -165,11 +232,224 @@ impl McpServer {
             permits: Permits { used: Mutex::new(0), freed: Condvar::new() },
             job_bound: false,
             startup: None,
+            guide_gate: false,
+            guides: Mutex::new(GuideState::default()),
         }
+    }
+
+    /// The same server without the guide gate, for in-process callers that test engine behaviour rather than agent guidance.
+    pub fn without_guide_gate(mut self) -> Self {
+        self.guide_gate = false;
+        self
+    }
+
+    /// Kind and title of `artifact_id`: from what this connection has seen, else from `workspace.list`. `Ok(None)` when the
+    /// workspace has no such artifact; a failed listing is an error, so a change is never let through on a guess.
+    fn artifact_info(&self, artifact_id: &str) -> DltResult<Option<(ArtifactKind, String)>> {
+        if let Some(found) = lock(&self.guides).artifacts.get(artifact_id).cloned() {
+            return Ok(Some(found));
+        }
+        let listing = self.backend.call("workspace.list", json!({}))?;
+        self.learn_artifacts(&listing);
+        Ok(lock(&self.guides).artifacts.get(artifact_id).cloned())
+    }
+
+    /// Records the id, kind and title of every artifact summary in a `workspace.list` answer.
+    fn learn_artifacts(&self, listing: &Value) {
+        let Some(items) = listing.get("artifacts").and_then(Value::as_array) else { return };
+        let mut guides = lock(&self.guides);
+        for item in items {
+            learn_summary(&mut guides, item);
+        }
+    }
+
+    /// The guide state of an artifact for this connection. The key is checked first, so a delivered guide costs no text.
+    /// `force` claims the guide again even when it was delivered (an explicit `design_guide` request).
+    fn claim(&self, kind: ArtifactKind, title: &str, force: bool) -> Claim {
+        let key = manual::guide_key(kind, title);
+        {
+            let mut guides = lock(&self.guides);
+            if !force {
+                if guides.delivered.contains(key) {
+                    return Claim::Delivered;
+                }
+                if guides.pending.contains(key) {
+                    return Claim::Pending;
+                }
+            }
+            guides.pending.insert(key);
+        }
+        Claim::Claimed(key, manual::guide_for(kind, title).text)
+    }
+
+    /// Marks the guides a response carried as delivered, once that response is written. Called by the stdio loop after the
+    /// write, and by [`McpServer::execute`] for in-process callers.
+    pub fn acknowledge(&self, keys: &[&'static str]) {
+        if keys.is_empty() {
+            return;
+        }
+        let mut guides = lock(&self.guides);
+        for key in keys {
+            guides.pending.remove(key);
+            guides.delivered.insert(key);
+        }
+    }
+
+    /// Forgets guides whose response could not be written: the next change for them delivers the guide again.
+    pub fn release(&self, keys: &[&'static str]) {
+        let mut guides = lock(&self.guides);
+        for key in keys {
+            guides.pending.remove(key);
+        }
+    }
+
+    /// Writes a response that carries `keys` and records them as delivered in one step: guide checks wait while it is
+    /// written, so a client that has read the guide is never told it is still on its way. A failed write releases them.
+    pub fn write_delivering(&self, keys: &[&'static str], write: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+        if keys.is_empty() {
+            return write();
+        }
+        let mut guides = lock(&self.guides);
+        let written = write();
+        for key in keys {
+            guides.pending.remove(key);
+            if written.is_ok() {
+                guides.delivered.insert(key);
+            }
+        }
+        written
+    }
+
+    /// The artifact a guided call changes: `artifact_id`, a proposal's nested change set, or a stored proposal's artifact.
+    fn guided_target(&self, call: &PendingCall) -> DltResult<Option<String>> {
+        let direct = call
+            .arguments
+            .get("artifact_id")
+            .or_else(|| call.arguments.get("change_set").and_then(|set| set.get("artifact_id")))
+            .and_then(Value::as_str);
+        if let Some(id) = direct {
+            return Ok(Some(id.to_string()));
+        }
+        if call.tool.method == "proposal.apply" {
+            if let Some(proposal_id) = call.arguments.get("proposal_id").and_then(Value::as_str) {
+                let proposal = self.backend.call("proposal.get", json!({ "proposal_id": proposal_id }))?;
+                let id = ["/artifact_id", "/change_set/artifact_id", "/proposal/artifact_id", "/proposal/change_set/artifact_id"]
+                    .iter()
+                    .find_map(|pointer| proposal.pointer(pointer).and_then(Value::as_str))
+                    .map(str::to_string);
+                return Ok(id);
+            }
+        }
+        Ok(None)
+    }
+
+    /// GUIDE_REQUIRED for the first change to an artifact whose guide this connection has not delivered. The refusal carries
+    /// the guide and nothing reaches the core, so the same call can be sent again unchanged. A change sent while another
+    /// response is carrying the guide is held too, with a short note. A failed artifact lookup refuses the change.
+    fn guide_refusal(&self, call: &PendingCall, delivered: &mut Vec<&'static str>) -> DltResult<Option<Value>> {
+        if !self.guide_gate || !GUIDED_METHODS.contains(&call.tool.method) {
+            return Ok(None);
+        }
+        let Some(artifact_id) = self.guided_target(call).map_err(lookup_failed)? else { return Ok(None) };
+        let Some((kind, title)) = self.artifact_info(&artifact_id).map_err(lookup_failed)? else { return Ok(None) };
+        let text = match self.claim(kind, &title, false) {
+            Claim::Delivered => return Ok(None),
+            Claim::Pending => format!(
+                "{GUIDE_REQUIRED}: nothing was applied. The design guide for {artifact_id} is in another response of this connection that you have not received yet. Read it, then send this call again."
+            ),
+            Claim::Claimed(key, guide) => {
+                delivered.push(key);
+                format!(
+                    "{GUIDE_REQUIRED}: nothing was applied. This is the first change to {artifact_id} on this connection, and its design guide had not been read. Read the guide below, plan the design by it, then send the call again (the same request_id is fine: the core never saw this call).\n\n{guide}"
+                )
+            }
+        };
+        Ok(Some(json!({
+            "content": [{ "type": "text", "text": text }],
+            "structuredContent": { "code": GUIDE_REQUIRED, "message": "read the design guide, then send the call again", "artifact_id": artifact_id },
+            "isError": true,
+        })))
+    }
+
+    /// After a call: learn artifact kinds from its answer, and add the artifact's guide to the content the first time an
+    /// artifact of that guide is introduced. Lookup failures only leave the guide out: this call changed nothing.
+    fn guide_content(&self, call: &PendingCall, value: &Value, delivered: &mut Vec<&'static str>) -> Option<Value> {
+        if !self.guide_gate {
+            return None;
+        }
+        match call.tool.method {
+            "workspace.list" => {
+                self.learn_artifacts(value);
+                None
+            }
+            method if INTRODUCING_METHODS.contains(&method) => {
+                {
+                    let mut guides = lock(&self.guides);
+                    learn_summary(&mut guides, value);
+                    if let Some(summary) = value.get("artifact") {
+                        learn_summary(&mut guides, summary);
+                    }
+                }
+                let artifact_id = call.arguments.get("artifact_id").and_then(Value::as_str).map(str::to_string).or_else(|| {
+                    value.get("id").or_else(|| value.get("artifact_id")).and_then(Value::as_str).map(str::to_string)
+                });
+                let (kind, title) = match artifact_id.as_deref().map(|id| self.artifact_info(id)) {
+                    Some(Ok(Some(found))) => found,
+                    _ => {
+                        let kind = call.arguments.get("kind").cloned().and_then(|kind| serde_json::from_value::<ArtifactKind>(kind).ok())?;
+                        (kind, call.arguments.get("title").and_then(Value::as_str).unwrap_or_default().to_string())
+                    }
+                };
+                let Claim::Claimed(key, guide) = self.claim(kind, &title, false) else { return None };
+                delivered.push(key);
+                Some(json!({ "type": "text", "text": format!("Design guide for this artifact (mandatory; read it before the first change):\n\n{guide}") }))
+            }
+            _ => None,
+        }
+    }
+
+    /// After a successful apply: the design-quality warnings of the committed revision, read from the receipt's own
+    /// diagnostics (no second validation), so the agent sees them without asking.
+    fn quality_note(&self, call: &PendingCall, receipt: &Value) -> Option<Value> {
+        if call.tool.method != "changes.apply" {
+            return None;
+        }
+        // The receipt can list a warning twice (from the engine's change and from the check of its result): each once. A shared
+        // token change also reports warnings of the artifacts that use it, each naming its artifact in `params.artifact_id`.
+        let target = call.arguments.get("artifact_id").and_then(Value::as_str);
+        let mut seen = BTreeSet::new();
+        let warnings: Vec<String> = receipt
+            .get("diagnostics")
+            .and_then(Value::as_array)?
+            .iter()
+            .filter(|d| d.get("blocking") != Some(&Value::Bool(true)))
+            .filter(|d| d.get("code").and_then(Value::as_str).is_some_and(|code| manual::DESIGN_QUALITY_CODES.contains(&code)))
+            .map(|d| {
+                let code = d.get("code").and_then(Value::as_str).unwrap_or_default();
+                let node = d.get("node_id").and_then(Value::as_str).unwrap_or("-");
+                let message = d.get("message").and_then(Value::as_str).unwrap_or_default();
+                match d.pointer("/params/artifact_id").and_then(Value::as_str).filter(|owner| Some(*owner) != target) {
+                    Some(owner) => format!("- {code} on {node} in artifact {owner}: {message}"),
+                    None => format!("- {code} on {node}: {message}"),
+                }
+            })
+            .filter(|line| seen.insert(line.clone()))
+            .take(QUALITY_NOTE_LIMIT)
+            .collect();
+        if warnings.is_empty() {
+            return None;
+        }
+        let revision = receipt.get("revision").map_or_else(String::new, |revision| format!(" (revision {revision})"));
+        Some(json!({ "type": "text", "text": format!(
+            "Design-quality warnings after this change{revision} (fix each one the user did not explicitly ask for, then apply again):\n{}",
+            warnings.join("\n")
+        ) }))
     }
 
     /// Parses one line and routes it.
     pub fn route_line(&self, line: &str) -> Routed {
+        // A Windows client's first write can start with a UTF-8 byte order mark (.NET stdin writers add one): it is no JSON.
+        let line = line.strip_prefix('\u{feff}').unwrap_or(line);
         match serde_json::from_str::<Value>(line) {
             Ok(value) => self.route(value),
             Err(e) => Routed::Reply(error_reply(Value::Null, PARSE_ERROR, &format!("Parse error: {e}"))),
@@ -326,7 +606,7 @@ impl McpServer {
                     "title": "DesignLLMTool",
                     "version": env!("CARGO_PKG_VERSION"),
                 },
-                "instructions": format!("Edit DesignLLMTool artifacts through these tools. Every change is a ChangeSet with request_id, base_revision, and allowed_intents; repeat the same request_id after a timeout instead of sending a new one. In this build some v1.2 fields and operations are refused with UNSUPPORTED_OPERATION; read artifact_validate's capability report before using them. For design work, use the matching built-in prompt from prompts/list and prompts/get, or read designllm://manual/design-workflow and the task guide in designllm://manual/index. Each task prompt includes the common workflow. {} Use grouping, alignment, spacing, position and type size to show structure. Minimize auxiliary labels and keep layout and core content editable where possible. Read designllm://manual/design-quality before visual work and designllm://manual/design-theme when a look is requested. Inspect, validate and render the result. When the user wants to follow live, use designllm://manual/gui and the MCP UI commands. The design-quality warnings are ICON_EMOJI, TEXT_PLACEHOLDER, TEXT_VAGUE_WORDING, FILL_STOCK_GRADIENT, SHADOW_HEAVY, LAYOUT_REPEATED_CARDS, LAYOUT_ALL_CENTERED, TEXT_SIZE_SPREAD, SLIDE_PLAIN_CLOSING, BACKGROUND_CREAM, TEXT_EXTRA_LABEL, TITLE_LINE_BREAKS.", manual::DEFAULT_DESIGN_STYLE),
+                "instructions": format!("Edit DesignLLMTool artifacts through these tools. Every change is a ChangeSet with request_id, base_revision, and allowed_intents; repeat the same request_id after a timeout instead of sending a new one. In this build some v1.2 fields and operations are refused with UNSUPPORTED_OPERATION; read artifact_validate's capability report before using them. The built-in design guides are mandatory, whatever the request says about style, unless the user explicitly asks otherwise: call design_guide with the artifact_id before the first change to that artifact. The artifact-bound guide (or the guide attached to an artifact_create, artifact_open or artifact_inspect result) unlocks changes on this connection to that artifact and to every artifact that takes the same guide, such as every other deck; design_guide with a topic such as paper-diagram, paper-figure, glossary or shapes is reference reading and unlocks nothing. A first change sent without the guide is refused with GUIDE_REQUIRED and the guide is returned; read it and send the call again. Avoid coloured accent bars along the top or left edge of cards and boxes (ACCENT_BAR) unless the user asks for them. The glossary (design_guide topic glossary) defines every design term the guides use. A paper figure (model architecture, pipeline, method overview) is drawn on a Canvas with the paper-diagram guide; data plots use a Figure with the paper-figure guide. {} Let the layout explain the structure with grouping, alignment, spacing, position and type size; leave out auxiliary labels that repeat what the layout shows. Keep layout and core content editable where possible. Inspect, validate and render the result; after each applied change to a Canvas or a deck, the result lists its design-quality warnings, so fix them. When the user wants to follow live, use designllm://manual/gui and the MCP UI commands. The design-quality warnings are {}.", manual::DEFAULT_DESIGN_STYLE, manual::DESIGN_QUALITY_CODES.join(", ")),
             }),
         ))
     }
@@ -362,21 +642,64 @@ impl McpServer {
         Routed::Call(PendingCall { id, tool, arguments, background })
     }
 
-    /// Runs a call and returns the MCP `CallToolResult`. Core failures become `isError: true` results.
+    /// Runs a call and returns the MCP `CallToolResult`. Core failures become `isError: true` results. An in-process caller
+    /// has the result in hand when this returns, so the guides it carries count as delivered at once.
     pub fn execute(&self, call: &PendingCall) -> Value {
+        let (result, delivered) = self.execute_unacknowledged(call);
+        self.acknowledge(&delivered);
+        result
+    }
+
+    /// [`McpServer::execute`] without marking the guides delivered: the caller does so with [`McpServer::acknowledge`]
+    /// once the result has been written to the client.
+    pub fn execute_unacknowledged(&self, call: &PendingCall) -> (Value, Vec<&'static str>) {
         self.permits.acquire();
-        let result = match self.prepare_call(call.background).and_then(|()| self.run(call)) {
+        let mut delivered = Vec::new();
+        let result = match self.prepare_call(call.background).and_then(|()| self.run(call, &mut delivered)) {
             Ok(result) => result,
             Err(error) => tool_failure(&error),
         };
         self.permits.release();
-        result
+        (result, delivered)
     }
 
     fn prepare_call(&self, background: bool) -> DltResult<()> {
         let Some(startup) = &self.startup else { return Ok(()) };
         let _gate = lock(&startup.gate);
         (startup.start)(background)
+    }
+
+    /// `design_guide`: the mandatory guide of one artifact (with `artifact_id`, and the page `topic` names after it when both
+    /// are given), a manual page by `topic`, or the index with the shared workflow. Answered here from the built-in manual.
+    /// Only the artifact-bound answer unlocks changes, to that artifact and to every artifact that takes the same guide (the
+    /// guide key: same text): a topic page alone is reference reading.
+    fn run_guide(&self, call: &PendingCall, delivered: &mut Vec<&'static str>) -> DltResult<Value> {
+        let topic = text_argument(&call.arguments, "topic")?;
+        let topic_text = match topic {
+            Some(topic) => Some(manual::guide_topic(topic).ok_or_else(|| DltError::invalid(format!("design_guide has no topic {topic}")))?),
+            None => None,
+        };
+        if let Some(artifact_id) = text_argument(&call.arguments, "artifact_id")? {
+            let (kind, title) = self
+                .artifact_info(artifact_id)?
+                .ok_or_else(|| DltError::new(ErrorCode::NotFound, format!("artifact {artifact_id} is not in this workspace")))?;
+            let Claim::Claimed(key, mut text) = self.claim(kind, &title, true) else { unreachable!("a forced claim always claims") };
+            delivered.push(key);
+            if let Some(extra) = topic_text {
+                text.push_str("\n\n");
+                text.push_str(&extra);
+            }
+            return Ok(tool_success(json!({ "artifact_id": artifact_id, "guide": key, "topic": topic }), vec![json!({ "type": "text", "text": text })]));
+        }
+        if let (Some(topic), Some(text)) = (topic, topic_text) {
+            return Ok(tool_success(json!({ "topic": topic }), vec![json!({ "type": "text", "text": text })]));
+        }
+        let mut text = manual::guide_topic("index").unwrap_or_default();
+        text.push('\n');
+        text.push_str(&manual::guide_topic("design-workflow").unwrap_or_default());
+        text.push('\n');
+        text.push_str(&manual::guide_topic("glossary").unwrap_or_default());
+        Ok(tool_success(json!({ "topic": "index" }), vec![json!({ "type": "text", "text": text })]))
     }
 
     /// `ui.screenshot`: queues the run, waits for the GUI to finish it, then returns the stored PNG as image content.
@@ -431,15 +754,19 @@ impl McpServer {
         }
     }
 
-    fn run(&self, call: &PendingCall) -> DltResult<Value> {
+    fn run(&self, call: &PendingCall, delivered: &mut Vec<&'static str>) -> DltResult<Value> {
         // An operation hidden from MCP sessions is refused before the core is asked (operation_exposure).
         if let Some(refusal) = crate::operation_exposure::refusal(call.tool.method, &call.arguments) { return Err(refusal); }
         // The host refuses this too (non-gui connections); kept because a server over an in-process backend has no host.
         if let Some(refusal) = crate::review_gate::agent_refusal(call.tool.method, &call.arguments) { return Err(refusal); }
+        if let Some(refusal) = self.guide_refusal(call, delivered)? { return Ok(refusal); }
         match call.tool.post {
+            Post::Guide => self.run_guide(call, delivered),
             Post::None => {
                 let value = self.backend.call(call.tool.method, call.arguments.clone())?;
-                Ok(tool_success(value, Vec::new()))
+                let extra: Vec<Value> =
+                    [self.guide_content(call, &value, delivered), self.quality_note(call, &value)].into_iter().flatten().collect();
+                Ok(tool_success(value, extra))
             }
             Post::RenderPreview => {
                 let value = self.backend.call(call.tool.method, call.arguments.clone())?;
@@ -605,7 +932,7 @@ pub fn serve_stdio<R: BufRead, W: Write + Send + 'static>(input: R, output: W, s
     let out = Arc::new(Mutex::new(output));
     for line in input.lines() {
         let line = line?;
-        if line.trim().is_empty() {
+        if line.trim_start_matches('\u{feff}').trim().is_empty() {
             continue;
         }
         match server.route_line(&line) {
@@ -615,8 +942,10 @@ pub fn serve_stdio<R: BufRead, W: Write + Send + 'static>(input: R, output: W, s
                 let server = Arc::clone(&server);
                 let out = Arc::clone(&out);
                 thread::spawn(move || {
-                    let result = server.execute(&call);
-                    let _ = write_message(&out, &json!({ "jsonrpc": "2.0", "id": call.id, "result": result }));
+                    let (result, delivered) = server.execute_unacknowledged(&call);
+                    // A guide counts as delivered once its response is on its way to the client; until then, changes for
+                    // that artifact on other workers are held (`Claim::Pending`).
+                    let _ = server.write_delivering(&delivered, || write_message(&out, &json!({ "jsonrpc": "2.0", "id": call.id, "result": result })));
                 });
             }
         }
@@ -948,5 +1277,231 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 1, "{text}");
         assert!(lines[0].contains("\"result\":{}"));
+    }
+
+    #[test]
+    fn a_leading_byte_order_mark_is_not_a_parse_error() {
+        let (_f, s) = server_with(Fake::default(), Scope::Workspace);
+        let line = "\u{feff}{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"t\",\"version\":\"0\"}}}";
+        let Routed::Reply(reply) = s.route_line(line) else { panic!("initialize is answered") };
+        assert_eq!(reply["result"]["serverInfo"]["name"], SERVER_NAME, "{reply}");
+    }
+
+    fn run_tool(server: &McpServer, name: &str, arguments: Value) -> Value {
+        let Routed::Call(call) = server.route(json!({"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":name,"arguments":arguments}}))
+        else { panic!("{name} is a valid call") };
+        server.execute(&call)
+    }
+
+    fn change_set(artifact_id: &str) -> Value {
+        json!({"request_id":"00000000-0000-4000-8000-000000000001","actor":"agent","workspace_id":"w","artifact_id":artifact_id,"base_revision":1,
+            "allowed_intents":["content"],"operations":[]})
+    }
+
+    fn listing(kind: &str, title: &str) -> DltResult<Value> {
+        Ok(json!({"workspace_id":"w","artifacts":[{"id":"a1","kind":kind,"title":title,"revision":1,"engine_id":"e","dirty":false}]}))
+    }
+
+    fn methods(fake: &Fake) -> Vec<String> {
+        fake.calls.lock().unwrap().iter().map(|(method, _)| method.clone()).collect()
+    }
+
+    #[test]
+    fn the_first_change_is_held_until_the_artifact_guide_is_delivered_and_then_passes() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(listing("canvas", "Transformer 구조도"));
+        let (fake, s) = server_with(fake, Scope::Workspace);
+        ready(&s);
+        let held = run_tool(&s, "changes_apply", change_set("a1"));
+        assert_eq!(held["isError"], true);
+        assert_eq!(held["structuredContent"]["code"], GUIDE_REQUIRED);
+        let text = held["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("paper-diagram") && text.contains("circle_plus") && text.contains("Design glossary"), "the paper guide comes with it");
+        assert_eq!(methods(&fake), ["workspace.list"], "nothing reached the core's change methods");
+        let passed = run_tool(&s, "changes_apply", change_set("a1"));
+        assert_eq!(passed["isError"], false, "{passed}");
+        assert_eq!(methods(&fake), ["workspace.list", "changes.apply"], "the apply runs; its warnings come from its own receipt");
+    }
+
+    #[test]
+    fn design_guide_answers_topics_locally_and_delivers_an_artifact_guide() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(listing("figure", "Results"));
+        let (fake, s) = server_with(fake, Scope::Workspace);
+        ready(&s);
+        let glossary = run_tool(&s, "design_guide", json!({"topic":"glossary"}));
+        assert_eq!(glossary["isError"], false);
+        assert!(glossary["content"][1]["text"].as_str().unwrap().contains("Auxiliary label"));
+        assert!(methods(&fake).is_empty(), "topics never reach the core");
+        let unknown = run_tool(&s, "design_guide", json!({"topic":"nope"}));
+        assert_eq!(unknown["isError"], true, "the schema enum or the manual refuses an unknown topic");
+        let guide = run_tool(&s, "design_guide", json!({"artifact_id":"a1"}));
+        assert_eq!(guide["structuredContent"]["guide"], "paper-figure");
+        let passed = run_tool(&s, "changes_validate", change_set("a1"));
+        assert_eq!(passed["isError"], false, "the guide was delivered: {passed}");
+        assert_eq!(methods(&fake), ["workspace.list", "changes.validate"]);
+    }
+
+    #[test]
+    fn creating_an_artifact_returns_its_guide_once_and_job_connections_are_never_held() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(Ok(json!({"id":"a2","kind":"slides","title":"Deck","revision":0,"engine_id":"e","dirty":false})));
+        let (_fake, s) = server_with(fake, Scope::Workspace);
+        ready(&s);
+        let created = run_tool(&s, "artifact_create", json!({"request_id":"00000000-0000-4000-8000-000000000002","actor":"agent","kind":"slides","title":"Deck","size":{"width":12192000,"height":6858000}}));
+        assert_eq!(created["content"].as_array().unwrap().len(), 2, "the result and the guide");
+        assert!(created["content"][1]["text"].as_str().unwrap().contains("manual/slides"));
+        let again = run_tool(&s, "changes_apply", change_set("a2"));
+        assert_eq!(again["isError"], false, "the guide was delivered with the create: {again}");
+
+        let (fake, job) = server_with(Fake::default(), Scope::JobBound);
+        ready(&job);
+        assert_eq!(run_tool(&job, "changes_apply", change_set("a1"))["isError"], false);
+        assert_eq!(methods(&fake), ["job.set_client", "changes.apply"], "a job's prompt carries the guide, so its connection is not held");
+    }
+
+    #[test]
+    fn an_applied_change_reports_the_design_quality_warnings_of_the_result() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(listing("canvas", "Poster"));
+        let (fake, s) = server_with(fake, Scope::Workspace);
+        ready(&s);
+        assert_eq!(run_tool(&s, "design_guide", json!({"artifact_id":"a1"}))["structuredContent"]["guide"], "canvas");
+        // The receipt of changes.apply carries the committed revision's non-blocking diagnostics.
+        fake.answers.lock().unwrap().push_back(Ok(json!({"revision":2,"diagnostics":[
+            {"code":"COLOR_STOCK_DEFAULT","message":"card is filled with #2563EB","node_id":"card","blocking":false,"params":{}},
+            {"code":"COLOR_STOCK_DEFAULT","message":"card is filled with #2563EB","node_id":"card","blocking":false,"params":{}},
+            {"code":"COLOR_STOCK_DEFAULT","message":"card is filled with #2563EB","node_id":"card","blocking":false,"params":{"artifact_id":"a1"}},
+            {"code":"COLOR_STOCK_DEFAULT","message":"card is filled with #2563EB","node_id":"card","blocking":false,"params":{"artifact_id":"a2"}},
+            {"code":"COLOR_STOCK_DEFAULT","message":"card is filled with #2563EB","node_id":"card","blocking":false,"params":{"artifact_id":"a3"}},
+            {"code":"SOMETHING_ELSE","message":"other","node_id":"x","blocking":false,"params":{}}
+        ]})));
+        let applied = run_tool(&s, "changes_apply", change_set("a1"));
+        let note = applied["content"][1]["text"].as_str().expect("a quality note");
+        assert!(note.contains("COLOR_STOCK_DEFAULT on card") && !note.contains("SOMETHING_ELSE"), "{note}");
+        assert!(note.contains("revision 2"), "{note}");
+        assert_eq!(note.matches("COLOR_STOCK_DEFAULT on card:").count(), 1, "a warning the receipt lists twice is shown once: {note}");
+        assert!(note.contains("COLOR_STOCK_DEFAULT on card in artifact a2:") && note.contains("COLOR_STOCK_DEFAULT on card in artifact a3:"), "a token change's warnings in the artifacts that use it name them: {note}");
+        assert_eq!(methods(&fake), ["workspace.list", "changes.apply"], "no second validation");
+    }
+
+    #[test]
+    fn a_change_sent_while_the_guide_is_on_its_way_is_held_until_that_response_is_written() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(listing("slides", "Deck"));
+        let (fake, s) = server_with(fake, Scope::Workspace);
+        ready(&s);
+        let route = |name: &str, arguments: Value| match s.route(json!({"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":name,"arguments":arguments}})) {
+            Routed::Call(call) => call,
+            other => panic!("{name}: {other:?}"),
+        };
+        // The first change claims the guide; its response is not written yet.
+        let (first, delivered) = s.execute_unacknowledged(&route("changes_apply", change_set("a1")));
+        assert_eq!(first["structuredContent"]["code"], GUIDE_REQUIRED);
+        assert_eq!(delivered, ["slides"]);
+        let (second, none) = s.execute_unacknowledged(&route("changes_apply", change_set("a1")));
+        assert_eq!(second["structuredContent"]["code"], GUIDE_REQUIRED, "a parallel change is held too");
+        assert!(second["content"][0]["text"].as_str().unwrap().contains("another response"), "{second}");
+        assert!(none.is_empty(), "the held call carries no guide of its own");
+        s.acknowledge(&delivered);
+        assert_eq!(run_tool(&s, "changes_apply", change_set("a1"))["isError"], false, "after the write the change passes");
+        assert_eq!(methods(&fake), ["workspace.list", "changes.apply"], "one listing, one apply");
+    }
+
+    #[test]
+    fn a_guide_whose_response_could_not_be_written_is_delivered_again() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(listing("slides", "Deck"));
+        let (_fake, s) = server_with(fake, Scope::Workspace);
+        ready(&s);
+        let Routed::Call(call) = s.route(json!({"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"changes_apply","arguments":change_set("a1")}}))
+        else { panic!("a call") };
+        let (first, delivered) = s.execute_unacknowledged(&call);
+        assert_eq!(first["structuredContent"]["code"], GUIDE_REQUIRED);
+        let failed = s.write_delivering(&delivered, || Err(io::Error::new(io::ErrorKind::BrokenPipe, "gone")));
+        assert!(failed.is_err());
+        let again = run_tool(&s, "changes_apply", change_set("a1"));
+        assert_eq!(again["structuredContent"]["code"], GUIDE_REQUIRED);
+        assert!(again["content"][0]["text"].as_str().unwrap().contains("manual/slides"), "the full guide again, not the pending note: {again}");
+        assert_eq!(run_tool(&s, "changes_apply", change_set("a1"))["isError"], false, "delivered by the in-process call");
+    }
+
+    #[test]
+    fn a_failed_lookup_refuses_the_change_and_design_guide_tells_failure_from_absence() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(Err(DltError::new(ErrorCode::HostNotRunning, "the host is not running")));
+        fake.answers.lock().unwrap().push_back(Err(DltError::new(ErrorCode::HostNotRunning, "the host is not running")));
+        fake.answers.lock().unwrap().push_back(listing("canvas", "Poster"));
+        let (fake, s) = server_with(fake, Scope::Workspace);
+        ready(&s);
+        let refused = run_tool(&s, "changes_apply", change_set("a1"));
+        assert_eq!(refused["isError"], true);
+        assert_eq!(refused["structuredContent"]["code"], "HOST_NOT_RUNNING", "{refused}");
+        assert!(refused["content"][0]["text"].as_str().unwrap().contains("nothing was applied"));
+        assert_eq!(methods(&fake), ["workspace.list"], "the change never reached the core");
+        let guide = run_tool(&s, "design_guide", json!({"artifact_id":"a1"}));
+        assert_eq!(guide["structuredContent"]["code"], "HOST_NOT_RUNNING", "a failed listing is not NOT_FOUND: {guide}");
+        let missing = run_tool(&s, "design_guide", json!({"artifact_id":"nope"}));
+        assert_eq!(missing["structuredContent"]["code"], "NOT_FOUND", "{missing}");
+    }
+
+    #[test]
+    fn a_topic_page_alone_does_not_unlock_changes_and_both_arguments_give_both() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(listing("slides", "Deck"));
+        let (_fake, s) = server_with(fake, Scope::Workspace);
+        ready(&s);
+        assert_eq!(run_tool(&s, "design_guide", json!({"topic":"slides"}))["isError"], false);
+        assert_eq!(run_tool(&s, "changes_apply", change_set("a1"))["structuredContent"]["code"], GUIDE_REQUIRED, "reference reading is not the artifact's guide");
+        let both = run_tool(&s, "design_guide", json!({"artifact_id":"a1","topic":"glossary"}));
+        assert_eq!(both["structuredContent"]["guide"], "slides");
+        let text = both["content"][1]["text"].as_str().unwrap();
+        assert!(text.contains("manual/slides") && text.matches("Design glossary").count() >= 2, "the artifact guide, then the topic");
+    }
+
+    #[test]
+    fn a_delivered_guide_unlocks_every_artifact_that_takes_the_same_guide_and_no_other() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(Ok(json!({"workspace_id":"w","artifacts":[
+            {"id":"a1","kind":"slides","title":"Deck A","revision":1,"engine_id":"e","dirty":false},
+            {"id":"a2","kind":"slides","title":"Deck B","revision":1,"engine_id":"e","dirty":false},
+            {"id":"a3","kind":"canvas","title":"Transformer 구조도","revision":1,"engine_id":"e","dirty":false}]})));
+        let (_fake, s) = server_with(fake, Scope::Workspace);
+        ready(&s);
+        assert_eq!(run_tool(&s, "design_guide", json!({"artifact_id":"a1"}))["structuredContent"]["guide"], "slides");
+        assert_eq!(run_tool(&s, "changes_apply", change_set("a2"))["isError"], false, "deck B takes the same guide, already delivered");
+        let other = run_tool(&s, "changes_apply", change_set("a3"));
+        assert_eq!(other["structuredContent"]["code"], GUIDE_REQUIRED, "a paper diagram takes another guide: {other}");
+    }
+
+    #[test]
+    fn a_change_waits_while_its_guide_is_being_written_and_passes_once_the_write_is_done() {
+        let fake = Fake::default();
+        fake.answers.lock().unwrap().push_back(listing("slides", "Deck"));
+        let (_fake, s) = server_with(fake, Scope::Workspace);
+        let s = Arc::new(s);
+        ready(&s);
+        let Routed::Call(call) = s.route(json!({"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":"changes_apply","arguments":change_set("a1")}}))
+        else { panic!("a call") };
+        let (first, delivered) = s.execute_unacknowledged(&call);
+        assert_eq!(first["structuredContent"]["code"], GUIDE_REQUIRED);
+        let (writing_tx, writing_rx) = std::sync::mpsc::channel::<()>();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel::<()>();
+        let writer = {
+            let s = Arc::clone(&s);
+            thread::spawn(move || s.write_delivering(&delivered, || { writing_tx.send(()).unwrap(); finish_rx.recv().unwrap(); Ok(()) }))
+        };
+        writing_rx.recv().unwrap();
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let second = {
+            let (s, done) = (Arc::clone(&s), Arc::clone(&done));
+            thread::spawn(move || { let reply = run_tool(&s, "changes_apply", change_set("a1")); done.store(true, std::sync::atomic::Ordering::SeqCst); reply })
+        };
+        thread::sleep(Duration::from_millis(150));
+        assert!(!done.load(std::sync::atomic::Ordering::SeqCst), "the change waits for the guide's write instead of being answered meanwhile");
+        finish_tx.send(()).unwrap();
+        writer.join().unwrap().unwrap();
+        let reply = second.join().unwrap();
+        assert_eq!(reply["isError"], false, "the write recorded the guide before the waiting change looked: {reply}");
     }
 }
