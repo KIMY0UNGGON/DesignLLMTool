@@ -6,7 +6,7 @@ use std::{io::Read, path::PathBuf};
 mod gl_check;
 
 #[derive(Default)]
-struct Args { workspace: Option<PathBuf>, mode: String, command: Option<PathBuf>, output: Option<PathBuf>, checkpoint_id: Option<String>, destination: Option<PathBuf>, job: Option<String>, attempt: Option<String>, web_path: Option<PathBuf>, parent_hwnd: Option<isize>, invisible: bool, ui_test_mock_agent: Option<PathBuf> }
+struct Args { workspace: Option<PathBuf>, project: Option<PathBuf>, mode: String, command: Option<PathBuf>, output: Option<PathBuf>, checkpoint_id: Option<String>, destination: Option<PathBuf>, job: Option<String>, attempt: Option<String>, web_path: Option<PathBuf>, parent_hwnd: Option<isize>, invisible: bool, background: bool, ui_test_mock_agent: Option<PathBuf> }
 fn parse() -> DltResult<Args> {
     let mut result = Args::default();
     let mut workspace_occurrences = 0usize;
@@ -16,6 +16,10 @@ fn parse() -> DltResult<Args> {
             "--workspace" => {
                 workspace_occurrences += 1;
                 result.workspace = Some(PathBuf::from(args.next().ok_or_else(|| DltError::invalid("--workspace needs a path"))?));
+            },
+            "--project" => {
+                if result.project.is_some() { return Err(DltError::invalid("Specify --project only once")); }
+                result.project = Some(PathBuf::from(args.next().ok_or_else(|| DltError::invalid("--project needs a folder"))?));
             },
             "--host" | "--headless" | "--mcp" | "--smoke-test" | "--command" | "--version" | "--help" | "--list-migration-checkpoints" | "--pdf-worker" | "--gl-probe" | "--wgpu-probe" | "--wgpu-warp-probe" => set_mode(&mut result.mode, &arg.to_string_lossy())?,
             "--restore-migration-checkpoint" => {
@@ -36,6 +40,7 @@ fn parse() -> DltResult<Args> {
             "--preview-web" => { set_mode(&mut result.mode, "--preview-web")?; result.web_path = Some(PathBuf::from(args.next().ok_or_else(|| DltError::invalid("--preview-web needs a path"))?)); },
             "--parent-hwnd" => result.parent_hwnd = Some(args.next().ok_or_else(|| DltError::invalid("--parent-hwnd needs a handle"))?.to_string_lossy().parse().map_err(|_| DltError::invalid("Invalid window handle"))?),
             "--invisible" => result.invisible = true,
+            "--background" => result.background = true,
             // Task 69: only the window of a UI-test launch passes this to the host it starts (`ensure_host`).
             "--ui-test-mock-agent" => result.ui_test_mock_agent = Some(designllm_application::ui_test_mock_agent_path(&args.next().ok_or_else(|| DltError::invalid("--ui-test-mock-agent needs a path"))?)?),
             "--job-id" => result.job = Some(args.next().ok_or_else(|| DltError::invalid("--job-id needs an ID"))?.to_string_lossy().into_owned()),
@@ -43,8 +48,10 @@ fn parse() -> DltResult<Args> {
             other => return Err(DltError::invalid(format!("Unknown argument: {other}"))),
         }
     }
+    if result.project.is_some() && result.workspace.is_some() { return Err(DltError::invalid("Specify either --project or --workspace")); }
     if (result.invisible || result.parent_hwnd.is_some()) && result.mode != "--preview-web" { return Err(DltError::invalid("--invisible/--parent-hwnd apply only to --preview-web; use --smoke-test for the desktop")); }
     if (result.job.is_some() || result.attempt.is_some()) && result.mode != "--mcp" { return Err(DltError::invalid("Job binding applies only to --mcp")); }
+    if result.background && result.mode != "--mcp" { return Err(DltError::invalid("--background applies only to --mcp")); }
     if result.ui_test_mock_agent.is_some() && result.mode != "--host" { return Err(DltError::invalid("--ui-test-mock-agent applies only to --host")); }
     // A host started by hand takes a mock agent only inside a UI-test launch (the window's host inherits its variable).
     if result.ui_test_mock_agent.is_some() && !designllm_application::ui_test_launch() { return Err(DltError::invalid("--ui-test-mock-agent needs DESIGNLLM_UI_TEST_INPUT (a UI-test launch)")); }
@@ -68,14 +75,27 @@ fn run() -> DltResult<()> {
     if args.mode == "--pdf-worker" { return designllm_application::pdf_worker::run_worker(); }
     // The hidden renderer probe children of `gl_check::require` (tasks 62, 65). They open no workspace.
     if let Some(renderer) = gl_check::probe_renderer(&args.mode) { return gl_check::run_probe(renderer); }
-    if args.mode == "--help" { println!("DesignLLMTool [--workspace PATH]\n  --headless | --host | --mcp\n  --command-file JSON_FILE | --command (JSON on stdin)\n  --list-migration-checkpoints --workspace SOURCE\n  --restore-migration-checkpoint ID --workspace SOURCE --destination NEW_FOLDER\n  --smoke-test --workspace SCRATCH --output SCREENSHOT.png\n  --preview-web HTML_PATH [--parent-hwnd HANDLE] [--invisible]"); return Ok(()); }
+    if args.mode == "--help" { println!("DesignLLMTool [--project EXISTING_FOLDER | --workspace PATH]\n  --project stores the workspace in .designllm and saves native files in artifacts inside the project\n  --headless | --host | --mcp [--background]\n  --command-file JSON_FILE | --command (JSON on stdin)\n  --list-migration-checkpoints --workspace SOURCE\n  --restore-migration-checkpoint ID --workspace SOURCE --destination NEW_FOLDER\n  --smoke-test --workspace SCRATCH --output SCREENSHOT.png\n  --preview-web HTML_PATH [--parent-hwnd HANDLE] [--invisible]"); return Ok(()); }
     let explicit_workspace = args.workspace.is_some();
     if matches!(args.mode.as_str(), "--list-migration-checkpoints" | "--restore-migration-checkpoint")
         && (!explicit_workspace || args.workspace.as_ref().is_some_and(|path| path.as_os_str().is_empty()))
     {
         return Err(DltError::invalid("checkpoint commands require a non-empty explicit source --workspace path; they never select or create the default workspace"));
     }
-    let workspace = match args.workspace { Some(path) => path, None => designllm_application::default_workspace()? };
+    let workspace = match (args.project, args.workspace) {
+        (Some(project), None) => match designllm_application::project_workspace(&project) {
+            Ok(workspace) => workspace,
+            Err(error) => {
+                if args.mode.is_empty() {
+                    gl_check::show_message_box(&format!("프로젝트 폴더를 열 수 없습니다.\n\n{}", error.message));
+                }
+                return Err(error);
+            }
+        },
+        (None, Some(path)) => path,
+        (None, None) => designllm_application::default_workspace()?,
+        (Some(_), Some(_)) => return Err(DltError::invalid("Specify either --project or --workspace")),
+    };
     match args.mode.as_str() {
         "--preview-web" => {
             if let Some(runtime) = designllm_application::web_runtime_directory() { std::env::set_var("DESIGNLLM_WEBVIEW2_DIR", runtime); }
@@ -98,7 +118,14 @@ fn run() -> DltResult<()> {
         }
         "--mcp" => {
             let binding = match (args.job, args.attempt) { (None, None) => None, (Some(job_id), Some(attempt_id)) => Some(JobRef { job_id, attempt_id }), _ => return Err(DltError::invalid("Both job and attempt IDs are required")) };
-            designllm_bridge::run_stdio(&workspace, binding)
+            if binding.is_some() {
+                return designllm_bridge::run_stdio(&workspace, binding);
+            }
+            let root = workspace.clone();
+            designllm_bridge::mcp::run_stdio_with_startup(&workspace, move |background| {
+                if args.background || background { designllm_application::ensure_host(&root) }
+                else { designllm_application::ensure_visible_app(&root) }
+            })
         }
         "--command" => {
             let text = if let Some(path) = args.command { std::fs::read_to_string(path)? } else { let mut text=String::new(); std::io::stdin().read_to_string(&mut text)?; text };

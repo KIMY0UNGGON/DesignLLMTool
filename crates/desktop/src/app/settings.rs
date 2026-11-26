@@ -70,10 +70,11 @@ impl DesktopApp {
     /// Reads the workspace's GUI settings and keeps their path for later writes. The unsent drafts of the workspace
     /// come back here too, as recovered drafts (`drafts.rs`).
     pub(crate) fn with_workspace(mut self, workspace: &Path) -> Self {
+        self.home.project_folder = crate::project_folder(workspace);
         let path = settings_path(workspace);
         let settings = load(&path);
         self.home.starred = settings.starred.clone();
-        if matches!(settings.runtime.as_str(), "claude" | "codex") {
+        if matches!(settings.runtime.as_str(), "claude" | "agy" | "codex") {
             self.ai_runtime = settings.runtime.clone();
         }
         if matches!(settings.effort.as_str(), "minimal" | "low" | "medium" | "high" | "xhigh" | "max") {

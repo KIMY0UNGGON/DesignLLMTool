@@ -2,7 +2,7 @@
 //! the properties panel, the board and the floating groups on it. Every control here invokes a
 //! registered command (`DesktopApp::invoke`); nothing in this file calls the engine directly.
 
-use designllm_contracts::{Artifact, ArtifactBody, ArtifactKind, JobStatus};
+use designllm_contracts::{Artifact, ArtifactBody, ArtifactKind, Feature, JobStatus};
 use eframe::egui::{
     self, Align, Area, Context, CornerRadius, Frame, Layout, Margin, Order, Pos2, Rect, Response, Sense, Stroke,
     TopBottomPanel, Ui, Vec2,
@@ -51,9 +51,9 @@ pub(super) fn is_file_backed(kind: ArtifactKind) -> bool {
     matches!(kind, ArtifactKind::Docx | ArtifactKind::Hwpx | ArtifactKind::Hwp | ArtifactKind::Slides)
 }
 
-/// The agent letter and colour slot for a runtime name (§5.5). Claude is `C`, Codex is `X`.
+/// The letter on an app job's avatar.
 pub(super) fn agent_letter(runtime: &str) -> &'static str {
-    if runtime == "codex" { "X" } else { "C" }
+    match runtime { "agy" => "A", "codex" => "X", _ => "C" }
 }
 
 /// The state word of an agent mark in a tooltip (§5.5 states).
@@ -256,7 +256,8 @@ impl DesktopApp {
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show(|ui| self.export_menu(ui, palette));
             if let Some((kind, dirty)) = self.active.as_ref().map(|item| (item.kind, item.dirty)) {
-                if is_file_backed(kind) && widgets::labeled_button_with(ui, palette, Some("save"), "저장", false, false, dirty).clicked() {
+                let show_save = is_file_backed(kind) || (self.home.project_folder.is_some() && self.feature_write_supported(Feature::NativeRoundtrip));
+                if show_save && widgets::labeled_button_with(ui, palette, Some("save"), "저장", false, false, dirty).clicked() {
                     self.invoke_ui("file.save", json!({}));
                 }
             }
@@ -267,7 +268,7 @@ impl DesktopApp {
             // The letter is the runtime's mark, not an account: the tooltip says what the press does (GUI_DESIGN §5.5).
             let runtime = self.active_runtime();
             let tooltip = format!("AI 패널 열기 · {} {}", super::home::agent_name(&runtime, None), agent_state_word(state));
-            let response = widgets::avatar(ui, palette, agent_letter(&runtime), palette.agent(0), state, 24.0).on_hover_text(tooltip);
+            let response = widgets::avatar(ui, palette, agent_letter(&runtime), super::home::agent_color(palette, &runtime), state, 24.0).on_hover_text(tooltip);
             if response.clicked() {
                 self.left_tab_to(LeftTab::Ai);
             }

@@ -65,6 +65,11 @@ pub struct ClientBackend {
     client: Client,
 }
 
+struct Startup {
+    start: Box<dyn Fn(bool) -> DltResult<()> + Send + Sync>,
+    gate: Mutex<()>,
+}
+
 impl ClientBackend {
     pub fn new(client: Client) -> Self {
         ClientBackend { client }
@@ -94,6 +99,7 @@ pub struct PendingCall {
     pub id: Value,
     pub tool: ToolSpec,
     pub arguments: Value,
+    background: bool,
 }
 
 /// What the transport must do with one routed message.
@@ -139,6 +145,7 @@ pub struct McpServer {
     permits: Permits,
     /// The connection of an app job: `initialize` reports the MCP client to the job (`job.set_client`).
     job_bound: bool,
+    startup: Option<Startup>,
 }
 
 impl McpServer {
@@ -157,6 +164,7 @@ impl McpServer {
             phase: Mutex::new(Phase::Created),
             permits: Permits { used: Mutex::new(0), freed: Condvar::new() },
             job_bound: false,
+            startup: None,
         }
     }
 
@@ -224,7 +232,15 @@ impl McpServer {
             "initialize" => self.initialize(id, params),
             "ping" => Routed::Reply(result_reply(id, json!({}))),
             "tools/list" if self.ready() => {
-                let tools: Vec<Value> = self.tools.iter().map(ToolSpec::to_mcp).collect();
+                let tools: Vec<Value> = self.tools.iter().map(|tool| {
+                    let mut definition = tool.to_mcp();
+                    if self.startup.is_some() {
+                        definition["inputSchema"]["properties"]["background"] = json!({
+                            "type":"boolean", "description":"Set true when the user explicitly requests background work. Otherwise the desktop window opens by default."
+                        });
+                    }
+                    definition
+                }).collect();
                 Routed::Reply(result_reply(id, json!({ "tools": tools })))
             }
             "tools/call" if self.ready() => self.call(id, params),
@@ -325,27 +341,42 @@ impl McpServer {
         let Some(tool) = find(&self.tools, name) else {
             return Routed::Reply(error_reply(id, INVALID_PARAMS, &format!("Unknown tool: {name}")));
         };
-        let arguments = match params.get("arguments") {
+        let mut arguments = match params.get("arguments") {
             None | Some(Value::Null) => json!({}),
             Some(value) => value.clone(),
         };
+        let mut background = false;
+        if self.startup.is_some() {
+            if let Some(value) = arguments.as_object_mut().and_then(|args| args.remove("background")) {
+                let Some(requested) = value.as_bool() else {
+                    return Routed::Reply(result_reply(id, tool_failure_text("background must be a boolean")));
+                };
+                background = requested;
+            }
+        }
         // Argument-schema failures are tool-execution errors (2025-11-25 §Error Handling): the model sees them
         // in the result and can correct the call. Unknown tools stay protocol errors (-32602) above.
         if let Err(message) = validate_arguments(&(tool.schema)(), &arguments) {
             return Routed::Reply(result_reply(id, tool_failure_text(&format!("{}: {message}", tool.name))));
         }
-        Routed::Call(PendingCall { id, tool, arguments })
+        Routed::Call(PendingCall { id, tool, arguments, background })
     }
 
     /// Runs a call and returns the MCP `CallToolResult`. Core failures become `isError: true` results.
     pub fn execute(&self, call: &PendingCall) -> Value {
         self.permits.acquire();
-        let result = match self.run(call) {
+        let result = match self.prepare_call(call.background).and_then(|()| self.run(call)) {
             Ok(result) => result,
             Err(error) => tool_failure(&error),
         };
         self.permits.release();
         result
+    }
+
+    fn prepare_call(&self, background: bool) -> DltResult<()> {
+        let Some(startup) = &self.startup else { return Ok(()) };
+        let _gate = lock(&startup.gate);
+        (startup.start)(background)
     }
 
     /// `ui.screenshot`: queues the run, waits for the GUI to finish it, then returns the stored PNG as image content.
@@ -598,13 +629,26 @@ pub fn serve_stdio<R: BufRead, W: Write + Send + 'static>(input: R, output: W, s
 /// `bound_job` = `Some` for the MCP server a runtime starts for an app job. That connection is bound to
 /// the job's attempt on the host, and only job-scope tools are listed.
 pub fn run_stdio(workspace: &Path, bound_job: Option<JobRef>) -> DltResult<()> {
+    run_stdio_backend(workspace, bound_job, None)
+}
+
+/// Starts the app on the first workspace tool call that needs the host.
+pub fn run_stdio_with_startup(
+    workspace: &Path,
+    start: impl Fn(bool) -> DltResult<()> + Send + Sync + 'static,
+) -> DltResult<()> {
+    run_stdio_backend(workspace, None, Some(Startup { start: Box::new(start), gate: Mutex::new(()) }))
+}
+
+fn run_stdio_backend(workspace: &Path, bound_job: Option<JobRef>, startup: Option<Startup>) -> DltResult<()> {
     let (scope, client) = match bound_job {
         Some(job) => (Scope::JobBound, Client::with_job(workspace, job)),
         None => (Scope::Workspace, Client::with_role(workspace, ClientRole::Bridge)),
     };
-    let server = Arc::new(McpServer::new(Arc::new(ClientBackend::new(client)), scope));
+    let mut server = McpServer::new(Arc::new(ClientBackend::new(client)), scope);
+    server.startup = startup;
     let stdin = io::stdin();
-    serve_stdio(stdin.lock(), io::stdout(), server).map_err(DltError::from)
+    serve_stdio(stdin.lock(), io::stdout(), Arc::new(server)).map_err(DltError::from)
 }
 
 #[cfg(test)]
@@ -667,6 +711,30 @@ mod tests {
     fn ready(server: &McpServer) {
         let _ = initialize(server, LATEST_PROTOCOL_VERSION);
         assert!(matches!(server.route(json!({"jsonrpc":"2.0","method":"notifications/initialized"})), Routed::Nothing));
+    }
+
+    #[test]
+    fn workspace_calls_default_to_visible_and_keep_background_out_of_core_arguments() {
+        let backend = Arc::new(Fake::default());
+        let mut server = McpServer::new(backend.clone(), Scope::Workspace);
+        let starts = Arc::new(Mutex::new(Vec::new()));
+        let observed = starts.clone();
+        server.startup = Some(Startup { start: Box::new(move |background| {
+            lock(&observed).push(background);
+            Ok(())
+        }), gate: Mutex::new(()) });
+        ready(&server);
+
+        let listing = reply(&server, json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}));
+        assert_eq!(listing.pointer("/result/tools/0/inputSchema/properties/background/type"), Some(&json!("boolean")));
+        for arguments in [json!({"background":true}), json!({}), json!({})] {
+            let Routed::Call(call) = server.route(json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
+                "name":"workspace_list","arguments":arguments
+            }})) else { panic!("valid workspace tool call") };
+            assert!(server.execute(&call)["isError"] != true);
+        }
+        assert_eq!(*lock(&starts), vec![true, false, false]);
+        assert!(lock(&backend.calls).iter().all(|(_, arguments)| arguments == &json!({})));
     }
 
     #[test]

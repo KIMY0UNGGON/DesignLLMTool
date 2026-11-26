@@ -206,6 +206,13 @@ pub fn build(info: &RuntimeInfo, spec: &LaunchSpec) -> DltResult<Invocation> {
             stdin,
             env: info.env.clone(),
         }),
+        RuntimeKind::Agy => Ok(Invocation {
+            program: info.program.clone(),
+            args: vec!["acp".into(), "--include-default-customizations=false".into()],
+            cwd,
+            stdin,
+            env: info.env.clone(),
+        }),
         RuntimeKind::Codex => Ok(Invocation {
             program: info.program.clone(),
             args: codex_args(&spec.request.model, &spec.request.effort, &spec.mcp, &spec.workspace_root),

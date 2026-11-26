@@ -630,11 +630,17 @@ impl DesktopApp {
             self.set_error(String::from("선택을 읽지 못했습니다"));
             return;
         };
-        match serde_json::from_value::<Option<designllm_contracts::HitTestResult>>(hit) {
+        let flow_paragraph = |artifact: Option<&Artifact>, position: Option<&designllm_contracts::TextPosition>| {
+            super::doc_tree::find_paragraph(artifact?, &position?.paragraph_id)
+                .map(|paragraph| (paragraph.id.clone(), paragraph.runs.iter().all(|run| !run.protected)))
+        };
+        let hit = serde_json::from_value::<Option<designllm_contracts::HitTestResult>>(hit);
+        match hit {
             // A reply to a click sent before a text edit opened leaves the edit's selection alone (68 item 11).
             Ok(Some(hit)) if self.inline_text_edit.is_some() => {
                 self.cell_nav.text_drag = false;
-                self.hit_while_editing(ctx, page_index, &hit.node_id, hit.position, edit_text);
+                let edit_target = flow_paragraph(self.artifact.as_ref(), hit.position.as_ref()).map(|(id, _)| id);
+                self.hit_while_editing(ctx, page_index, edit_target.as_deref().unwrap_or(&hit.node_id), hit.position, edit_text);
             }
             // Empty space answered after the edit opened leaves the edit's selection alone too.
             Ok(None) if self.inline_text_edit.is_some() => {}
@@ -643,6 +649,7 @@ impl DesktopApp {
                     .and_then(|artifact| canvas_table_anchor_for_covered_cell(artifact, page_index, &hit.node_id));
                 let target_node_id = covered_cell_anchor.as_ref().map_or_else(|| hit.node_id.clone(), |(anchor_id, _)| anchor_id.clone());
                 let position = if covered_cell_anchor.is_some() { None } else { hit.position.clone() };
+                let paragraph = flow_paragraph(self.artifact.as_ref(), position.as_ref());
                 let ids = if additive {
                     multi::toggle_id(&self.selected_nodes, &target_node_id)
                 } else {
@@ -681,11 +688,17 @@ impl DesktopApp {
                     && self.artifact.as_ref().zip(self.active.as_ref()).is_some_and(|(artifact, active)| {
                         super::doc_tree::inline_text_target_node_ids(artifact, active.kind, page_index, &target_node_id).is_some_and(|ids| ids.len() > 1)
                     });
-                if (edit_text || table_cell) && !additive {
+                let flow_text = self.run_context.is_none() && self.feature_edit_supported(Feature::Text)
+                    && paragraph.as_ref().is_some_and(|(_, editable)| *editable);
+                if (edit_text || table_cell || flow_text) && !additive {
                     match covered_cell_anchor.as_ref() {
                         Some((_, true)) => self.set_error("컴포넌트 인스턴스의 표 병합 구조는 원본 페이지에서 변경해야 합니다".into()),
                         Some((_, false)) => self.set_error("병합된 영역의 추가 텍스트는 바로 편집할 수 없습니다. 병합을 해제한 뒤 다시 선택하세요".into()),
-                        None => { let _ = self.begin_inline_text_edit(ctx, &target_node_id, page_index, position); }
+                        None => {
+                            // Flow selections name the run. The editor changes its paragraph by logical range.
+                            let edit_target = paragraph.as_ref().map_or(target_node_id.as_str(), |(id, _)| id);
+                            let _ = self.begin_inline_text_edit(ctx, edit_target, page_index, position);
+                        }
                     }
                 }
                 // A drag that started in the cell selects from the press.

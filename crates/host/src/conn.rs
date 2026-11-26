@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, TryLockError};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use designllm_bridge::frame::{binary_header, encode_frame};
 use designllm_bridge::pipe::{Pipe, ReadOutcome};
@@ -37,7 +37,7 @@ use designllm_contracts::{
     new_id, CoreEvent, DltError, ErrorCode, IpcMessage, JobRef, JobStatus, RpcRequest, RpcResponse, UiStateView,
     MAX_FRAME_BYTES, PROTOCOL_VERSION, SCHEMA_VERSION,
 };
-use designllm_core::{ClientConnection, Dispatch, PdfCancel, PdfRead, RenderJob, RenderedPage, Workspace};
+use designllm_core::{ClientConnection, Dispatch, PdfCancel, PdfOpen, PdfRead, RenderJob, RenderedPage, Workspace};
 use serde_json::{json, Value};
 
 use crate::gui_identity;
@@ -155,12 +155,17 @@ type Reported = Arc<Mutex<Option<ClientConnection>>>;
 
 /// The thread that runs one connection's core requests in arrival order.
 struct CoreLane {
-    queue: Sender<RpcRequest>,
+    queue: Sender<QueuedRequest>,
     /// Requests sent to the lane whose responses are not written yet.
     waiting: Arc<AtomicUsize>,
     /// Set when the lane thread has ended: a response could not be written, or a request panicked.
     ended: Arc<AtomicBool>,
     thread: JoinHandle<()>,
+}
+
+struct QueuedRequest {
+    request: RpcRequest,
+    received: Instant,
 }
 
 impl CoreLane {
@@ -187,7 +192,7 @@ impl CoreLane {
     /// Hands one request to the lane. False when the lane has ended.
     fn submit(&self, req: RpcRequest) -> bool {
         self.waiting.fetch_add(1, Ordering::SeqCst);
-        if self.has_ended() || self.queue.send(req).is_err() {
+        if self.has_ended() || self.queue.send(QueuedRequest { request: req, received: Instant::now() }).is_err() {
             count_down(&self.waiting);
             return false;
         }
@@ -230,7 +235,7 @@ struct LaneContext {
 }
 
 impl LaneContext {
-    fn run(self, requests: Receiver<RpcRequest>, waiting: &AtomicUsize) {
+    fn run(self, requests: Receiver<QueuedRequest>, waiting: &AtomicUsize) {
         for req in requests {
             let sent = self.answer(req);
             // Counted down once the response is written, so the connection is not idle while it is written.
@@ -243,7 +248,8 @@ impl LaneContext {
     }
 
     /// Runs one core request and writes its response. False when the response could not be written.
-    fn answer(&self, req: RpcRequest) -> bool {
+    fn answer(&self, queued: QueuedRequest) -> bool {
+        let QueuedRequest { request: req, received } = queued;
         let mut turn = lock(&self.link.turn);
         let method = req.method.clone();
         let job_id = req.params.get("job_id").and_then(Value::as_str).map(str::to_string);
@@ -280,6 +286,7 @@ impl LaneContext {
                     }
                     Started::ReadPdf(read, listed)
                 }
+                Dispatch::OpenPdf { id, open } => Started::OpenPdf { id, open, listed: reads.list(None, cancel) },
                 Dispatch::Render(job) => Started::Render(job),
             }
         });
@@ -305,6 +312,23 @@ impl LaneContext {
                     .unwrap_or_else(|| Err(DltError::new(ErrorCode::Canceled, "the PDF read was canceled before it ran")));
                 turn = lock(&self.link.turn);
                 (self.shared.core_call(|ws| ws.finish_pdf_read(read, reading)), None)
+            }
+            Started::OpenPdf { id, open, listed } => {
+                drop(turn);
+                // Keep the queue wait plus a Word conversion within the default client request deadline.
+                let deadline = received + Duration::from_secs(20);
+                let converted = listed.run_before(Some(deadline), || open.run(cancel)).unwrap_or_else(|| {
+                    let mut error = DltError::new(ErrorCode::TargetBusy, "PDF conversion waited too long to start");
+                    error.retryable = true;
+                    Err(error)
+                });
+                turn = lock(&self.link.turn);
+                let result = self.shared.core_call(|ws| ws.finish_pdf_open(open, converted, cancel));
+                let response = match result {
+                    Ok(value) => RpcResponse::success(id, value),
+                    Err(error) => RpcResponse::failure(id, error),
+                };
+                (response, None)
             }
         };
         // A committed cancel ends the attempt's process tree and its PDF reads now. The sweeper would end the tree within one tick.
@@ -338,6 +362,7 @@ enum Started<'a> {
     Answered(RpcResponse),
     /// A PDF read to run without the core, already listed for cancels.
     ReadPdf(PdfRead, Listed<'a>),
+    OpenPdf { id: String, open: PdfOpen, listed: Listed<'a> },
     /// A render to draw without the core.
     Render(Box<RenderJob>),
 }

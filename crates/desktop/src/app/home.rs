@@ -56,6 +56,7 @@ pub(super) enum HomeTab {
 
 /// What the home screen remembers between frames.
 pub(super) struct HomeState {
+    pub(super) project_folder: Option<std::path::PathBuf>,
     pub prompt: String,
     pub tile: String,
     pub focus_request: bool,
@@ -92,6 +93,7 @@ pub(super) struct HomeState {
 impl Default for HomeState {
     fn default() -> Self {
         Self {
+            project_folder: None,
             prompt: String::new(),
             tile: "blank".into(),
             focus_request: false,
@@ -146,6 +148,10 @@ impl DesktopApp {
         let text = |key: &str| args.get(key).and_then(Value::as_str);
         let tile = text("tile").unwrap_or("blank");
         let prompt = text("prompt").unwrap_or_default().trim().to_owned();
+        let runtime = text("runtime").unwrap_or(&self.ai_runtime).to_owned();
+        if !prompt.is_empty() && !self.runner_can_start(&runtime) {
+            return Err("로그인된 AI 실행기를 고르세요".into());
+        }
         let model = text("model").unwrap_or(&self.ai_model).to_owned();
         if !prompt.is_empty() && model.trim().is_empty() {
             return Err("모델 ID를 입력해 주세요".into());
@@ -194,7 +200,7 @@ impl DesktopApp {
             // Use only the supplied prompt. The user's composer and its draft belong to the GUI.
             let request = HomeRequest {
                 actor: run.actor.clone(), create, prompt, allowed_intents: run.allowed_intents.intersection(&self.ai_intents()).copied().collect(),
-                runtime: text("runtime").unwrap_or(&self.ai_runtime).to_owned(), model, effort: text("effort").unwrap_or(&self.ai_effort).to_owned(),
+                runtime, model, effort: text("effort").unwrap_or(&self.ai_effort).to_owned(),
                 attachments: Vec::new(), figure_refs: Vec::new(),
             };
             let Some(sent) = self.call_home(request) else { return Ok(()); };
@@ -225,7 +231,7 @@ impl DesktopApp {
                 actor: "desktop".into(),
                 create,
                 prompt: prompt.trim().into(),
-                runtime: text("runtime").unwrap_or(&self.ai_runtime).to_owned(),
+                runtime,
                 model,
                 effort: text("effort").unwrap_or(&self.ai_effort).to_owned(),
                 allowed_intents: self.ai_intents(),
@@ -388,6 +394,14 @@ impl DesktopApp {
         self.draw_home_confirmation(ctx);
     }
 
+    fn choose_project_folder(&mut self) {
+        let Some(folder) = crate::dialogs::open_project_folder(self.parent_hwnd) else { return };
+        if self.home.project_folder.as_deref() == Some(folder.as_path()) { return; }
+        if let Err(error) = crate::open_project_window(&folder) {
+            self.set_error(format!("프로젝트 창을 열지 못했습니다. {error}"));
+        }
+    }
+
     /// The home top bar (§3, mockup `.top.h`): the workspace button on the left; the agents and
     /// `열기` on the right.
     fn home_top_bar(&mut self, ui: &mut Ui, palette: &theme::Palette) {
@@ -398,29 +412,38 @@ impl DesktopApp {
         // Centred in the 43 px above the line.
         let middle = bar.top() + (bar.height() - 1.0) / 2.0;
         let name_font = theme::display_font(true, 14.0);
-        // The workspace menu (other / recent workspaces) waits for `home.workspace`; a menu with no
-        // working item shows no ▾ (REVIEW_BUILD §5). The workspace information (68e: migration backups and their
-        // warnings) is its one item so far: with it the name is a button with ▾ that opens it.
-        let open_info = self.home.smoke_open.as_deref() == Some("workspace");
-        if open_info {
+        if self.home.smoke_open.as_deref() == Some("workspace") {
             self.home.smoke_open = None;
+            egui::Popup::open_id(ui.ctx(), ui.id().with("home-workspace").with("popup"));
         }
-        if !self.home.workspace_info.is_empty() {
-            let name_width = text_width(ui, &self.workspace_name, &name_font);
-            let button = Rect::from_min_max(Pos2::new(bar.left(), middle - 16.0), Pos2::new(bar.left() + 36.0 + name_width + 4.0 + 16.0 + 8.0, middle + 16.0));
-            if open_info {
-                egui::Popup::open_id(ui.ctx(), ui.id().with("home-workspace").with("popup"));
-            }
-            let response = ui.interact(button, ui.id().with("home-workspace"), Sense::click()).on_hover_text("작업공간 정보");
-            crate::ui_record::note(ui, "작업공간 정보", &response);
-            if response.hovered() || popup_open(ui, "home-workspace") {
-                ui.painter().rect_filled(button, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
-            }
-            icon16(ui, Pos2::new(button.right() - 8.0 - 16.0, middle - 8.0), "chev-down", palette.ink_3);
-            popover(&response, 360.0, |ui| super::workspace_info::show(ui, palette, &self.home.workspace_info));
+        let name = widgets::truncate_to_width(ui, &self.workspace_name, bar.width() / 3.0, palette.ink);
+        let button = Rect::from_min_max(Pos2::new(bar.left(), middle - 16.0), Pos2::new(bar.left() + 64.0 + text_width(ui, &name, &name_font), middle + 16.0));
+        let response = ui.interact(button, ui.id().with("home-workspace"), Sense::click()).on_hover_text("프로젝트 폴더 및 작업공간 정보");
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &self.workspace_name));
+        crate::ui_record::note(ui, "작업공간 정보", &response);
+        if response.hovered() || popup_open(ui, "home-workspace") {
+            ui.painter().rect_filled(button, CornerRadius::same(theme::RADIUS_CONTROL), palette.surface_2);
         }
+        icon16(ui, Pos2::new(button.right() - 8.0 - 16.0, middle - 8.0), "chev-down", palette.ink_3);
+        popover(&response, 360.0, |ui| {
+            if let Some(project) = &self.home.project_folder {
+                ui.add(egui::Label::new(egui::RichText::new(project.display().to_string()).font(theme::font(theme::Type::Caption)).color(palette.ink_2)).wrap());
+            }
+            let label = "프로젝트 폴더 열기…";
+            let choose = widgets::menu_item(ui, palette, Some("open"), label, "", false);
+            choose.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+            crate::ui_record::note_human_only(ui, label, &choose);
+            if choose.clicked() {
+                ui.close();
+                self.choose_project_folder();
+            }
+            if !self.home.workspace_info.is_empty() {
+                widgets::menu_separator(ui, palette);
+                super::workspace_info::show(ui, palette, &self.home.workspace_info);
+            }
+        });
         icons::paint(ui, Rect::from_min_size(Pos2::new(bar.left() + 4.0, middle - 12.0), Vec2::splat(24.0)), "app-24", Color32::WHITE);
-        ui.painter().text(Pos2::new(bar.left() + 36.0, middle), Align2::LEFT_CENTER, &self.workspace_name, name_font, palette.ink);
+        ui.painter().text(Pos2::new(bar.left() + 36.0, middle), Align2::LEFT_CENTER, name, name_font, palette.ink);
 
         let open_font = theme::display_font(false, 13.0);
         let open_width = 8.0 + 16.0 + 6.0 + text_width(ui, "열기", &open_font) + 10.0;
@@ -450,7 +473,7 @@ impl DesktopApp {
             let slot = Rect::from_min_size(Pos2::new(right - 32.0, middle - 16.0), Vec2::splat(32.0));
             right = slot.left() - 4.0;
             let colour = match agent.runtime.as_str() {
-                "claude" | "codex" => agent_color(palette, &agent.runtime),
+                "claude" | "agy" | "codex" => agent_color(palette, &agent.runtime),
                 _ => {
                     other_colours += 1;
                     palette.agents[2 + (other_colours - 1) % 2]
@@ -821,8 +844,11 @@ impl DesktopApp {
 
     /// The runner as the home row and the editor's AI tab show it: the runtime, and the model with the effort.
     pub(super) fn runner_labels(&self) -> (&'static str, String) {
-        let runtime = if self.ai_runtime == "codex" { "Codex" } else { "Claude" };
-        (runtime, format!("{} · {}", self.ai_model_label(), self.effort_label()))
+        let runner = super::runner_models::RUNNERS.iter().find(|(id, _, _)| *id == self.ai_runtime && self.runner_models.available(id));
+        runner.map_or_else(
+            || ("AI 선택", String::new()),
+            |(_, label, _)| (*label, format!("{} · {}", self.ai_model_label(), self.effort_label())),
+        )
     }
 
     /// Saves a runner model draft (`runner_popover`) whose menu was not drawn in the last frame, as when a tab or a screen change
@@ -863,12 +889,19 @@ impl DesktopApp {
         let typing_id = model_draft_id.with("typing");
         let kind = super::runner_models::runtime_kind(&self.ai_runtime);
         popover(response, 220.0, |ui| {
-            for (id, label) in [("claude", "Claude"), ("codex", "Codex")] {
-                if crate::widgets::menu_item(ui, palette, None, label, "", self.ai_runtime == id || (id == "claude" && self.ai_runtime != "codex")).clicked() {
+            let mut any = false;
+            for (id, label, _) in super::runner_models::RUNNERS {
+                if !self.runner_models.available(id) { continue; }
+                any = true;
+                if crate::widgets::menu_item(ui, palette, None, label, "", self.ai_runtime == id).clicked() {
                     picked.push(json!({ "runtime": id }));
                     ui.close();
                 }
             }
+            if !any {
+                ui.label(if self.runner_models.checking() { "AI 로그인 확인 중…" } else { "로그인된 AI가 없습니다" });
+            }
+            if !self.runner_models.available(&self.ai_runtime) { return; }
             crate::widgets::menu_separator(ui, palette);
             // The first opening asks the CLI in the background; until the answer, the fixed list is shown.
             self.runner_models.request(kind, ui.ctx());
@@ -1440,15 +1473,15 @@ fn page_shadow(ui: &Ui, page: Rect) {
     ui.painter().rect_stroke(page, CornerRadius::ZERO, Stroke::new(1.0, ring.color), StrokeKind::Outside);
 }
 
-/// Claude is the first agent colour (purple), Codex the second (green).
-fn agent_color(palette: &theme::Palette, runtime: &str) -> Color32 {
-    if runtime == "codex" { palette.agents[1] } else { palette.agents[0] }
+pub(super) fn agent_color(palette: &theme::Palette, runtime: &str) -> Color32 {
+    palette.agents[match runtime { "codex" => 1, "agy" => 2, _ => 0 }]
 }
 
 /// The disc's glyph: the runtime's initial for the app's own jobs (§5.5 C / X), the plug for an
 /// external MCP client.
 fn agent_glyph(runtime: &str, client: Option<&str>) -> String {
     match client {
+        _ if runtime == "agy" => super::chrome::agent_letter(runtime).into(),
         Some(name) if !name.is_empty() && !name.to_lowercase().contains(runtime) && !runtime.is_empty() => "mcp".into(),
         _ if runtime.is_empty() => "mcp".into(),
         _ => super::chrome::agent_letter(runtime).into(),
@@ -1457,6 +1490,7 @@ fn agent_glyph(runtime: &str, client: Option<&str>) -> String {
 
 pub(super) fn agent_name(runtime: &str, client: Option<&str>) -> String {
     match (client.filter(|name| !name.is_empty()), runtime) {
+        (_, "agy") => "AGY".into(),
         (Some(name), _) => name.to_owned(),
         (None, "codex") => "Codex".into(),
         (None, _) => "Claude".into(),
@@ -1648,6 +1682,31 @@ mod template_refusal_tests {
         }
         output.shapes.iter().find_map(|clipped| find(&clipped.shape, expected))
             .unwrap_or_else(|| panic!("offscreen home screen did not draw {expected:?}"))
+    }
+
+    #[test]
+    fn workspace_menu_opens_from_an_empty_home_and_identifies_the_project_folder() {
+        let path = std::env::temp_dir().join(format!("발표 자료 {}", new_id()));
+        let project = path.as_path();
+        let store = project.join(designllm_contracts::PROJECT_STORE_DIR);
+        for (workspace, expected_project) in [(project, None), (store.as_path(), Some(project))] {
+            let mut app = app().with_workspace(workspace);
+            assert_eq!(app.home.project_folder.as_deref(), expected_project);
+            let ctx = Context::default();
+            theme::install(&ctx);
+            let initial = draw(&ctx, &mut app, frame(Vec::new()));
+            draw(&ctx, &mut app, frame(click(text_center(&initial, "작업공간"))));
+            crate::ui_record::begin();
+            let opened = draw(&ctx, &mut app, frame(Vec::new()));
+            let controls = crate::ui_record::finish();
+            let choose = "프로젝트 폴더 열기…";
+            assert!(controls.iter().any(|item| item.label == choose && item.human_only && item.visible));
+            if let Some(project) = expected_project {
+                text_center(&opened, &project.display().to_string());
+            }
+            draw(&ctx, &mut app, frame(click(text_center(&opened, choose))));
+            assert_eq!(app.home.project_folder.as_deref(), expected_project, "cancelling keeps the same project");
+        }
     }
 
     /// Opens the runner popover and types `typed` into its model field, which keeps the focus.

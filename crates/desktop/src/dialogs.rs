@@ -120,7 +120,7 @@ use windows::{
         UI::Shell::{
             Common::COMDLG_FILTERSPEC,
             FileOpenDialog, FileSaveDialog, IFileOpenDialog, IFileSaveDialog, IShellItem,
-            FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH,
+            FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
         },
     },
 };
@@ -135,8 +135,9 @@ const FIGURE_EVIDENCE_FILTERS: &[(&str, &str)] = &[("근거 자료", "*.pdf;*.cs
 
 /// The formats the editor opens (SPEC §6): documents, slides, figures' data and images.
 const OPEN_FILTERS: &[(&str, &str)] = &[
-    ("지원하는 파일", "*.docx;*.hwpx;*.hwp;*.pptx;*.pdf;*.csv;*.tsv;*.png;*.jpg;*.jpeg"),
-    ("문서", "*.docx;*.hwpx;*.hwp"),
+    ("지원하는 파일", "*.designllm;*.docx;*.hwpx;*.hwp;*.pptx;*.pdf;*.csv;*.tsv;*.png;*.jpg;*.jpeg"),
+    ("DesignLLMTool 작업물", "*.designllm"),
+    ("문서", "*.docx;*.hwpx;*.hwp;*.pdf"),
     ("슬라이드", "*.pptx"),
     ("데이터", "*.csv;*.tsv"),
 ];
@@ -160,6 +161,21 @@ pub fn open_image_replacement(owner: Option<isize>) -> Option<PathBuf> {
 /// Shows the open dialog for one of the supported files. `owner` is the editor window handle.
 pub fn open_document(owner: Option<isize>) -> Option<PathBuf> {
     show_open(owner, OPEN_FILTERS)
+}
+
+pub fn open_project_folder(owner: Option<isize>) -> Option<PathBuf> {
+    if refused("project folder dialog") || TEST_ANSWERS.with(|queue| queue.borrow().is_some()) && !PERSON_FRAME.with(std::cell::Cell::get) {
+        return None;
+    }
+    // The user chooses an existing folder in the shell; scripted file-dialog answers never launch other projects.
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        dialog.SetOptions(dialog.GetOptions().ok()? | FOS_FORCEFILESYSTEM | FOS_PICKFOLDERS).ok()?;
+        dialog.SetTitle(&HSTRING::from("프로젝트 폴더 열기")).ok()?;
+        dialog.Show(owner.map(|raw| HWND(raw as *mut core::ffi::c_void))).ok()?;
+        path_of(&dialog.GetResult().ok()?)
+    }
 }
 
 fn show_open(owner: Option<isize>, filters: &[(&str, &str)]) -> Option<PathBuf> {
@@ -188,10 +204,11 @@ fn show_open(owner: Option<isize>, filters: &[(&str, &str)]) -> Option<PathBuf> 
     }
 }
 
-/// Shows the save dialog for a document, suggesting `title` as the file name.
-pub fn save_document(owner: Option<isize>, title: String) -> Option<PathBuf> {
+/// Shows the save dialog for the artifact's native format, suggesting its title.
+pub fn save_document(owner: Option<isize>, title: String, kind: designllm_contracts::ArtifactKind) -> Option<PathBuf> {
     let name = if title.trim().is_empty() { "새 작업물".to_owned() } else { title };
-    show_save(owner, &name, "*.docx;*.hwpx;*.pptx", "문서")
+    let extension = designllm_contracts::artifact_native_extension(kind);
+    show_save(owner, &name, &format!("*.{extension}"), extension)
 }
 
 /// Shows the save dialog for an export in `extension` (without the dot).
@@ -226,6 +243,10 @@ fn show_save(owner: Option<isize>, suggested: &str, spec: &str, label: &str) -> 
         let pattern = HSTRING::from(spec);
         let filter = COMDLG_FILTERSPEC { pszName: PCWSTR(name.as_ptr()), pszSpec: PCWSTR(pattern.as_ptr()) };
         dialog.SetFileTypes(&[filter]).ok()?;
+        if let Some(extension) = spec.strip_prefix("*.") {
+            let extension = HSTRING::from(extension);
+            dialog.SetDefaultExtension(PCWSTR(extension.as_ptr())).ok()?;
+        }
         let file_name = HSTRING::from(suggested);
         dialog.SetFileName(PCWSTR(file_name.as_ptr())).ok()?;
         dialog.Show(owner.map(|raw| HWND(raw as *mut core::ffi::c_void))).ok()?;
@@ -307,7 +328,7 @@ mod tests {
         let person = dir.join("person.png");
         set_test_answers(Some([person.clone()].into_iter().collect()));
         set_person_frame(true);
-        assert_eq!(save_document(None, String::new()), None, "the native dialog, refused in tests");
+        assert_eq!(save_document(None, String::new(), designllm_contracts::ArtifactKind::Docx), None, "the native dialog, refused in tests");
         set_person_frame(false);
         assert_eq!(set_test_answers(None), 1, "the person's dialog took no answer");
         assert!(!is_test_save_answer(&person.to_string_lossy()));

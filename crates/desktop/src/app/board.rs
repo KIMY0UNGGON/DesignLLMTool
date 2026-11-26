@@ -12,6 +12,7 @@ use eframe::egui::{
     TextureHandle, TextureOptions, Ui, Vec2,
 };
 use serde_json::Value;
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::{to_micropx, DesktopApp, PendingAction};
 use crate::{board, theme};
@@ -457,13 +458,8 @@ impl DesktopApp {
                 && !input.modifiers.ctrl && !input.modifiers.alt && !input.modifiers.mac_cmd)
             && self.selected_nodes.len() == 1
         {
-            if let (Some(node_id), Some(artifact)) = (self.selected_nodes.first().cloned(), self.artifact.as_ref()) {
-                if let Some(page_index) = node_page_index(artifact, &node_id) {
-                    // A table opens its cell edited last (else its first cell), 68 item 11.
-                    if self.begin_text_edit_of_selection(ctx).unwrap_or_else(|| self.begin_inline_text_edit(ctx, &node_id, page_index, None)) {
-                        ctx.input_mut(|input| { input.consume_key(input.modifiers, egui::Key::Enter); });
-                    }
-                }
+            if self.begin_text_edit_of_selection(ctx) == Some(true) {
+                ctx.input_mut(|input| { input.consume_key(input.modifiers, egui::Key::Enter); });
             }
         }
         let fitting = !self.view_ref().fitted;
@@ -507,6 +503,7 @@ impl DesktopApp {
             }
             self.draw_page(ctx, ui, &palette, slot.page_index, rect, wanted_dpi, render_settled, !moving);
         }
+        self.draw_paragraph_editor(ctx);
         self.track_drag_landing(ctx);
         self.draw_drag_previews(ctx, ui, &slots, origin, view.zoom);
         if !settled {
@@ -609,7 +606,7 @@ impl DesktopApp {
                 self.inline_table_cell_readiness(edit),
                 super::InlineCellReadiness::WaitingForRender | super::InlineCellReadiness::RevisionDrift
             ));
-        if self.inline_text_edit.as_ref().is_none_or(|edit| edit.page_index != page_index) || table_cell_waiting_for_scene {
+        if flow || self.inline_text_edit.as_ref().is_none_or(|edit| edit.page_index != page_index) || table_cell_waiting_for_scene {
             match (&current, revision_moved, dpi_moved) {
                 (None, _, _) => self.request_page(page_index, wanted_dpi),
                 (Some((dpi, _, _, _)), true, _) => self.request_page(page_index, *dpi),
@@ -858,6 +855,7 @@ impl DesktopApp {
     }
 
     fn draw_inline_text_editor(&mut self, ctx: &Context, ui: &mut Ui, page_index: u32, page_size: Size, page_rect: Rect) {
+        if self.flow_uses_paragraph_editor() { return; }
         let Some(edit) = self.inline_text_edit.as_ref().filter(|edit| edit.page_index == page_index).cloned() else { return };
         let current_targets = self.artifact.as_ref()
             .and_then(|artifact| super::doc_tree::inline_text_target_node_ids(artifact, edit.kind, edit.page_index, &edit.node_id));
@@ -873,39 +871,24 @@ impl DesktopApp {
             }
             return;
         }
-        let Some((node_kind, node_bounds, font_size, color, bold, align)) = self.artifact.as_ref()
-            .and_then(|artifact| super::doc_tree::find_node(artifact, &edit.node_id))
-            .map(|node| (
-                node.kind,
-                node.bounds,
-                // font_size is EMU: EMU × screen points per EMU (page_to_screen's scale). The floor only guards a degenerate size.
-                (node.style.font_size as f32 * page_rect.width() / page_size.width.max(1) as f32).clamp(1.0, 200.0),
-                crate::widgets::parse_hex(&node.style.color).unwrap_or(theme::palette(ctx).ink),
-                node.style.bold,
-                match node.style.align.as_str() {
-                    "center" => egui::Align::Center,
-                    "right" => egui::Align::Max,
-                    _ => egui::Align::Min,
-                },
-            ))
-        else {
-            if let Some(session) = self.inline_text_edit.as_mut() {
-                session.conflict = Some("편집하던 텍스트가 삭제되었습니다. 입력은 유지했습니다".into());
-                session.retry_allowed = false;
-            }
-            return;
-        };
-        let bounds = if edit.kind == designllm_contracts::ArtifactKind::Canvas && node_kind == designllm_contracts::NodeKind::Rectangle {
-            let Some(bounds) = self.page_textures.get(&page_index).and_then(|page| page.frames.get(&edit.node_id)).copied() else {
-                if let Some(session) = self.inline_text_edit.as_mut() {
-                    session.conflict = Some("표 셀의 현재 배치를 찾지 못했습니다. 입력은 유지했습니다".into());
-                    session.retry_allowed = false;
-                }
-                return;
-            };
-            bounds
-        } else {
-            node_bounds
+        let Some(artifact) = self.artifact.as_ref() else { return };
+        let frame = || self.page_textures.get(&page_index)?.frames.get(&edit.node_id).copied();
+        let default_style = designllm_contracts::Style::default();
+        let (bounds, style, alignment) = if let Some(paragraph) = super::doc_tree::find_paragraph(artifact, &edit.node_id) {
+            let Some(bounds) = frame() else { return };
+            (bounds, paragraph.runs.first().map_or(&default_style, |run| &run.style), paragraph.format.align.as_str())
+        } else if let Some(node) = super::doc_tree::find_node(artifact, &edit.node_id) {
+            let bounds = if edit.kind == ArtifactKind::Canvas && node.kind == designllm_contracts::NodeKind::Rectangle { frame() } else { Some(node.bounds) };
+            let Some(bounds) = bounds else { return };
+            (bounds, &node.style, node.style.align.as_str())
+        } else { return };
+        let font_size = (style.font_size as f32 * page_rect.width() / page_size.width.max(1) as f32).clamp(1.0, 200.0);
+        let color = crate::widgets::parse_hex(&style.color).unwrap_or(theme::palette(ctx).ink);
+        let bold = style.bold;
+        let align = match alignment {
+            "center" => egui::Align::Center,
+            "right" => egui::Align::Max,
+            _ => egui::Align::Min,
         };
         let rect = super::page_to_screen(bounds, page_size, page_rect).intersect(page_rect);
         if rect.width() < 2.0 || rect.height() < 2.0 { return; }
@@ -914,18 +897,50 @@ impl DesktopApp {
         ui.painter().rect_filled(rect, CornerRadius::ZERO, palette.artboard);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt(("inline-text", &edit.node_id)));
         child.set_min_size(rect.size());
+        self.draw_inline_text_input(ctx, &mut child, theme::display_font(bold, font_size), color, align, rect.size());
+        if self.cell_wait_shown(ctx.input(|input| input.time)) { self.paint_cell_wait_hint(ui, rect); }
+    }
+
+    pub(super) fn flow_uses_paragraph_editor(&self) -> bool {
+        let Some(edit) = self.inline_text_edit.as_ref().filter(|edit| {
+            matches!(edit.kind, ArtifactKind::Docx | ArtifactKind::Hwpx | ArtifactKind::Hwp)
+        }) else { return false };
+        let Some(page) = self.page_textures.get(&edit.page_index).filter(|page| page.artifact_id == edit.artifact_id) else { return true };
+        if !page.frames.contains_key(&edit.node_id) { return true; }
+        if page.revision != edit.revision { return edit.paragraph_editor; }
+        let mut ranges = page.page.source_map.iter().filter_map(|region| region.logical_range.as_ref())
+            .filter(|range| range.paragraph_id == edit.node_id).peekable();
+        if ranges.peek().is_none() { return false; }
+        let (first, last) = ranges.fold((u32::MAX, 0), |(first, last), range| (first.min(range.start), last.max(range.end)));
+        first > 0 || (last as usize) < edit.committed_text.graphemes(true).count()
+    }
+
+    fn draw_paragraph_editor(&mut self, ctx: &Context) {
+        if !self.flow_uses_paragraph_editor() { return; }
+        let palette = theme::palette(ctx);
+        let height = (ctx.content_rect().height() * 0.45).clamp(80.0, 420.0);
+        egui::Window::new("문단 편집").id(Id::new("paginated-paragraph-editor"))
+            .collapsible(false).default_width(480.0).show(ctx, |ui| {
+                egui::ScrollArea::vertical().max_height(height).show(ui, |ui| {
+                    let size = Vec2::new(ui.available_width().max(1.0), 80.0);
+                    self.draw_inline_text_input(ctx, ui, theme::display_font(false, 14.0), palette.ink, egui::Align::Min, size);
+                });
+            });
+    }
+
+    fn draw_inline_text_input(&mut self, ctx: &Context, ui: &mut Ui, font: egui::FontId, color: Color32, align: egui::Align, size: Vec2) {
+        let Some(edit) = self.inline_text_edit.as_ref() else { return };
         let output = crate::widgets::inline_edit(
-            &mut child,
+            ui,
             &mut self.text_draft,
             self.text_editor_id,
-            theme::display_font(bold, font_size),
+            font,
             color,
             align,
-            rect.size(),
+            size,
             edit.conflict.is_none() || edit.composing,
         );
         self.text_adapter.record_layout(&output);
-        if self.cell_wait_shown(ctx.input(|input| input.time)) { self.paint_cell_wait_hint(ui, rect); }
         if edit.conflict.is_none() || edit.composing {
             self.text_editor_focused = true;
             output.response.request_focus();

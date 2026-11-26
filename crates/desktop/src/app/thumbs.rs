@@ -373,9 +373,9 @@ fn parse_list<T: serde::de::DeserializeOwned>(value: &Value, field: &str) -> Vec
 /// One agent shown in the home top bar (§5.5), from the host's connections.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct ConnectedAgent {
-    /// The display name: `Claude`, `Codex CLI`, or the MCP client's own name.
+    /// The display name of the runtime or the MCP client's own name.
     pub name: String,
-    /// `claude` or `codex` when known (colour and initial), else empty.
+    /// The runtime ID when known, for its colour and initial.
     pub runtime: String,
     /// The job of an app-started agent, when the host reported it.
     pub job_id: Option<String>,
@@ -396,11 +396,13 @@ pub(super) fn connected_agents(clients: &[ClientInfo]) -> Vec<ConnectedAgent> {
         let runtime = match client.runtime.as_deref().filter(|runtime| !runtime.is_empty()) {
             Some(runtime) => runtime.to_owned(),
             None if lower.contains("claude") => "claude".into(),
+            None if lower.contains("antigravity") => "agy".into(),
             None if lower.contains("codex") => "codex".into(),
             None => String::new(),
         };
         let name = match runtime.as_str() {
             "claude" => "Claude".to_owned(),
+            "agy" => "AGY".to_owned(),
             "codex" => "Codex CLI".to_owned(),
             _ if !raw.is_empty() => raw,
             _ => continue,
@@ -493,13 +495,18 @@ mod thumb_tests {
             client("bridge", Some("codex-mcp-client"), None, None),
             client("cli", None, None, None),
             client("bridge", Some("Cursor"), None, None),
+            client("bridge", None, Some("j3"), Some("agy")),
+            client("bridge", Some("Antigravity"), None, None),
             client("bridge", None, None, None),
         ];
         let agents = connected_agents(&clients);
         let names: Vec<&str> = agents.iter().map(|agent| agent.name.as_str()).collect();
-        assert_eq!(names, ["Claude", "Codex CLI", "Cursor"]);
+        assert_eq!(names, ["Claude", "Codex CLI", "Cursor", "AGY"]);
         assert_eq!(agents[0].job_id.as_deref(), Some("j1"));
         assert_eq!(agents[1].runtime, "codex");
+        assert_eq!(agents[3].job_id.as_deref(), Some("j3"));
+        assert_eq!(super::super::home::agent_name("agy", None), "AGY");
+        assert_eq!(super::super::chrome::agent_letter("agy"), "A");
         assert!(agents[1].outside && !agents[0].outside, "an outside MCP client has no job");
     }
 

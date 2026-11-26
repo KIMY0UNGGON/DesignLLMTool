@@ -108,15 +108,34 @@ impl eframe::App for StartupErrorApp {
     }
 }
 
+fn project_folder(workspace: &Path) -> Option<std::path::PathBuf> {
+    if !workspace.file_name()?.eq_ignore_ascii_case(designllm_contracts::PROJECT_STORE_DIR) { return None; }
+    std::path::absolute(workspace).ok()?.parent().map(Path::to_owned)
+}
+
+fn open_project_window(project: &Path) -> std::io::Result<()> {
+    use std::{os::windows::process::CommandExt, process::{Command, Stdio}};
+    Command::new(std::env::current_exe()?)
+        .arg("--project").arg(project)
+        .env_remove("DESIGNLLM_MCP_GUI")
+        .creation_flags(designllm_runtimes::win::CREATE_NO_WINDOW)
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+        .spawn()?;
+    Ok(())
+}
+
 fn run_app(workspace: &Path, smoke_output: Option<&Path>) -> DltResult<()> {
     use std::sync::{Arc, Mutex};
 
     // D19.5: what a forced exit during a video insert left in the temp folders; another running window's files stay.
     let _ = std::thread::Builder::new().name("designllm-temp-cleanup".into()).spawn(app::remove_orphaned_video_poster_temp);
     let worker = rpc::RpcWorker::spawn(workspace)?;
-    let workspace_name = workspace
-        .file_name()
-        .map_or_else(|| "작업공간".to_owned(), |name| name.to_string_lossy().into_owned());
+    let project = project_folder(workspace);
+    let folder = project.as_deref().unwrap_or(workspace);
+    let workspace_name = folder.file_name().map_or_else(
+        || if project.is_some() { folder.display().to_string() } else { "작업공간".to_owned() },
+        |name| name.to_string_lossy().into_owned(),
+    );
     let smoke_path = smoke_output.map(Path::to_path_buf);
     let workspace_path = workspace.to_path_buf();
     let host_starter = HOST_STARTER.get().copied().map(|start| {
@@ -128,7 +147,8 @@ fn run_app(workspace: &Path, smoke_output: Option<&Path>) -> DltResult<()> {
     // Task 69: synthetic input for UI tests, off unless the launch asks for it (docs/UI_CHANNEL.md "시험용 입력").
     let (ui_test, visible, headless) = app::ui_test_launch_mode(smoke_path.is_some());
     let ui_test_scale = ui_test.and_then(|_| app::ui_test_scale_from_env());
-    let title = if ui_test.is_some() { "DesignLLMTool [UI 시험 입력]" } else { "DesignLLMTool" };
+    let app_name = if ui_test.is_some() { "DesignLLMTool [UI 시험 입력]" } else { "DesignLLMTool" };
+    let title = if project.is_some() { format!("{workspace_name} · {app_name}") } else { app_name.to_owned() };
     // No visible main window: every native dialog and preview window is refused (`dialogs::headless`).
     dialogs::set_headless(headless);
     // Smoke captures and off-screen UI tests only: `DESIGNLLM_SMOKE_SIZE=800x560` sets the window's logical size.

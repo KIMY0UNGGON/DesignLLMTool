@@ -433,6 +433,12 @@ impl Workspace {
         let artifacts: Vec<ArtifactSummary> = store::artifact_rows(&self.conn)?.iter().filter(|r| scope.as_ref().is_none_or(|a| a == &r.id))
             .map(|r| ArtifactSummary { modified_at_ms: times.get(&r.id).copied(), active_jobs: active.remove(&r.id).unwrap_or_default(), ..r.summary() }).collect();
         let mut result = json!({ "workspace_id": self.id, "artifacts": artifacts });
+        if job.is_none() && self.root.file_name().is_some_and(|name| name.eq_ignore_ascii_case(PROJECT_STORE_DIR)) {
+            if let Some(project) = self.root.parent() {
+                result["project_folder"] = json!(project.to_string_lossy());
+                result["artifacts_folder"] = json!(project.join(PROJECT_ARTIFACTS_DIR).to_string_lossy());
+            }
+        }
         let notices = if job.is_none() { workspace_notices(&self.conn, &self.root, &self.recovery)? } else { Vec::new() };
         append_workspace_notices(&mut result, notices, job.is_none());
         Ok(result)

@@ -753,6 +753,7 @@ impl crate::pixels::Backend for HostRpc<'_> {
             }
             designllm_core::Dispatch::Answered(response) => (response, None),
             designllm_core::Dispatch::ReadPdf(_) => panic!("a render is not a PDF read"),
+            designllm_core::Dispatch::OpenPdf { .. } => panic!("a render is not a PDF open"),
         };
         drop(host);
         let answer = match (response.result, response.error) {

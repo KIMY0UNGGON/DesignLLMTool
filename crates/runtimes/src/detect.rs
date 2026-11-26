@@ -1,6 +1,6 @@
 //! Runtime discovery and capability detection.
 //!
-//! Detection runs only `--version` and `--help` (no model call, no login state read). The executable is
+//! Discovery and authentication probes do not run a model prompt. The executable is
 //! an explicit path from [`RuntimeConfig`] or the environment, or a `.exe` found on `PATH`. For Codex an
 //! npm global install on `PATH` resolves to the native `codex.exe` inside the package (`detect/npm.rs`). A `.cmd`
 //! or `.ps1` shim is never run: its quoting rules would let arguments escape the command line.
@@ -30,6 +30,8 @@ pub const DETECT_TIMEOUT: Duration = Duration::from_secs(20);
 pub enum RuntimeKind {
     /// Claude Code (`claude.exe`), print mode with stream-json output.
     Claude,
+    /// Google Antigravity CLI (`agy.exe`), ACP mode.
+    Agy,
     /// Codex CLI (`codex.exe`), `exec` mode.
     Codex,
     /// Test agent that speaks MCP and follows a script given in the prompt. Never a model call.
@@ -41,15 +43,17 @@ impl RuntimeKind {
     pub fn parse(name: &str) -> DltResult<Self> {
         match name {
             "claude" => Ok(RuntimeKind::Claude),
+            "agy" => Ok(RuntimeKind::Agy),
             "codex" => Ok(RuntimeKind::Codex),
             "mock" => Ok(RuntimeKind::Mock),
-            other => Err(DltError::unsupported(format!("runtime '{other}' is not supported (claude, codex)"))),
+            other => Err(DltError::unsupported(format!("runtime '{other}' is not supported (claude, agy, codex)"))),
         }
     }
 
     pub fn wire_name(self) -> &'static str {
         match self {
             RuntimeKind::Claude => "claude",
+            RuntimeKind::Agy => "agy",
             RuntimeKind::Codex => "codex",
             RuntimeKind::Mock => "mock",
         }
@@ -58,6 +62,7 @@ impl RuntimeKind {
     fn exe_name(self) -> Option<&'static str> {
         match self {
             RuntimeKind::Claude => Some("claude.exe"),
+            RuntimeKind::Agy => Some("agy.exe"),
             RuntimeKind::Codex => Some("codex.exe"),
             RuntimeKind::Mock => None,
         }
@@ -68,6 +73,7 @@ impl RuntimeKind {
 #[derive(Debug, Clone, Default)]
 pub struct RuntimeConfig {
     pub claude_path: Option<PathBuf>,
+    pub agy_path: Option<PathBuf>,
     pub codex_path: Option<PathBuf>,
     /// Program that implements the mock agent protocol (`designllm-host-harness` in tests).
     pub mock_agent: Option<PathBuf>,
@@ -81,8 +87,18 @@ impl RuntimeConfig {
     pub fn from_env() -> Self {
         RuntimeConfig {
             claude_path: env::var_os("DESIGNLLM_CLAUDE_PATH").map(PathBuf::from),
+            agy_path: env::var_os("DESIGNLLM_AGY_PATH").map(PathBuf::from),
             codex_path: env::var_os("DESIGNLLM_CODEX_PATH").map(PathBuf::from),
             mock_agent: None,
+        }
+    }
+
+    fn executable(&self, kind: RuntimeKind) -> Option<&Path> {
+        match kind {
+            RuntimeKind::Claude => self.claude_path.as_deref(),
+            RuntimeKind::Agy => self.agy_path.as_deref(),
+            RuntimeKind::Codex => self.codex_path.as_deref(),
+            RuntimeKind::Mock => self.mock_agent.as_deref(),
         }
     }
 }
@@ -158,6 +174,7 @@ pub const CODEX_REQUIRED_FLAGS: &[&str] = &[
 
 /// Documented Codex reasoning-effort values (config key `model_reasoning_effort`).
 pub const CODEX_EFFORTS: &[&str] = &["minimal", "low", "medium", "high", "xhigh"];
+pub const AGY_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 /// Effort values the mock agent accepts (the Claude Code scale).
 pub const MOCK_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
@@ -219,7 +236,7 @@ pub fn fallback_models(kind: RuntimeKind) -> Vec<ModelInfo> {
     match kind {
         RuntimeKind::Claude => plain_models(CLAUDE_MODELS),
         RuntimeKind::Codex => plain_models(CODEX_MODELS_FALLBACK),
-        RuntimeKind::Mock => Vec::new(),
+        RuntimeKind::Agy | RuntimeKind::Mock => Vec::new(),
     }
 }
 
@@ -283,6 +300,10 @@ pub fn parse_claude_models(line: &str) -> Option<Vec<ModelInfo>> {
 fn models_from_text(kind: RuntimeKind, text: &str) -> Option<Vec<ModelInfo>> {
     match kind {
         RuntimeKind::Claude => text.lines().find_map(parse_claude_models),
+        RuntimeKind::Agy => {
+            let models = parse_agy_models(text);
+            (!models.is_empty()).then_some(models)
+        }
         RuntimeKind::Codex => parse_codex_models(text).or_else(|| text.find('{').and_then(|start| parse_codex_models(&text[start..]))),
         RuntimeKind::Mock => None,
     }
@@ -306,17 +327,56 @@ pub(crate) fn list_from_lookup(
 pub fn model_list(kind: RuntimeKind, config: &RuntimeConfig) -> ModelList {
     let lookup: &dyn Fn(&Path, &[EnvChange]) -> Option<String> = match kind {
         RuntimeKind::Claude => &claude_init_text,
+        RuntimeKind::Agy => &agy_models_text,
         RuntimeKind::Codex => &codex_debug_text,
         RuntimeKind::Mock => return ModelList { models: Vec::new(), source: ModelSource::Fallback },
     };
-    let explicit = match kind {
-        RuntimeKind::Claude => config.claude_path.as_deref(),
-        RuntimeKind::Codex => config.codex_path.as_deref(),
-        RuntimeKind::Mock => None,
-    };
-    match resolve(kind, explicit) {
+    match resolve(kind, config.executable(kind)) {
         Ok((program, env)) => list_from_lookup(kind, &program, &env, lookup),
         Err(_) => ModelList { models: fallback_models(kind), source: ModelSource::Fallback },
+    }
+}
+
+fn agy_models_text(program: &Path, env: &[EnvChange]) -> Option<String> {
+    match run_capture_streams(program, &["models"], env, DETECT_TIMEOUT) {
+        Ok((0, stdout, _)) => Some(stdout),
+        _ => None,
+    }
+}
+
+fn parse_agy_models(text: &str) -> Vec<ModelInfo> {
+    let mut models: Vec<ModelInfo> = Vec::new();
+    for (id, label) in text.lines().filter_map(|line| line.split_once('\t')) {
+        let Some((base, effort)) = id.rsplit_once('-').filter(|(base, effort)| {
+            !base.is_empty() && AGY_EFFORTS.contains(effort)
+        }) else { continue };
+        if let Some(model) = models.iter_mut().find(|model| model.id == base) {
+            if !model.efforts.iter().any(|known| known == effort) { model.efforts.push(effort.into()); }
+        } else {
+            let label = label.rsplit_once(" (").map_or(label, |(name, _)| name);
+            models.push(ModelInfo { id: base.into(), display_name: label.into(), efforts: vec![effort.into()] });
+        }
+    }
+    models
+}
+
+/// Confirms an installed CLI can use its signed-in account, without starting a model turn.
+pub fn logged_in(kind: RuntimeKind, config: &RuntimeConfig) -> bool {
+    let Ok((program, env)) = resolve(kind, config.executable(kind)) else { return false };
+    match kind {
+        RuntimeKind::Claude => {
+            run_capture_streams(&program, &["auth", "status", "--json"], &env, DETECT_TIMEOUT)
+                .is_ok_and(|(code, out, _)| code == 0 && serde_json::from_str::<serde_json::Value>(&out)
+                    .is_ok_and(|value| value["loggedIn"] == true && matches!(value["authMethod"].as_str(), Some("claude.ai" | "console"))))
+        }
+        RuntimeKind::Codex => run_capture_streams(&program, &["login", "status"], &env, DETECT_TIMEOUT)
+            .is_ok_and(|(code, out, err)| code == 0 && out.lines().chain(err.lines()).any(|line| line.trim() == "Logged in using ChatGPT")),
+        RuntimeKind::Agy => {
+            let alternate_auth = std::env::var_os("GEMINI_API_KEY").is_some_and(|key| !key.is_empty())
+                || std::env::var("AGY_ADC_AUTH").is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
+            !alternate_auth && agy_models_text(&program, &env).is_some_and(|text| !parse_agy_models(&text).is_empty())
+        }
+        RuntimeKind::Mock => false,
     }
 }
 
@@ -405,9 +465,23 @@ fn codex_debug_text(program: &Path, env: &[EnvChange]) -> Option<String> {
 pub fn detect(kind: RuntimeKind, config: &RuntimeConfig) -> DltResult<RuntimeInfo> {
     match kind {
         RuntimeKind::Claude => detect_claude(config),
+        RuntimeKind::Agy => detect_agy(config),
         RuntimeKind::Codex => detect_codex(config),
         RuntimeKind::Mock => detect_mock(config),
     }
+}
+
+fn detect_agy(config: &RuntimeConfig) -> DltResult<RuntimeInfo> {
+    let (program, env) = resolve(RuntimeKind::Agy, config.agy_path.as_deref())?;
+    let version = first_line(&run_checked(&program, &["--version"], &env)?);
+    let help = run_checked(&program, &["acp", "--help"], &env)?;
+    let required = ["--stdio", "--include-default-customizations", "--agent", "--log-file"];
+    if !missing_flags(&help, &required).is_empty() {
+        return Err(DltError::unsupported("agy does not support the required ACP mode"));
+    }
+    Ok(RuntimeInfo { kind: RuntimeKind::Agy, program, version, env,
+        efforts: AGY_EFFORTS.iter().map(|effort| (*effort).into()).collect(), effort_source: EffortSource::Documented,
+        flags: required.into_iter().map(str::to_owned).collect() })
 }
 
 fn detect_claude(config: &RuntimeConfig) -> DltResult<RuntimeInfo> {
@@ -668,6 +742,15 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(detect(RuntimeKind::Claude, &config).unwrap_err().code, ErrorCode::UnsupportedOperation);
+    }
+
+    #[test]
+    fn agy_combines_model_variants_without_guessing_an_effort() {
+        let models = parse_agy_models("Fetching...\ngemini-test-high\tGemini Test (High)\ngemini-test-low\tGemini Test (Low)\n\
+            gemini-test-high\tGemini Test (High)\ngpt-test-medium\tGPT Test (Medium)\nunknown\tUnknown\n");
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0], ModelInfo { id: "gemini-test".into(), display_name: "Gemini Test".into(), efforts: vec!["high".into(), "low".into()] });
+        assert_eq!(models[1].efforts, ["medium"]);
     }
 
     /// A unique folder under the system temp directory, removed when the guard drops (also on a failed assert).

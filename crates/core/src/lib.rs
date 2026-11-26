@@ -33,6 +33,7 @@ mod views;
 pub use blobs::{FaultHook, FaultPoint};
 pub use dataset::DatasetEditor;
 pub use pdf_read::{current_pdf_read_cancel, Dispatch, PdfCancel, PdfRead};
+pub use pipeline::PdfOpen;
 pub use receipts::{normalize_request_id, REQUEST_HASH_ALG};
 pub use render_split::{RenderJob, RenderedPage};
 pub use home::ClientConnection;
@@ -99,6 +100,7 @@ pub type CsvDeclaredHandler = fn(&AssetRef, &dyn AssetStore, &[DataColumn]) -> D
 /// Coverage-reporting PDF reader for `source.extract_pdf`: the evidence plus what was read. Registered with
 /// [`Workspace::set_pdf_read_handler`]. [`PdfHandler`] stays for callers that need only the evidence.
 pub type PdfReadHandler = fn(&AssetRef, &[u32], &dyn AssetStore) -> DltResult<PdfReading>;
+pub type PdfEditImporter = fn(&[u8], &PdfCancel) -> DltResult<Vec<u8>>;
 
 /// One requested physical PDF page as the reader reports it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -429,6 +431,7 @@ pub struct Workspace {
     pub(crate) id: String,
     pub(crate) pdf: Option<PdfHandler>,
     pub(crate) pdf_read: Option<PdfReadHandler>,
+    pub(crate) pdf_edit_importer: Option<PdfEditImporter>,
     pub(crate) csv: Option<CsvHandler>,
     pub(crate) csv_declared: Option<CsvDeclaredHandler>,
     pub(crate) dataset_editor: Option<DatasetEditor>,
@@ -654,7 +657,7 @@ impl Workspace {
             .map_err(errors::sql)?;
         let base = Arc::new(AssetBase::new(blobs, store::asset_rows(&conn)?));
         let mut ws = Self {
-            conn, base, hook, engines, by_kind, by_id, renderer, root: root.to_path_buf(), id, pdf: None, pdf_read: None, csv: None, csv_declared: None, dataset_editor: None,
+            conn, base, hook, engines, by_kind, by_id, renderer, root: root.to_path_buf(), id, pdf: None, pdf_read: None, pdf_edit_importer: None, csv: None, csv_declared: None, dataset_editor: None,
             views: views::Views::default(), renders: views::RenderCache::default(), ui: ui::UiChannel::default(), clients: Default::default(), template_previews: Default::default(), job_template_previews: Default::default(), recovery, path_caller: Default::default(), caller: None, _lock: lock,
         };
         // Reservations live in memory: active jobs with target_ids hold theirs again.
@@ -680,6 +683,7 @@ impl Workspace {
     /// request and the asset, or the request is refused (see `PdfReading::validate`). It takes precedence over the PDF
     /// handler of `set_source_handlers`, which that route then does not call.
     pub fn set_pdf_read_handler(&mut self, reader: PdfReadHandler) { self.pdf_read = Some(reader); }
+    pub fn set_pdf_edit_importer(&mut self, importer: PdfEditImporter) { self.pdf_edit_importer = Some(importer); }
     /// Root wires designllm_figures::import_csv_declared here. Used by `source.import_csv` when the
     /// request carries `columns`; independent of the inference handler above.
     pub fn set_csv_declared_handler(&mut self, handler: CsvDeclaredHandler) { self.csv_declared = Some(handler); }

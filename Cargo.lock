@@ -801,6 +801,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1049,6 +1050,7 @@ dependencies = [
 name = "designllm-runtimes"
 version = "0.1.0"
 dependencies = [
+ "designllm-bridge",
  "designllm-contracts",
  "serde",
  "serde_json",

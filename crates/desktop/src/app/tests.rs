@@ -1026,6 +1026,22 @@ fn a_pdf_page_without_text_is_reported_and_sends_no_change() {
 }
 
 #[test]
+fn project_save_uses_the_current_artifacts_managed_file() {
+    let mut harness = Harness::new();
+    harness.open_document("canvas", 1);
+    harness.sent();
+    harness.app.home.project_folder = Some("C:/work/project".into());
+    harness.app.save_path = "C:/out/another-artifact.designllm".into();
+    harness.app.invoke("file.save", json!({})).unwrap();
+    let requests = harness.sent();
+    assert_eq!(methods(&requests), ["artifact.save"]);
+    assert_eq!(requests[0].2["artifact_id"], "a1");
+    assert_eq!(requests[0].2["expected_revision"], 1);
+    assert_eq!(requests[0].2["target_path"], "");
+    assert_eq!(requests[0].2["overwrite"], false);
+}
+
+#[test]
 fn saving_and_exporting_confirm_once_and_the_confirmation_goes_away() {
     let mut harness = Harness::new();
     harness.open_document("canvas", 1);

@@ -2,7 +2,7 @@
 //! on a background thread, when the menu first opens, and kept for the session. Until the answer comes, and when the CLI
 //! cannot be asked, the menu shows the runtime's fixed list.
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{sync::{Arc, Mutex, MutexGuard}, time::{Duration, Instant}};
 use std::thread;
 
 use designllm_runtimes::detect::{fallback_models, ModelList, ModelSource, RuntimeKind};
@@ -18,6 +18,15 @@ pub(super) type Lookup = fn(RuntimeKind) -> ModelList;
 pub(super) const RUNNER_EFFORTS: [&str; 6] = ["minimal", "low", "medium", "high", "xhigh", "max"];
 /// The efforts the menu offers for a model whose list says nothing about them.
 pub(super) const DEFAULT_EFFORTS: [&str; 4] = ["low", "medium", "high", "max"];
+pub(super) const RUNNERS: [(&str, &str, RuntimeKind); 3] = [
+    ("claude", "Claude", RuntimeKind::Claude), ("agy", "AGY", RuntimeKind::Agy), ("codex", "Codex", RuntimeKind::Codex),
+];
+
+#[derive(Default)]
+struct Authentication {
+    refreshed: Option<Instant>,
+    signed_in: [Option<bool>; 3],
+}
 
 #[derive(Default)]
 enum Slot {
@@ -31,10 +40,13 @@ enum Slot {
 /// The model lists of the Claude and Codex runtimes, shared with the lookup threads.
 pub(super) struct RunnerModels {
     claude: Arc<Mutex<Slot>>,
+    agy: Arc<Mutex<Slot>>,
     codex: Arc<Mutex<Slot>>,
     /// The fixed lists, shown until the answer is in.
     claude_fallback: Arc<ModelList>,
+    agy_fallback: Arc<ModelList>,
     codex_fallback: Arc<ModelList>,
+    auth: Arc<Mutex<Authentication>>,
     lookup: Lookup,
     /// A runtime change made while that runtime's list was awaited: its model is checked against the answer.
     recheck: Option<RuntimeKind>,
@@ -43,11 +55,7 @@ pub(super) struct RunnerModels {
 /// The runtime whose list the menu shows for an `ai_runtime` value: Codex for `codex`, else Claude (the menu marks Claude
 /// for any other value, as `runner_popover` and `runner_labels` do).
 pub(super) fn runtime_kind(runtime: &str) -> RuntimeKind {
-    if runtime == "codex" {
-        RuntimeKind::Codex
-    } else {
-        RuntimeKind::Claude
-    }
+    RUNNERS.iter().find(|(id, _, _)| *id == runtime).map_or(RuntimeKind::Claude, |(_, _, kind)| *kind)
 }
 
 /// The effort to change to so that a model accepting `efforts` runs: the accepted menu value nearest to `current` (the lower
@@ -97,7 +105,7 @@ impl Default for RunnerModels {
     }
 }
 
-fn locked(slot: &Mutex<Slot>) -> MutexGuard<'_, Slot> {
+fn locked<T>(slot: &Mutex<T>) -> MutexGuard<'_, T> {
     slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
@@ -109,11 +117,44 @@ impl RunnerModels {
     pub(super) fn with_lookup(lookup: Lookup) -> Self {
         Self {
             claude: Arc::default(),
+            agy: Arc::default(),
             codex: Arc::default(),
             claude_fallback: fixed(RuntimeKind::Claude),
+            agy_fallback: fixed(RuntimeKind::Agy),
             codex_fallback: fixed(RuntimeKind::Codex),
+            auth: Arc::new(Mutex::new(Authentication {
+                #[cfg(test)]
+                signed_in: [Some(true), Some(false), Some(true)],
+                ..Default::default()
+            })),
             lookup,
             recheck: None,
+        }
+    }
+
+    pub(super) fn available(&self, runtime: &str) -> bool {
+        RUNNERS.iter().position(|(id, _, _)| *id == runtime)
+            .is_some_and(|index| locked(&self.auth).signed_in[index] == Some(true))
+    }
+
+    pub(super) fn checking(&self) -> bool {
+        locked(&self.auth).signed_in.iter().any(Option::is_none)
+    }
+
+    pub(super) fn refresh_auth(&self, ctx: &egui::Context) {
+        if cfg!(test) { return; }
+        let mut auth = locked(&self.auth);
+        if auth.refreshed.is_some_and(|at| at.elapsed() < Duration::from_secs(30)) { return; }
+        auth.refreshed = Some(Instant::now());
+        for (index, (_, _, kind)) in RUNNERS.into_iter().enumerate() {
+            let (worker_auth, ctx) = (Arc::clone(&self.auth), ctx.clone());
+            let started = thread::Builder::new().name("runner-login".into()).spawn(move || {
+                let config = designllm_runtimes::detect::RuntimeConfig::from_env();
+                let signed_in = designllm_runtimes::detect::logged_in(kind, &config);
+                locked(&worker_auth).signed_in[index] = Some(signed_in);
+                ctx.request_repaint();
+            });
+            if started.is_err() { auth.signed_in[index] = Some(false); }
         }
     }
 
@@ -121,6 +162,7 @@ impl RunnerModels {
     fn slot(&self, kind: RuntimeKind) -> Option<(&Arc<Mutex<Slot>>, &Arc<ModelList>)> {
         match kind {
             RuntimeKind::Claude => Some((&self.claude, &self.claude_fallback)),
+            RuntimeKind::Agy => Some((&self.agy, &self.agy_fallback)),
             RuntimeKind::Codex => Some((&self.codex, &self.codex_fallback)),
             RuntimeKind::Mock => None,
         }
@@ -182,6 +224,10 @@ impl RunnerModels {
 }
 
 impl DesktopApp {
+    pub(super) fn runner_can_start(&self, runtime: &str) -> bool {
+        self.runner_models.available(runtime) || (runtime == "mock" && (cfg!(test) || self.ui_test.is_some()))
+    }
+
     /// Fits the runner to the current runtime's list (`home.runner`, and an answer coming in). After a runtime change
     /// without a model given, a model the list does not name is cleared; while the list is still awaited the check waits
     /// for the answer (`settle_runner_models`), so that the fixed list does not clear a model only the CLI names. Unless
@@ -218,6 +264,7 @@ impl DesktopApp {
     /// At each frame's start: asks for the list a waiting model check needs, and when the current runtime's answer has just
     /// come in, fits the runner to it and saves a change.
     pub(super) fn settle_runner_models(&mut self, ctx: &egui::Context) {
+        self.runner_models.refresh_auth(ctx);
         if let Some(kind) = self.runner_models.recheck {
             self.runner_models.request(kind, ctx);
         }
@@ -238,6 +285,22 @@ mod tests {
 
     fn levels(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn only_confirmed_sign_ins_are_available() {
+        let runners = RunnerModels::default();
+        locked(&runners.auth).signed_in = [None, Some(true), Some(false)];
+        assert!(runners.checking());
+        assert!(runners.available("agy"));
+        assert!(!runners.available("claude"));
+        assert!(!runners.available("codex"));
+        assert!(!runners.available("mock"));
+
+        locked(&runners.auth).signed_in = [Some(true), Some(false), Some(false)];
+        assert!(!runners.checking());
+        assert!(runners.available("claude"));
+        assert!(!runners.available("agy"));
     }
 
     #[test]

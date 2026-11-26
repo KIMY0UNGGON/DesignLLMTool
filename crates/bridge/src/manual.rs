@@ -72,7 +72,8 @@ const INDEX: Page = Page {
     steps: &[
         "For design work, start with the design-workflow page and the task guide. Every task prompt includes the shared design workflow.",
         "Read the page for your task before you call tools. Task pages: mobile-screen, landing-page, social-post, poster, slides, document-edit, paper-figure, web-code. Shared Canvas design systems have a procedure on the design-system page.",
-        "Call workspace_list first. It returns workspace_id and each artifact with its current revision. A workspace-scoped response may also include workspace_notices (Diagnostic entries) about migration, backup, or recovery; job-bound responses may omit this workspace-level field. Read notices when present.",
+        "Call workspace_list first. It returns workspace_id and each artifact with its current revision. A workspace-scoped response may include project_folder, artifacts_folder, and workspace_notices about migration, backup, or recovery. Read notices when present.",
+        "For local project work, start DesignLLMTool with --project <existing folder>; a workspace MCP client adds --mcp. Each committed revision is stored in the project's .designllm folder and can be opened again through the workspace from any MCP client. When the user wants a native file, use artifact_save without target_path to save or update the managed copy in the project's artifacts folder.",
         "When another owner holds a node, a change to it is refused with TARGET_BUSY. The collaboration page explains reservations and job scope.",
         "Every edit is one ChangeSet: request_id (a new UUID; send the same one again only when you repeat the same call), actor, workspace_id, artifact_id, base_revision (the current revision), allowed_intents, operations.",
         "The host records your actor under your connection: \"agent\" is recorded as mcp:<connection id>:agent, so you cannot act as desktop or another connection. Repeating a request with the same request_id after a reconnect returns its receipt.",
@@ -190,7 +191,7 @@ const AI_JOBS: Page = Page {
         "proposal_create", "proposal_get", "proposal_preview", "proposal_apply",
     ],
     steps: &[
-        "job_start queues one job for one artifact. runtime is claude or codex. model and effort are the exact values you want. The runtime checks effort when the job starts: an effort it does not report fails the job with UNSUPPORTED_OPERATION, and no other model or effort is used.",
+        "job_start queues one job for one artifact. runtime is claude, agy or codex. model and effort are the exact values you want. The runtime checks effort when the job starts: an effort it does not report fails the job with UNSUPPORTED_OPERATION, and no other model or effort is used.",
         "figure_refs is the explicit approval for Figure identity and exact revision: pass {figure_id, figure_revision} pairs when the job may render or link those Figures. source_refs approves asset hashes only. A job-bound figure_render_link and a new FigureLink accept only a pinned pair.",
         "The job's agent gets its own MCP connection with only these tools:",
         "The host checks the model the CLI reports. Claude's init line must name the requested model; a dated snapshot of the same id (claude-haiku-4-5-20251001 for claude-haiku-4-5) is accepted. Codex's model is checked when its stream reports one. A mismatch stops the run and fails the job. Effort is only passed on the command line; neither CLI reports it back.",
@@ -479,6 +480,7 @@ const GUI: Page = Page {
         "render_caret_rect", "render_selection_rects", "selection_set", "view_transform_set",
     ],
     steps: &[
+        "The workspace MCP server opens the desktop on its first foreground tool call. Set background: true on calls for explicit background work, or start the MCP server with --background for an entirely background session.",
         "ui_state_read: the screen (for example home or editor), the open artifact and revision, the page, selection, zoom, viewport, open panels and tool. It also returns state_seq and the view's age.",
         "ui_command_list: the commands the view offers. Each has id, label, args_schema, intents, permission (read, change, file_write or agent_start), enabled and shortcut. Run only enabled commands.",
         "ui_command_run with command_id and args that match the command's args_schema. permission is the class you grant: read or change for most commands. Desktop file.save and file.export need file_write and an explicit target_path, with overwrite and expected_target_hash when replacing a file. Export accepts explicit allowed_losses and reports its actual revision, path and hash. The Desktop view disables job-starting and other commands without safe result tracking; check enabled in ui_command_list. Use direct artifact_save, artifact_export or job_start tools when appropriate. allowed_intents must cover the command's intents; read commands have none.",

@@ -544,6 +544,7 @@ impl DesktopApp {
     /// Publishes the state when it changed, and at least every few seconds so that the view stays
     /// alive. The command registry follows the active kind and every command availability change.
     pub(super) fn publish_ui_if_due(&mut self) {
+        if std::env::var_os("DESIGNLLM_MCP_GUI").is_some() && self.agent_baseline_needed() { return; }
         let state = self.ui_state();
         let fingerprint = serde_json::to_string(&state).unwrap_or_default();
         let command_kind = if self.screen_is_editor() { self.active.as_ref().map(|active| active.kind) } else { None };

@@ -98,8 +98,7 @@ impl DesktopApp {
         }
     }
 
-    /// Saves to the save location. Without one, the dialog of "다른 이름으로 저장" asks for it; a dialog that is cancelled or
-    /// cannot be shown saves nothing, and the window says so.
+    /// Uses the project's managed copy, or asks for a file path in a standalone workspace.
     pub(super) fn save_active(&mut self) {
         let Some(active) = self.active.as_ref() else {
             self.set_error(String::from("작업물이 열려 있지 않습니다"));
@@ -109,8 +108,9 @@ impl DesktopApp {
             self.set_error(String::from("이 작업물의 원본 형식 저장은 지원되지 않습니다"));
             return;
         }
-        if self.save_path.trim().is_empty() {
-            let Some(path) = crate::dialogs::save_document(self.parent_hwnd, active.title.clone()) else {
+        let managed = self.home.project_folder.is_some();
+        if !managed && self.save_path.trim().is_empty() {
+            let Some(path) = crate::dialogs::save_document(self.parent_hwnd, active.title.clone(), active.kind) else {
                 self.notices.warning(
                     String::from("저장 위치가 정해지지 않아 저장하지 않았습니다. '다른 이름으로 저장'으로 위치를 정해 주세요"),
                     Instant::now(),
@@ -123,7 +123,7 @@ impl DesktopApp {
             request_id: new_id(),
             artifact_id: active.id.clone(),
             expected_revision: active.revision,
-            target_path: self.save_path.trim().into(),
+            target_path: if managed { String::new() } else { self.save_path.trim().into() },
             overwrite: false,
             expected_target_hash: None,
         };
@@ -484,7 +484,7 @@ fn native_kind(path: &std::path::Path) -> Option<ArtifactKind> {
         format: Option<String>,
     }
     let extension = path.extension().map(|extension| extension.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    if matches!(extension.as_str(), "pptx" | "docx" | "hwpx" | "hwp") {
+    if matches!(extension.as_str(), "pptx" | "docx" | "hwpx" | "hwp" | "pdf") {
         return None;
     }
     if !std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file()) {

@@ -28,6 +28,10 @@ pub(super) fn find_node_in_pages<'a>(pages: &'a [Page], id: &str) -> Option<&'a 
 }
 
 pub(super) fn inline_text_target_node_ids(artifact: &Artifact, kind: ArtifactKind, page_index: u32, node_id: &str) -> Option<Vec<String>> {
+    if matches!(artifact.body, ArtifactBody::Flow(_)) {
+        let paragraph = find_paragraph(artifact, node_id)?;
+        return paragraph.runs.iter().all(|run| !run.protected).then(|| vec![node_id.to_owned()]);
+    }
     let node = find_node(artifact, node_id)?;
     if node.kind == NodeKind::Text {
         return (node.ext.locked != Some(true)).then(|| vec![node.id.clone()]);
@@ -384,13 +388,20 @@ pub(super) fn paragraph_text(paragraph: &Paragraph) -> String {
     paragraph.runs.iter().map(|run| run.text.as_str()).collect()
 }
 
+pub(super) fn inline_target_text<'a>(artifact: &'a Artifact, id: &str) -> Option<std::borrow::Cow<'a, str>> {
+    if let Some(paragraph) = find_paragraph(artifact, id) {
+        return Some(std::borrow::Cow::Owned(paragraph_text(paragraph)));
+    }
+    find_node(artifact, id).map(|node| std::borrow::Cow::Borrowed(node.text.as_str()))
+}
+
 pub(super) fn slide_text_position(node_id: &str, paragraph_id: &str) -> Option<u32> {
     let prefix = format!("{node_id}#p");
     paragraph_id.strip_prefix(prefix.as_str())?.parse().ok()
 }
 
 pub(super) fn last_text_position(kind: ArtifactKind, node_id: &str, text: &str) -> (String, u32, u32) {
-    if kind == ArtifactKind::Canvas {
+    if kind != ArtifactKind::Slides {
         return (node_id.to_owned(), 0, text.graphemes(true).count().min(u32::MAX as usize) as u32);
     }
     let paragraphs: Vec<&str> = text.split('\n').collect();

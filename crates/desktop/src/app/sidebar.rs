@@ -1380,7 +1380,8 @@ impl DesktopApp {
         if let Some(job) = self.job.clone() {
             let state = super::chrome::job_agent_state(job.status);
             ui.horizontal(|ui| {
-                widgets::avatar(ui, palette, agent_letter(&self.active_runtime()), palette.agents[0], state, 18.0);
+                let runtime = self.active_runtime();
+                widgets::avatar(ui, palette, agent_letter(&runtime), super::home::agent_color(palette, &runtime), state, 18.0);
                 // The request the job was started with; a job this window did not start (another client's, or one started
                 // before the window opened) shows the general label, not what the request box holds now.
                 let label = self.job_prompts.get(&job.id).map_or(JOB_LABEL, String::as_str);
@@ -1464,7 +1465,7 @@ impl DesktopApp {
         ui.horizontal(|ui| {
             // The same words and menu as the home row's runner (`runner_labels`, `runner_popover`), on one line.
             let (runtime, model) = self.runner_labels();
-            let runner_label = format!("{runtime} · {model}");
+            let runner_label = if model.is_empty() { runtime.to_owned() } else { format!("{runtime} · {model}") };
             let dropdown_width = (ui.available_width() - 76.0).clamp(120.0, 220.0);
             let runner_response = ui
                 .add_enabled_ui(wait.is_none(), |ui| widgets::dropdown(ui, palette, &runner_label, None, dropdown_width))

@@ -8,7 +8,7 @@
 
 use std::collections::VecDeque;
 
-use designllm_contracts::{ArtifactBody, CanvasTable, Intent, Node, Operation};
+use designllm_contracts::{ArtifactBody, CanvasTable, FlowBlock, Intent, Node, Operation};
 use eframe::egui::{self, Event, ImeEvent, Key, Modifiers, Pos2, Vec2};
 use serde_json::json;
 
@@ -74,6 +74,132 @@ fn key_with(key: Key, modifiers: Modifiers) -> Event {
 
 fn editing(window: &Window) -> Option<String> {
     window.app.inline_text_edit.as_ref().map(|edit| edit.node_id.clone())
+}
+
+#[test]
+fn office_table_cells_accept_input_on_the_page() {
+    for kind in ["docx", "hwpx"] {
+        let mut host = Host::start();
+        let id = host.create(kind, "Office table edit");
+        let mut window = Window::open_with_previews(&mut host, &id);
+        window.app.screen = super::Screen::Editor;
+        window.step(&mut host, "add.table", json!({"rows":1,"columns":2})).unwrap();
+        let ArtifactBody::Flow(before) = host.artifact(&id).body else { panic!("office document") };
+        let table = before.sections[0].blocks.iter().find_map(|block| match block {
+            FlowBlock::Table(table) => Some(table), _ => None,
+        }).unwrap();
+        let FlowBlock::Paragraph(cell) = &table.rows[0][0].blocks[0] else { panic!("editable paragraph") };
+        let cell_id = cell.id.clone();
+        window.draw(&mut host, 1.0);
+        let point = centre(&window, &cell_id);
+        window.click(&mut host, 1.0, point, false);
+        assert_eq!(editing(&window).as_deref(), Some(cell_id.as_str()), "{kind}");
+        window.frame(&mut host, 1.0, vec![Event::Text("한글".into())]);
+        let artifact = host.artifact(&id);
+        let updated = super::doc_tree::find_paragraph(&artifact, &cell_id).expect("the original paragraph");
+        assert_eq!(super::doc_tree::paragraph_text(updated), "한글", "{kind}");
+        let revision = artifact.revision;
+        let ArtifactBody::Flow(after) = artifact.body else { panic!("office document") };
+        let edited = after.sections[0].blocks.iter().find_map(|block| match block {
+            FlowBlock::Table(table) => Some(table), _ => None,
+        }).unwrap();
+        assert_eq!(edited.column_widths, table.column_widths);
+        assert_eq!(edited.rows[0][1].id, table.rows[0][1].id);
+
+        let save = std::env::temp_dir().join(format!("designllm-office-edit-{}.{kind}", designllm_contracts::new_id()));
+        host.call("artifact.save", json!({"request_id":designllm_contracts::new_id(), "artifact_id":id,
+            "expected_revision":revision, "target_path":save})).expect("edited document saves in its native format");
+        let reopened = host.call("artifact.open", json!({"request_id":designllm_contracts::new_id(), "actor":"test", "path":save}));
+        std::fs::remove_file(save).expect("remove the saved test file");
+        let reopened = reopened.expect("saved document reopens");
+        let reopened_id = reopened["id"].as_str().unwrap();
+        let ArtifactBody::Flow(saved) = host.artifact(reopened_id).body else { panic!("office document") };
+        let saved_cell = saved.sections[0].blocks.iter().find_map(|block| match block {
+            FlowBlock::Table(table) => table.rows.first()?.first()?.blocks.first(), _ => None,
+        });
+        let Some(FlowBlock::Paragraph(saved_cell)) = saved_cell else { panic!("saved paragraph") };
+        assert_eq!(super::doc_tree::paragraph_text(saved_cell), "한글");
+
+        let mut window = Window::open_with_previews(&mut host, reopened_id);
+        window.app.screen = super::Screen::Editor;
+        window.draw(&mut host, 1.0);
+        let page = &window.app.page_textures[&0].page;
+        let line = page.source_map.iter().find(|region| region.logical_range.as_ref().is_some_and(|range| {
+            range.paragraph_id == saved_cell.id && range.end > range.start
+        })).expect("rendered text of the saved cell");
+        assert_ne!(line.node_id, saved_cell.id, "the glyph's hit names a run");
+        let glyph = super::page_to_screen(line.grapheme_rects[0], page.size, window.app.page_rect.unwrap());
+        let after_first = Pos2::new(glyph.left() + glyph.width() * 0.8, glyph.center().y);
+        window.click(&mut host, 1.0, after_first, false);
+        assert_eq!(editing(&window).as_deref(), Some(saved_cell.id.as_str()), "{kind}");
+        window.frame(&mut host, 1.0, vec![Event::Text("!".into())]);
+        let artifact = host.artifact(reopened_id);
+        let updated = super::doc_tree::find_paragraph(&artifact, &saved_cell.id).unwrap();
+        assert_eq!(super::doc_tree::paragraph_text(updated), "한!글");
+    }
+}
+
+#[test]
+fn a_paginated_flow_paragraph_keeps_its_full_editor_and_caret() {
+    use designllm_contracts::{new_id, Paragraph, TextRun};
+    let mut host = Host::start();
+    let id = host.create("docx", "Paginated paragraph");
+    let ArtifactBody::Flow(doc) = host.artifact(&id).body else { panic!("office document") };
+    let paragraph_id = new_id();
+    let original = "Line\n".repeat(95) + "End";
+    host.apply(&id, vec![Operation::InsertFlowBlock {
+        section_id: doc.sections[0].id.clone(), index: 0,
+        block: FlowBlock::Paragraph(Paragraph { id: paragraph_id.clone(), style_ref: None, format: Default::default(),
+            runs: vec![TextRun::new(new_id(), original.clone())] }),
+    }], [Intent::Content].into_iter().collect()).unwrap();
+
+    let mut window = Window::open_with_previews(&mut host, &id);
+    window.app.screen = super::Screen::Editor;
+    window.draw(&mut host, 1.0);
+    assert!(window.app.begin_inline_text_edit(&window.ctx, &paragraph_id, 0,
+        Some(designllm_contracts::TextPosition { paragraph_id: paragraph_id.clone(), grapheme_index: 4, trailing: true })));
+    assert!(window.app.flow_uses_paragraph_editor());
+    let mut driver = Driver::slow();
+    driver.renders_held = true;
+    driver.frame(&mut window, &mut host, vec![Event::Text("!".into())]);
+    driver.idle(&mut window, &mut host, 4);
+    let revision = window.app.inline_text_edit.as_ref().unwrap().revision;
+    assert!(window.app.page_textures[&0].revision < revision, "the edit is acknowledged before its render");
+    assert!(window.app.flow_uses_paragraph_editor(), "the editor stays open while rendering");
+    let artifact = host.artifact(&id);
+    let result = super::doc_tree::paragraph_text(super::doc_tree::find_paragraph(&artifact, &paragraph_id).unwrap());
+    assert_eq!(result, "Line!".to_owned() + &original[4..]);
+}
+
+#[test]
+fn modifier_clicks_select_separate_runs_in_one_flow_paragraph() {
+    use designllm_contracts::{new_id, Paragraph, TextRun};
+    let mut host = Host::start();
+    let id = host.create("docx", "Separate styled runs");
+    let ArtifactBody::Flow(doc) = host.artifact(&id).body else { panic!("office document") };
+    let plain = TextRun::new(new_id(), "Plain ");
+    let mut bold = TextRun::new(new_id(), "Bold");
+    bold.style.bold = true;
+    let run_ids = [plain.id.clone(), bold.id.clone()];
+    host.apply(&id, vec![Operation::InsertFlowBlock {
+        section_id: doc.sections[0].id.clone(), index: 0,
+        block: FlowBlock::Paragraph(Paragraph { id: new_id(), style_ref: None, format: Default::default(), runs: vec![plain, bold] }),
+    }], [Intent::Content].into_iter().collect()).unwrap();
+
+    let mut window = Window::open_with_previews(&mut host, &id);
+    window.app.screen = super::Screen::Editor;
+    let mut driver = Driver::at_once();
+    driver.idle(&mut window, &mut host, 3);
+    let page = &window.app.page_textures[&0].page;
+    let page_rect = window.app.page_rect.unwrap();
+    let points = run_ids.each_ref().map(|run| {
+        let region = page.source_map.iter().find(|region| &region.node_id == run).unwrap();
+        super::page_to_screen(region.bounds, page.size, page_rect).center()
+    });
+    driver.modifiers = Modifiers::SHIFT;
+    for point in points { driver.click(&mut window, &mut host, point); }
+    assert_eq!(window.app.selected_nodes, run_ids);
+    assert!(editing(&window).is_none());
 }
 
 fn conflict(window: &Window) -> Option<String> {

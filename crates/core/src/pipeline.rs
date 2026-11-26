@@ -8,12 +8,34 @@ use crate::receipts::{change_key, key_for, reject_duplicate_set, RequestKey};
 use crate::routes::representation_key;
 use crate::scope::copied_source_ids;
 use crate::store::{self, StoredResult};
-use crate::{asset_refs, parse, to_value, Workspace};
+use crate::{asset_refs, parse, to_value, PdfCancel, PdfEditImporter, Workspace};
 use designllm_contracts::*;
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+
+pub struct PdfOpen {
+    file: std::fs::File,
+    title: String,
+    actor: String,
+    key: RequestKey,
+    import: PdfEditImporter,
+}
+
+pub(crate) enum PreparedPdfOpen { Existing(Value), Pending(PdfOpen) }
+
+pub(crate) fn is_pdf_path(path: &str) -> bool {
+    std::path::Path::new(path).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+}
+
+impl PdfOpen {
+    pub fn run(&self, cancel: &PdfCancel) -> DltResult<Vec<u8>> {
+        if cancel.is_canceled() { return Err(err(ErrorCode::Canceled, "PDF conversion was canceled")); }
+        let bytes = crate::files::read_source(&self.file)?;
+        (self.import)(&bytes, cancel)
+    }
+}
 
 /// Per-revision snapshots above this size get a `snapshot_large` diagnostic.
 const SNAPSHOT_WARN_BYTES: usize = 8 * 1024 * 1024;
@@ -1322,20 +1344,63 @@ impl Workspace {
     }
 
     pub(crate) fn open_artifact(&mut self, req: OpenRequest) -> DltResult<Value> {
+        if is_pdf_path(&req.path) {
+            return match self.prepare_pdf_open(req, self.agent_paths())? {
+                PreparedPdfOpen::Existing(result) => Ok(result),
+                PreparedPdfOpen::Pending(open) => {
+                    let cancel = PdfCancel::new();
+                    let converted = open.run(&cancel);
+                    self.finish_pdf_open(open, converted, &cancel)
+                }
+            };
+        }
         let key = key_for("artifact.open", &req.request_id, &req)?;
         if let Some(found) = store::find_receipt(&self.conn, &key)? { return found; }
         let (path, file) = crate::files::check_source_path(&req.path, self.agent_paths())?;
-        let kind = match req.kind { Some(k) => k, None => crate::files::kind_from_extension(&path)? };
+        let (kind, bytes) = crate::files::read_artifact_input(&path, file, req.kind)?;
         let engine = self.engine_by_kind(kind)?;
-        let bytes = crate::files::read_source(file)?;
-        let source_hash = sha256(&bytes);
+        let source = (path.to_string_lossy().into_owned(), sha256(&bytes));
         let staging = self.staging();
         let asset = staging.put(&bytes, &crate::files::mime_for(&path, &bytes))?;
         drop(bytes);
         let title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let renderer = self.renderer.clone();
         let artifact = engine.open(&OpenInput { kind, title, asset }, &EngineContext { assets: &staging, renderer: &*renderer })?;
-        self.commit_new(&*engine, key, &req.actor, artifact, kind, &staging, Some((path.to_string_lossy().into_owned(), source_hash)))
+        self.commit_new(&*engine, key, &req.actor, artifact, kind, &staging, Some(source))
+    }
+
+    pub(crate) fn prepare_pdf_open(&self, req: OpenRequest, agent_paths: bool) -> DltResult<PreparedPdfOpen> {
+        let key = key_for("artifact.open", &req.request_id, &req)?;
+        if let Some(found) = store::find_receipt(&self.conn, &key)? { return found.map(PreparedPdfOpen::Existing); }
+        if req.kind.is_some_and(|kind| kind != ArtifactKind::Docx) {
+            return Err(invalid("a PDF opens as an editable DOCX document"));
+        }
+        self.engine_by_kind(ArtifactKind::Docx)?;
+        let import = self.pdf_edit_importer.ok_or_else(|| DltError::unsupported("PDF editing is unavailable in this host"))?;
+        let (path, file) = crate::files::check_source_path(&req.path, agent_paths)?;
+        let title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        Ok(PreparedPdfOpen::Pending(PdfOpen { file, title, actor: req.actor, key, import }))
+    }
+
+    pub fn finish_pdf_open(&mut self, open: PdfOpen, converted: DltResult<Vec<u8>>, cancel: &PdfCancel) -> DltResult<Value> {
+        if let Some(found) = store::find_receipt(&self.conn, &open.key)? { return found; }
+        let check_cancel = || if cancel.is_canceled() { Err(err(ErrorCode::Canceled, "PDF conversion was canceled")) } else { Ok(()) };
+        check_cancel()?;
+        let bytes = converted?;
+        let kind = ArtifactKind::Docx;
+        let engine = self.engine_by_kind(kind)?;
+        let staging = self.staging();
+        let asset = staging.put(&bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")?;
+        drop(bytes);
+        let renderer = self.renderer.clone();
+        let mut artifact = engine.open(&OpenInput { kind, title: open.title, asset }, &EngineContext { assets: &staging, renderer: &*renderer })?;
+        artifact.diagnostics.push(Diagnostic {
+            code: designllm_contracts::PDF_EDIT_APPROXIMATE.into(),
+            message: "PDF was converted to editable DOCX. Table recognition and pagination depend on the PDF; check them before exporting.".into(),
+            node_id: None, blocking: false, params: Default::default(),
+        });
+        check_cancel()?;
+        self.commit_new(&*engine, open.key, &open.actor, artifact, kind, &staging, None)
     }
 
     #[allow(clippy::too_many_arguments)]

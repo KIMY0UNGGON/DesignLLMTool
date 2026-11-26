@@ -12,3 +12,8 @@ pub const PDF_REQUEST_BUDGET: &str = "PDF_REQUEST_BUDGET";
 pub const PDF_INTERNAL_PANIC: &str = "PDF_INTERNAL_PANIC";
 /// The asset is over the supported PDF size (`InvalidArgument`).
 pub const PDF_TOO_LARGE: &str = "PDF_TOO_LARGE";
+
+pub const PDF_EDIT_APPROXIMATE: &str = "pdf.import_layout_approximate";
+pub const PDF_EDIT_WORD_REQUIRED: &str = "pdf.edit_word_required";
+pub const PDF_EDIT_NO_TEXT: &str = "pdf.edit_no_text";
+pub const PDF_EDIT_FAILED: &str = "pdf.edit_failed";

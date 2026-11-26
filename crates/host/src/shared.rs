@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use designllm_contracts::{CoreEvent, DltResult};
 use designllm_core::{EventBatch, PdfCancel, Workspace};
@@ -99,17 +99,22 @@ pub(crate) struct Listed<'a> {
 
 impl Listed<'_> {
     /// Runs `read` in its turn. Returns `None`, without running it, when the read's cancel is set before the turn comes.
-    pub(crate) fn run<T>(mut self, read: impl FnOnce() -> T) -> Option<T> {
+    pub(crate) fn run<T>(self, read: impl FnOnce() -> T) -> Option<T> {
+        self.run_before(None, read)
+    }
+
+    pub(crate) fn run_before<T>(mut self, deadline: Option<Instant>, read: impl FnOnce() -> T) -> Option<T> {
         let reads = self.reads;
+        let stopped = || self.cancel.is_canceled() || deadline.is_some_and(|at| Instant::now() >= at);
         {
             let mut state = lock(&reads.state);
-            while state.running && !self.cancel.is_canceled() {
+            while state.running && !stopped() {
                 state = match reads.turn_freed.wait_timeout(state, PDF_TURN_POLL) {
                     Ok((state, _)) => state,
                     Err(poisoned) => poisoned.into_inner().0,
                 };
             }
-            if self.cancel.is_canceled() {
+            if stopped() {
                 return None;
             }
             state.running = true;
@@ -397,5 +402,19 @@ mod tests {
         assert!(outcome.is_err());
         assert_eq!(reads.listed(), 0);
         assert_eq!(reads.list(None, &PdfCancel::new()).run(|| 7), Some(7), "the next read gets the turn");
+    }
+
+    #[test]
+    fn an_expired_import_does_not_run_when_the_pdf_turn_becomes_available() {
+        let reads = Arc::new(PdfReads::default());
+        let (cancel, release) = (PdfCancel::new(), PdfCancel::new());
+        let first = read_until(&reads, "pdf-reader", &cancel, &release);
+        wait_until("the reader holds the turn", || lock(&reads.state).running);
+        let expired = reads.list(None, &cancel).run_before(Some(Instant::now()), || panic!("expired import ran"));
+        assert_eq!(expired, None::<()>);
+        assert_eq!(reads.listed(), 1);
+        release.cancel();
+        assert_eq!(first.join().unwrap(), Some(()));
+        assert_eq!(reads.list(None, &cancel).run(|| 7), Some(7));
     }
 }

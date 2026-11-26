@@ -13,6 +13,7 @@ mod svg_path;
 pub use svg_path::{PATH_MAX_COMMANDS, PATH_MAX_COORDINATE};
 mod pdf_diag;
 pub use pdf_diag::{PDF_INTERNAL_PANIC, PDF_MEMORY_LIMIT, PDF_REQUEST_BUDGET, PDF_STACK_LIMIT, PDF_TOO_LARGE};
+pub use pdf_diag::{PDF_EDIT_APPROXIMATE, PDF_EDIT_FAILED, PDF_EDIT_NO_TEXT, PDF_EDIT_WORD_REQUIRED};
 pub mod pdf_coverage;
 mod engine_rules;
 pub use engine_rules::{CONTRAST_MIN, MAX_BREAKPOINTS, MAX_GRID_COLUMNS, TOUCH_MIN_PX};
@@ -37,6 +38,8 @@ mod operation_name;
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROJECT_STORE_DIR: &str = ".designllm";
+pub const PROJECT_ARTIFACTS_DIR: &str = "artifacts";
 pub const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
 pub const EMU_PER_INCH: i64 = 914_400;
 pub const EMU_PER_MM: i64 = 36_000;
@@ -142,6 +145,16 @@ impl From<std::io::Error> for DltError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ArtifactKind { Canvas, WebCode, Slides, Docx, Hwpx, Hwp, Figure }
+
+pub fn artifact_native_extension(kind: ArtifactKind) -> &'static str {
+    match kind {
+        ArtifactKind::Canvas | ArtifactKind::WebCode | ArtifactKind::Figure => "designllm",
+        ArtifactKind::Slides => "pptx",
+        ArtifactKind::Docx => "docx",
+        ArtifactKind::Hwpx => "hwpx",
+        ArtifactKind::Hwp => "hwp",
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Intent { Design, Content, Data }
@@ -1377,7 +1390,12 @@ pub struct OpenInput { pub kind: ArtifactKind, pub title: String, pub asset: Ass
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OpenRequest { pub request_id: Id, pub actor: String, pub path: String, pub kind: Option<ArtifactKind> }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct SaveRequest { pub request_id: Id, pub artifact_id: Id, pub expected_revision: Revision, pub target_path: String, #[serde(default)] pub overwrite: bool, pub expected_target_hash: Option<String> }
+pub struct SaveRequest {
+    pub request_id: Id, pub artifact_id: Id, pub expected_revision: Revision,
+    /// Absolute destination. Omit in a project to save in its artifacts folder.
+    #[serde(default)] pub target_path: String,
+    #[serde(default)] pub overwrite: bool, pub expected_target_hash: Option<String>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SaveState { pub artifact_id: Id, pub workspace_revision: Revision, pub saved_revision: Option<Revision>, pub target_path: Option<String>, pub target_hash: Option<String>, pub dirty: bool, pub externally_modified: bool }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

@@ -9,8 +9,8 @@ use crate::receipts::key_for;
 use crate::store::{self, StoredResult};
 use crate::{to_value, Workspace, CORE_LOCK_FILE, MAX_IMPORT_BYTES};
 use designllm_contracts::*;
-use rusqlite::{params, Connection, TransactionBehavior};
-use serde::Serialize;
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read as _, Write as _};
@@ -189,26 +189,47 @@ pub(crate) fn check_source_path(raw: &str, strict: bool) -> DltResult<(PathBuf, 
     if len > MAX_IMPORT_BYTES { return Err(invalid(format!("{raw:?} is {len} bytes; the limit is {MAX_IMPORT_BYTES}"))); }
     Ok((path, file))
 }
-pub(crate) fn read_source(file: fs::File) -> DltResult<Vec<u8>> {
+pub(crate) fn read_source(file: impl io::Read) -> DltResult<Vec<u8>> {
+    read_limited(file, MAX_IMPORT_BYTES)
+}
+
+fn read_limited(file: impl io::Read, limit: u64) -> DltResult<Vec<u8>> {
     let mut bytes = Vec::new();
-    file.take(MAX_IMPORT_BYTES + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_IMPORT_BYTES { return Err(invalid("file grew beyond the import limit while reading")); }
+    file.take(limit + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit { return Err(invalid(format!("file exceeds the {limit} byte import limit"))); }
     Ok(bytes)
 }
 
-pub(crate) fn kind_from_extension(path: &Path) -> DltResult<ArtifactKind> {
+pub(crate) fn read_artifact_input(path: &Path, file: fs::File, kind: Option<ArtifactKind>) -> DltResult<(ArtifactKind, Vec<u8>)> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    match ext.as_str() {
-        "pptx" => Ok(ArtifactKind::Slides),
-        "docx" => Ok(ArtifactKind::Docx),
-        "hwpx" => Ok(ArtifactKind::Hwpx),
-        "hwp" => Ok(ArtifactKind::Hwp),
-        _ => Err(invalid(format!("cannot infer the artifact kind of {:?}; pass kind explicitly", path.display().to_string()))),
+    if ext == "designllm" {
+        let limit = native_envelope::NATIVE_MAX_FILE_BYTES;
+        if file.metadata()?.len() > limit { return Err(invalid(format!("native project file exceeds the {limit} byte limit"))); }
+        let bytes = read_limited(file, limit)?;
+        let kind = match kind { Some(kind) => kind, None => native_project_kind(&bytes)? };
+        return Ok((kind, bytes));
     }
+    let kind = match (kind, ext.as_str()) {
+        (Some(kind), _) => kind,
+        (None, "pptx") => ArtifactKind::Slides,
+        (None, "docx") => ArtifactKind::Docx,
+        (None, "hwpx") => ArtifactKind::Hwpx,
+        (None, "hwp") => ArtifactKind::Hwp,
+        _ => return Err(invalid(format!("cannot infer the artifact kind of {:?}; pass kind explicitly", path.display()))),
+    };
+    Ok((kind, read_source(file)?))
 }
-/// Required file extension of a native save, where the kind fixes the container format.
-fn native_extension(kind: ArtifactKind) -> Option<&'static str> {
-    match kind { ArtifactKind::Slides => Some("pptx"), ArtifactKind::Docx => Some("docx"), ArtifactKind::Hwpx => Some("hwpx"), ArtifactKind::Hwp => Some("hwp"), _ => None }
+
+fn native_project_kind(bytes: &[u8]) -> DltResult<ArtifactKind> {
+    #[derive(Deserialize)]
+    struct Header<'a> { format: &'a str }
+    let header: Header = serde_json::from_slice(bytes).map_err(|_| invalid("invalid DesignLLM project format header"))?;
+    match header.format {
+        "designllm.canvas" => Ok(ArtifactKind::Canvas),
+        "designllm.web" => Ok(ArtifactKind::WebCode),
+        "designllm.figure-project" => Ok(ArtifactKind::Figure),
+        _ => Err(invalid("unrecognized DesignLLM project format")),
+    }
 }
 
 pub(crate) fn mime_for(path: &Path, bytes: &[u8]) -> String {
@@ -229,6 +250,71 @@ pub(crate) fn mime_for(path: &Path, bytes: &[u8]) -> String {
         "json" => "application/json", "html" | "htm" => "text/html", "css" => "text/css", "js" => "text/javascript",
         _ => "application/octet-stream",
     }.into()
+}
+
+#[derive(Serialize, Deserialize)]
+struct ProjectFile {
+    path: PathBuf,
+    hash: Option<String>,
+}
+
+impl ProjectFile {
+    fn stored(conn: &Connection, artifact_id: &str) -> DltResult<Option<Self>> {
+        let value: Option<String> = conn.query_row("SELECT value FROM meta WHERE key = ?1",
+            [format!("project_file:{artifact_id}")], |row| row.get(0)).optional().map_err(sql)?;
+        value.map(|text| store::from_json(&text, "project file")).transpose()
+    }
+
+    fn record(&self, conn: &Connection, artifact_id: &str) -> DltResult<()> {
+        conn.execute("INSERT INTO meta(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![format!("project_file:{artifact_id}"), store::to_json(self)?]).map_err(sql)?;
+        Ok(())
+    }
+
+    fn path_in(&self, project: &Path) -> DltResult<PathBuf> {
+        let name = self.path.file_name().ok_or_else(|| invalid("stored project file has no file name"))?;
+        Ok(project.join(PROJECT_ARTIFACTS_DIR).join(name))
+    }
+
+    fn refresh_pending(&mut self, conn: &Connection, artifact_id: &str, before_revision: Option<Revision>) -> DltResult<()> {
+        let path = self.path.to_str().ok_or_else(|| invalid("project path is not Unicode"))?;
+        let before_revision = before_revision.map(i64::try_from).transpose().map_err(|_| invalid("revision exceeds the workspace integer range"))?;
+        let mut statement = conn.prepare("SELECT content_hash FROM pending_saves WHERE artifact_id=?1 AND purpose='save' AND target_path=?2 AND (?3 IS NULL OR revision < ?3)").map_err(sql)?;
+        let hashes = statement.query_map(params![artifact_id, path, before_revision], |row| row.get::<_, String>(0)).map_err(sql)?
+            .collect::<rusqlite::Result<Vec<_>>>().map_err(sql)?;
+        if hashes.is_empty() { return Ok(()); }
+        // A Save As or a later revision can retire an interrupted publication's pending row.
+        let Ok(target) = Target::resolve(path, true) else { return Ok(()) };
+        if let Ok(Some(hash)) = file_hash(&target.io_path(), true) {
+            if hashes.contains(&hash) {
+                self.hash = Some(hash);
+                self.record(conn, artifact_id)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn destination(root: &Path, row: &store::ArtifactRow, stored: Option<Self>) -> DltResult<Self> {
+        let root = std::path::absolute(root)?;
+        if !root.file_name().is_some_and(|name| name.eq_ignore_ascii_case(PROJECT_STORE_DIR)) {
+            return Err(invalid("target_path is required outside a project workspace"));
+        }
+        let project = root.parent().ok_or_else(|| invalid("workspace has no project folder"))?;
+        let parent = local::Parent::open(project, true)?;
+        parent.recheck()?;
+        match fs::create_dir(parent.path.join(PROJECT_ARTIFACTS_DIR)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
+        }
+        if let Some(stored) = stored { return Ok(Self { path: stored.path_in(project)?, hash: stored.hash }); }
+        let title: String = row.title.trim().chars().take(32)
+            .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
+        let title = if title.trim().is_empty() { "Artifact" } else { title.trim_end() };
+        let id_hash = sha256(row.id.as_bytes());
+        let file_name = format!("{title}-{}.{}", &id_hash[..16], artifact_native_extension(row.kind));
+        Ok(Self { path: project.join(PROJECT_ARTIFACTS_DIR).join(file_name), hash: None })
+    }
 }
 
 #[cfg(test)]
@@ -491,11 +577,15 @@ pub(crate) fn recover_pending(conn: &mut Connection, recovered: &mut usize) -> D
     };
     let (mut removed, mut saved) = (0, 0);
     for (temp, artifact_id, target, revision, content_hash, snapshot, purpose) in &pending {
+        let mut project_file = if purpose == "save" {
+            ProjectFile::stored(&tx, artifact_id)?.filter(|file| file.path == Path::new(target))
+        } else { None };
+        let strict = project_file.is_some();
         let path = Path::new(temp);
         if path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(TEMP_SUFFIX)) {
             let remove_temp = |target: Target| -> DltResult<bool> {
                 let path = target.io_path();
-                match local::file_metadata(&path, false)? {
+                match local::file_metadata(&path, strict)? {
                     None => return Ok(false),
                     Some(meta) if !meta.is_file() => return Err(err(ErrorCode::StorageFailure, "pending temporary path is not a regular file")),
                     Some(_) => {}
@@ -506,14 +596,17 @@ pub(crate) fn recover_pending(conn: &mut Connection, recovered: &mut usize) -> D
                     Err(e) => Err(io_store(e)),
                 }
             };
-            // Recorded paths: an earlier publication checked them; they resolve as the OS does it.
-            match Target::resolve(temp, false).and_then(remove_temp) {
+            match Target::resolve(temp, strict).and_then(remove_temp) {
                 Ok(deleted) => removed += usize::from(deleted),
                 Err(e) if matches!(e.code, ErrorCode::InvalidArgument | ErrorCode::NotFound) => {}
                 Err(e) => return Err(e),
             }
         }
-        if purpose == "save" && matches!(file_hash(Path::new(target), false), Ok(Some(h)) if h == *content_hash) {
+        if purpose == "save" && Target::resolve(target, strict).and_then(|target| file_hash(&target.io_path(), strict)).ok().flatten().as_ref() == Some(content_hash) {
+            if let Some(file) = project_file.as_mut() {
+                file.hash = Some(content_hash.clone());
+                file.record(&tx, artifact_id)?;
+            }
             saved += tx.execute(
                 // Strictly newer only: a save of the same revision recorded elsewhere stays the record.
                 "UPDATE artifacts SET saved_revision = ?2, saved_path = ?3, saved_hash = ?4, saved_snapshot = ?5 WHERE artifact_id = ?1 AND (saved_revision IS NULL OR saved_revision < ?2)",
@@ -568,14 +661,27 @@ impl Workspace {
     pub(crate) fn agent_paths(&self) -> bool { self.path_caller == PathCaller::Agent }
 
     fn save_state_of(&self, row: &store::ArtifactRow, check_external: bool) -> DltResult<SaveState> {
-        let externally_modified = match (check_external, &row.saved_path, &row.saved_hash) {
-            // The recorded saved_path, read as the OS resolves it (as before 66c) for every caller.
+        let mut target_path = row.saved_path.clone();
+        let mut project_target = false;
+        if self.root.file_name().is_some_and(|name| name.eq_ignore_ascii_case(PROJECT_STORE_DIR)) {
+            if let Some(file) = ProjectFile::stored(&self.conn, &row.id)?.filter(|file| file.path.to_str() == row.saved_path.as_deref()) {
+                let root = std::path::absolute(&self.root)?;
+                target_path = Some(file.path_in(root.parent().ok_or_else(|| invalid("workspace has no project folder"))?)?.to_string_lossy().into_owned());
+                project_target = true;
+            }
+        }
+        let externally_modified = match (check_external, &target_path, &row.saved_hash) {
+            (true, Some(path), Some(hash)) if project_target => match Target::resolve(path, true) {
+                Ok(target) => file_hash(&target.io_path(), true)?.as_deref() != Some(hash),
+                Err(error) if error.code == ErrorCode::NotFound => true,
+                Err(error) => return Err(error),
+            },
             (true, Some(p), Some(h)) => file_hash(Path::new(p), false)?.as_deref() != Some(h.as_str()),
             _ => false,
         };
         Ok(SaveState {
             artifact_id: row.id.clone(), workspace_revision: row.current_revision, saved_revision: row.saved_revision,
-            target_path: row.saved_path.clone(), target_hash: row.saved_hash.clone(), dirty: row.dirty(), externally_modified,
+            target_path, target_hash: row.saved_hash.clone(), dirty: row.dirty(), externally_modified,
         })
     }
     pub(crate) fn save_state(&mut self, p: crate::routes::ArtifactIdParams) -> DltResult<Value> {
@@ -592,11 +698,31 @@ impl Workspace {
         if req.expected_revision != row.current_revision {
             return Err(err(ErrorCode::RevisionConflict, format!("expected_revision {} is not the current revision {}", req.expected_revision, row.current_revision)).at(row.current_revision));
         }
-        if let Some(ext) = native_extension(row.kind) {
-            let got = Path::new(&req.target_path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        let use_project = req.target_path.is_empty();
+        if use_project && (req.overwrite || req.expected_target_hash.is_some()) {
+            return Err(invalid("overwrite and expected_target_hash require an explicit target_path"));
+        }
+        let mut stored = if self.root.file_name().is_some_and(|name| name.eq_ignore_ascii_case(PROJECT_STORE_DIR)) {
+            ProjectFile::stored(&self.conn, &row.id)?
+        } else { None };
+        if let Some(file) = stored.as_mut() { file.refresh_pending(&self.conn, &row.id, use_project.then_some(row.current_revision))?; }
+        let mut project_file = if use_project {
+            Some(ProjectFile::destination(&self.root, &row, stored)?)
+        } else {
+            stored.filter(|file| file.path == Path::new(&req.target_path))
+        };
+        let (path, overwrite, expected) = if use_project {
+            let file = project_file.as_ref().expect("a project destination was resolved");
+            (file.path.to_str().ok_or_else(|| invalid("project path is not Unicode"))?, file.hash.is_some(), file.hash.as_deref())
+        } else {
+            (req.target_path.as_str(), req.overwrite, req.expected_target_hash.as_deref())
+        };
+        let ext = artifact_native_extension(row.kind);
+        if ext != "designllm" {
+            let got = Path::new(path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
             if got != ext { return Err(invalid(format!("a {:?} artifact is saved as .{ext}, not {:?}", row.kind, req.target_path))); }
         }
-        let (target, refused) = check_target_or_pending(&self.conn, &self.root, &req.target_path, req.overwrite, req.expected_target_hash.as_deref(), &row.id, row.current_revision, &row.current_snapshot, "save", self.agent_paths())?;
+        let (target, refused) = check_target_or_pending(&self.conn, &self.root, path, overwrite, expected, &row.id, row.current_revision, &row.current_snapshot, "save", use_project || self.agent_paths())?;
         let finished = match refused {
             None => None,
             Some((e, rows)) => match finished_save(&target, &rows)? {
@@ -633,7 +759,9 @@ impl Workspace {
                     return Err(err(ErrorCode::UnsafeRoundtrip, format!("verify_saved found {} blocking difference(s); nothing was written", refused.len())).diags(refused));
                 }
                 diagnostics.extend(verification.diagnostics);
-                let hash = publish(&self.conn, &self.hook, &target, req.overwrite, req.expected_target_hash.as_deref(), &bytes, &row.id, row.current_revision, &row.current_snapshot, "save")?;
+                // Recovery needs the destination before rename. Ownership of the new bytes is recorded only after publication.
+                if let Some(file) = &project_file { file.record(&self.conn, &row.id)?; }
+                let hash = publish(&self.conn, &self.hook, &target, overwrite, expected, &bytes, &row.id, row.current_revision, &row.current_snapshot, "save")?;
                 (hash, json!({ "checked_parts": verification.checked_parts, "checked_regions": verification.checked_regions, "diagnostics": diagnostics }))
             }
         };
@@ -644,6 +772,10 @@ impl Workspace {
         let result = to_value(&state)?;
         let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
         clear_pending(&tx, &target, &row.id, "save", Some(row.current_revision))?;
+        if let Some(file) = project_file.as_mut() {
+            file.hash = Some(hash.clone());
+            file.record(&tx, &row.id)?;
+        }
         tx.execute(
             "UPDATE artifacts SET saved_revision = ?2, saved_path = ?3, saved_hash = ?4, saved_snapshot = ?5 WHERE artifact_id = ?1",
             params![row.id, row.current_revision as i64, target.path.to_string_lossy(), hash, row.current_snapshot],

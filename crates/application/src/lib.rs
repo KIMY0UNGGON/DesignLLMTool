@@ -3,6 +3,7 @@ use std::{path::{Path, PathBuf}, sync::Arc};
 
 /// The PDF reader worker (task 34c): the product's `source.extract_pdf` read runs in a child process of this executable.
 pub mod pdf_worker;
+mod pdf_edit;
 
 /// Host connection of this launcher outside the desktop window (`--command`, host probes, the
 /// keep-alive ping, smoke-test setup). Role `cli`: only the desktop window's own connection is the
@@ -320,6 +321,7 @@ mod tests {
 }
 
 fn configure_workspace(workspace: &mut designllm_core::Workspace, pdf_reader: designllm_core::PdfReadHandler) {
+    workspace.set_pdf_edit_importer(pdf_edit::convert);
     // `source.extract_pdf` goes to `pdf_reader`, which takes precedence over a legacy PDF handler, so none is registered here
     // (task 34c, decision 11): the legacy `sources::extract_pdf` could not be reached from a product workspace.
     workspace.set_csv_handler(designllm_figures::import_csv);
@@ -372,6 +374,50 @@ pub fn default_workspace() -> DltResult<PathBuf> {
     Ok(PathBuf::from(base).join("DesignLLMTool/workspaces/default"))
 }
 
+pub fn project_workspace(project: &Path) -> DltResult<PathBuf> {
+    use std::{io::ErrorKind, os::windows::fs::MetadataExt};
+
+    if project.as_os_str().is_empty() { return Err(DltError::invalid("--project needs an existing local folder")); }
+    let project = std::fs::canonicalize(project).map_err(|error| match error.kind() {
+        ErrorKind::NotFound => DltError::new(ErrorCode::NotFound, "The project folder does not exist"),
+        _ => error.into(),
+    })?;
+    if !project.is_dir() { return Err(DltError::invalid("The project path must be a folder")); }
+    let mut workspace = project.join(PROJECT_STORE_DIR);
+    let path = workspace.to_str().filter(|path| local_path::is_local_file_path(path))
+        .ok_or_else(|| DltError::invalid("The project must be on a local drive"))?;
+    // Keep the normal drive path when the canonical path has a Win32 verbatim prefix.
+    if let Some(plain) = path.strip_prefix(r"\\?\") { workspace = plain.into(); }
+    match std::fs::symlink_metadata(&workspace) {
+        Ok(meta) if !meta.is_dir() || meta.file_attributes() & 0x400 != 0 => {
+            return Err(DltError::invalid(format!("{PROJECT_STORE_DIR} must be a regular folder inside the project")));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(workspace)
+}
+
+#[cfg(test)]
+mod project_workspace_tests {
+    use super::*;
+
+    #[test]
+    fn project_workspace_requires_an_existing_folder_and_does_not_create_storage() {
+        let folder = std::env::temp_dir().join(format!("designllm-project-path-{}", new_id()));
+        assert_eq!(project_workspace(&folder).unwrap_err().code, ErrorCode::NotFound);
+        std::fs::create_dir(&folder).unwrap();
+        let workspace = project_workspace(&folder).unwrap();
+        assert!(workspace.ends_with(PROJECT_STORE_DIR));
+        assert!(!workspace.exists());
+        std::fs::write(folder.join(PROJECT_STORE_DIR), "existing file").unwrap();
+        assert_eq!(project_workspace(&folder).unwrap_err().code, ErrorCode::InvalidArgument);
+        std::fs::remove_file(folder.join(PROJECT_STORE_DIR)).unwrap();
+        std::fs::remove_dir(folder).unwrap();
+    }
+}
+
 pub fn web_runtime_directory() -> Option<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(path) = std::env::var_os("DESIGNLLM_WEBVIEW2_DIR") { candidates.push(PathBuf::from(path)); }
@@ -420,7 +466,6 @@ pub fn ui_test_mock_agent_path(raw: &std::ffi::OsStr) -> DltResult<PathBuf> {
 }
 
 pub fn ensure_host(workspace: &Path) -> DltResult<()> {
-    // GUI/smoke launch is authorized to create its workspace. MCP remains attach-only.
     std::fs::create_dir_all(workspace)?;
     let client = cli_client(workspace);
     match client.call("system.hello", serde_json::json!({})) {
@@ -471,6 +516,45 @@ pub fn ensure_host(workspace: &Path) -> DltResult<()> {
         return Err(DltError::new(ErrorCode::WorkspaceLocked, "Another process owns this workspace and its host did not accept a connection within 30 seconds"));
     }
     Err(DltError::new(ErrorCode::HostNotRunning, "Host did not become ready within 30 seconds"))
+}
+
+pub fn ensure_visible_app(workspace: &Path) -> DltResult<()> {
+    use std::{os::windows::process::CommandExt, process::{Command, Stdio}, time::{Duration, Instant}};
+
+    let logs = workspace.join("logs");
+    std::fs::create_dir_all(&logs)?;
+    let lock = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(logs.join("mcp-window.lock"))?;
+    lock.lock()?;
+    ensure_host(workspace)?;
+    let client = cli_client(workspace);
+    let last_view = || match client.call("ui.state.read", serde_json::json!({})) {
+        Ok(view) => Ok(view.get("view_id").and_then(serde_json::Value::as_str).map(str::to_owned)),
+        Err(error) if error.code == ErrorCode::Unavailable => Ok(None),
+        Err(error) => Err(error),
+    };
+    let connections = client.call("clients.list", serde_json::json!({}))?;
+    // A busy window can outlive its published view while waiting for a file open.
+    if connections["clients"].as_array().is_some_and(|clients| clients.iter().any(|client| client["role"] == "gui")) {
+        return Ok(());
+    }
+    let prior = last_view()?;
+
+    let log = std::fs::OpenOptions::new().create(true).append(true).open(logs.join("desktop.log"))?;
+    let mut child = Command::new(std::env::current_exe()?)
+        .arg("--workspace").arg(workspace)
+        .env("DESIGNLLM_MCP_GUI", "1")
+        .creation_flags(designllm_runtimes::win::CREATE_NO_WINDOW)
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(log).spawn()?;
+    let deadline = Instant::now() + Duration::from_secs(45);
+    loop {
+        if last_view()?.is_some_and(|view| Some(&view) != prior.as_ref()) { return Ok(()); }
+        if child.try_wait()?.is_some() || Instant::now() >= deadline {
+            return Err(DltError::new(ErrorCode::Unavailable, format!(
+                "The DesignLLMTool window did not become ready; see {}", logs.join("desktop.log").display()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 struct HostStartupCapture { directory: PathBuf, error_path: PathBuf }

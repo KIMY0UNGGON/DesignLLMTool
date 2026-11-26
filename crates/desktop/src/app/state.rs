@@ -325,6 +325,7 @@ pub(super) enum TextTarget {
 
 #[derive(Clone)]
 pub(super) struct InlineTextEdit {
+    pub(super) paragraph_editor: bool,
     pub(super) id: u64,
     pub(super) view_id: String,
     pub(super) actor: String,

@@ -3,7 +3,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, ChildStderr, ChildStdout};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
@@ -11,8 +11,9 @@ use std::time::{Duration, Instant};
 
 use designllm_contracts::{DltError, DltResult, ErrorCode};
 
+use crate::agy::AgyProfile;
 use crate::audit::{ModelCheck, RunAudit};
-use crate::detect::RuntimeInfo;
+use crate::detect::{RuntimeInfo, RuntimeKind};
 use crate::invocation::{build, LaunchSpec};
 use crate::progress::ProgressBuffer;
 use crate::win::{resume_child, spawn_suspended_in_job_with_env, JobObject};
@@ -50,6 +51,7 @@ struct AttemptInner {
     audit: Mutex<RunAudit>,
     readers: Mutex<Vec<JoinHandle<()>>>,
     exit_code: Mutex<Option<i32>>,
+    _agy_profile: Option<Arc<AgyProfile>>,
 }
 
 /// The job object of one attempt, handed to the caller before the runtime runs. Holding it keeps the job open.
@@ -86,9 +88,15 @@ pub fn start_with_transcript_watched(
     transcript: Option<&Path>,
     on_assigned: impl FnOnce(JobWatch),
 ) -> DltResult<Attempt> {
-    let invocation = build(info, spec)?;
+    let mut invocation = build(info, spec)?;
+    let agy_profile = if info.kind == RuntimeKind::Agy {
+        let profile = AgyProfile::create()?;
+        invocation.args.extend(profile.args());
+        Some(Arc::new(profile))
+    } else { None };
     let mut audit = RunAudit::open(info.kind, &spec.request.model, &spec.request.effort, &invocation.program, transcript)?;
-    let started = spawn_suspended_in_job_with_env(&invocation.program, &invocation.args, &invocation.cwd, &invocation.env);
+    let cwd = agy_profile.as_ref().map_or(invocation.cwd.as_path(), |profile| profile.directory.as_path());
+    let started = spawn_suspended_in_job_with_env(&invocation.program, &invocation.args, cwd, &invocation.env);
     let (mut child, job) = match started {
         Ok(started) => started,
         Err(e) => {
@@ -114,13 +122,7 @@ pub fn start_with_transcript_watched(
     let pid = child.id();
     let progress = Arc::new(ProgressBuffer::new());
     let stderr = Arc::new(ProgressBuffer::new());
-    if let Some(mut stdin) = child.stdin.take() {
-        let prompt = invocation.stdin.clone();
-        thread::spawn(move || {
-            // The write may fail if the runtime exits early. That is reported through its exit code.
-            let _ = stdin.write_all(prompt.as_bytes());
-        });
-    }
+    let stdin = child.stdin.take();
     let out = child.stdout.take();
     let err = child.stderr.take();
     let inner = Arc::new(AttemptInner {
@@ -133,16 +135,45 @@ pub fn start_with_transcript_watched(
         audit: Mutex::new(audit),
         readers: Mutex::new(Vec::new()),
         exit_code: Mutex::new(None),
+        _agy_profile: agy_profile.clone(),
     });
     let mut readers = Vec::new();
-    if let Some(out) = out {
-        readers.push(spawn_stdout_reader(Arc::clone(&inner), out));
+    if let Some(profile) = agy_profile {
+        let (Some(stdin), Some(out)) = (stdin, out) else {
+            terminate(&inner);
+            return Err(DltError::new(ErrorCode::Io, "AGY stdio is unavailable"));
+        };
+        readers.push(spawn_agy_turn(Arc::clone(&inner), profile, out, stdin, spec.clone(), invocation.stdin));
+    } else {
+        if let Some(mut stdin) = stdin {
+            thread::spawn(move || { let _ = stdin.write_all(invocation.stdin.as_bytes()); });
+        }
+        if let Some(out) = out {
+            readers.push(spawn_stdout_reader(Arc::clone(&inner), out));
+        }
     }
     if let Some(err) = err {
         readers.push(spawn_stderr_reader(Arc::clone(&inner), err));
     }
     *lock(&inner.readers) = readers;
     Ok(Attempt { inner })
+}
+
+fn spawn_agy_turn(inner: Arc<AttemptInner>, profile: Arc<AgyProfile>, stdout: ChildStdout, stdin: ChildStdin, spec: LaunchSpec, prompt: String) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let result = crate::agy::run_turn(BufReader::new(stdout), stdin, &spec, &profile, &prompt,
+            |line| {
+                inner.progress.push(line);
+                lock(&inner.audit).observe_stdout(line);
+            },
+            |model| { lock(&inner.audit).judge(model); });
+        if let Err(error) = result {
+            if !inner.killed.load(Ordering::SeqCst) {
+                lock(&inner.audit).fail(error);
+                terminate(&inner);
+            }
+        }
+    })
 }
 
 /// Reads stdout line by line. Each line feeds the progress text and the audit. A violation ends the process tree
@@ -178,7 +209,7 @@ fn terminate(inner: &AttemptInner) {
 
 /// Reads one line without its line break (a trailing `\r` is removed too). A line longer than `max` bytes keeps its
 /// first `max` bytes and a marker, and the rest of it is skipped. `Ok(None)` means the stream ended.
-fn read_bounded_line<R: BufRead>(reader: &mut R, max: usize) -> std::io::Result<Option<String>> {
+pub(crate) fn read_bounded_line<R: BufRead>(reader: &mut R, max: usize) -> std::io::Result<Option<String>> {
     let mut line: Vec<u8> = Vec::new();
     let mut cut = false;
     let mut seen_any = false;

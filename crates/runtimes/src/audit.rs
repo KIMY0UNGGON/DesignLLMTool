@@ -119,7 +119,7 @@ impl RunAudit {
             "runtime": kind.wire_name(),
             "requested_model": requested_model,
             "requested_effort": requested_effort,
-            "effort_check": "command_line_only",
+            "effort_check": if kind == RuntimeKind::Agy { "acp_config" } else { "command_line_only" },
             "program": program.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default(),
             "transcript_cap_bytes": cap,
         }));
@@ -162,7 +162,7 @@ impl RunAudit {
         match self.kind {
             RuntimeKind::Claude => self.claude_object(&object),
             RuntimeKind::Codex => self.codex_object(&object),
-            RuntimeKind::Mock => false,
+            RuntimeKind::Agy | RuntimeKind::Mock => false,
         }
     }
 
@@ -180,6 +180,7 @@ impl RunAudit {
                 self.check = ModelCheck::Unavailable("no session_configured event carried a model");
                 self.note_check();
             }
+            RuntimeKind::Agy => { self.fail(DltError::unsupported("AGY closed before confirming its model")); }
             RuntimeKind::Mock => {}
         }
     }
@@ -249,7 +250,7 @@ impl RunAudit {
     }
 
     /// Compares one reported model with the request. Returns true when the check failed on this call.
-    fn judge(&mut self, reported: &str) -> bool {
+    pub(crate) fn judge(&mut self, reported: &str) -> bool {
         self.reported = Some(reported.to_string());
         if model_matches(&self.requested_model, reported) {
             if matches!(self.check, ModelCheck::Pending) {
@@ -262,7 +263,7 @@ impl RunAudit {
         self.fail(error)
     }
 
-    fn fail(&mut self, error: DltError) -> bool {
+    pub(crate) fn fail(&mut self, error: DltError) -> bool {
         self.check = ModelCheck::Failed;
         self.violation = Some(error);
         self.note_check();

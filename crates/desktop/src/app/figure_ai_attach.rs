@@ -149,6 +149,9 @@ impl DesktopApp {
         if let Some(reason) = self.ai_job_wait() {
             return Some(reason);
         }
+        if !self.runner_can_start(&self.ai_runtime) {
+            return Some("로그인된 AI 실행기를 고르세요");
+        }
         if self.ai_model.trim().is_empty() {
             return Some("실행기 메뉴에서 모델을 고르세요");
         }

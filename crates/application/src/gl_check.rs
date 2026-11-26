@@ -199,7 +199,7 @@ fn message(failures: &[(Renderer, String)]) -> String {
     )
 }
 
-fn show_message_box(text: &str) {
+pub(super) fn show_message_box(text: &str) {
     #[cfg(windows)]
     {
         #[link(name = "user32")]

@@ -1176,6 +1176,7 @@ fn held_pdf() -> HeldPdfEvidence {
 /// An inline text session on a canvas node, as the text editor opens it.
 fn inline_session(committed: &str) -> InlineTextEdit {
     InlineTextEdit {
+        paragraph_editor: false,
         id: 4,
         view_id: "view-1".into(),
         actor: "desktop:inline:view-1".into(),

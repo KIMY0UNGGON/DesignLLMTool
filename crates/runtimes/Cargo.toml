@@ -4,10 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-description = "Claude Code, Codex CLI, and mock agent runtimes: detection, exact model/effort invocation, job-owned process trees"
+description = "Claude Code, AGY, Codex CLI, and mock agent runtimes with exact model options and job-owned process trees"
 
 [dependencies]
 designllm-contracts.workspace = true
+designllm-bridge.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

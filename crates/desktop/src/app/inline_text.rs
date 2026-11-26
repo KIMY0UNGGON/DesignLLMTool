@@ -1,6 +1,6 @@
 use super::*;
 use super::{
-    doc_tree::{canvas_table_anchor_for_covered_cell, find_node, find_paragraph, global_caret, inline_text_target_node_ids, last_text_position, paragraph_text, slide_text_position},
+    doc_tree::{canvas_table_anchor_for_covered_cell, find_paragraph, global_caret, inline_target_text, inline_text_target_node_ids, last_text_position, paragraph_text, slide_text_position},
     state::inline_text_actor,
 };
 
@@ -65,7 +65,7 @@ impl DesktopApp {
     }
 
     pub(super) fn inline_text_operation(session: &InlineTextEdit, edit: &TextInputEdit) -> Result<Operation, String> {
-        if session.kind == ArtifactKind::Canvas {
+        if session.kind != ArtifactKind::Slides {
             return Ok(Operation::ReplaceText {
                 range: TextRange { paragraph_id: session.node_id.clone(), start: edit.range.start, end: edit.range.end },
                 text: edit.text.clone(),
@@ -428,7 +428,7 @@ impl DesktopApp {
             session.retry_same_request,
         );
         let current_text = self.artifact.as_ref().filter(|artifact| artifact.id == artifact_id)
-            .and_then(|artifact| find_node(artifact, &node_id)).map(|node| node.text.as_str());
+            .and_then(|artifact| inline_target_text(artifact, &node_id));
         let current_targets = self.artifact.as_ref().filter(|artifact| artifact.id == artifact_id)
             .and_then(|artifact| inline_text_target_node_ids(artifact, kind, page_index, &node_id));
         if !retry_same_request {
@@ -441,7 +441,7 @@ impl DesktopApp {
                 return;
             }
         }
-        if !retry_same_request && current_text != Some(committed_text.as_str()) {
+        if !retry_same_request && current_text.as_deref() != Some(committed_text.as_str()) {
             if let Some(session) = self.inline_text_edit.as_mut().filter(|session| session.id == session_id) {
                 session.retry_allowed = false;
                 session.conflict = Some("작업물이 다른 텍스트로 바뀌었습니다. 초안을 버리거나 복사하세요".into());
@@ -489,6 +489,7 @@ impl DesktopApp {
             self.refresh_active();
             return;
         }
+        let paragraph_editor = self.flow_uses_paragraph_editor();
         let result = {
             let Some(session) = self.inline_text_edit.as_mut().filter(|session| session.id == session_id) else { return };
             let Some(edit) = session.in_flight.take() else { return };
@@ -498,6 +499,7 @@ impl DesktopApp {
                 session.in_flight = Some(edit);
                 None
             } else {
+                session.paragraph_editor = paragraph_editor;
                 session.revision = revision;
                 let kind = session.kind;
                 let node_id = session.node_id.clone();
@@ -505,7 +507,7 @@ impl DesktopApp {
                 let page_index = session.page_index;
                 let table_cell = session.reservation_node_ids.len() > 1;
                 let ime_commit = edit.ime_commit;
-                let range = if kind == ArtifactKind::Canvas {
+                let range = if kind != ArtifactKind::Slides {
                     TextRange { paragraph_id: node_id.clone(), start: edit.caret_after, end: edit.caret_after }
                 } else {
                     TextRange {
@@ -559,7 +561,7 @@ impl DesktopApp {
         self.set_selected_ids(vec![node_id]);
         self.set_selection(selection);
 
-        if table_cell {
+        if table_cell || self.artifact.as_ref().is_some_and(|artifact| matches!(artifact.body, ArtifactBody::Flow(_))) {
             self.refresh_active();
         }
 
@@ -721,7 +723,7 @@ impl DesktopApp {
         });
         if !synced { return; }
         let current = self.artifact.as_ref().filter(|artifact| artifact.id == artifact_id)
-            .and_then(|artifact| find_node(artifact, &node_id));
+            .and_then(|artifact| inline_target_text(artifact, &node_id));
         let current_targets = self.artifact.as_ref().filter(|artifact| artifact.id == artifact_id)
             .and_then(|artifact| inline_text_target_node_ids(artifact, kind, page_index, &node_id));
         let revision = self.active.as_ref().filter(|active| active.id == artifact_id).map(|active| active.revision);
@@ -741,7 +743,7 @@ impl DesktopApp {
             return;
         }
         let same_text = current_targets.as_ref() == Some(&expected_targets)
-            && current.is_some_and(|node| node.text == expected);
+            && current.as_deref() == Some(expected.as_str());
         if let Some(session) = self.inline_text_edit.as_mut().filter(|session| session.id == session_id) {
             if same_text && selection_current && scene_current {
                 if let Some(revision) = revision { session.revision = revision; }
@@ -822,7 +824,8 @@ impl DesktopApp {
             self.set_error("문서를 읽는 중입니다. 잠시 뒤 다시 시도하세요".into());
             return false;
         };
-        if !matches!(active.kind, ArtifactKind::Canvas | ArtifactKind::Slides) {
+        let flow = matches!(artifact.body, ArtifactBody::Flow(_));
+        if !flow && !matches!(active.kind, ArtifactKind::Canvas | ArtifactKind::Slides) {
             return false;
         }
         if active.id != artifact.id || artifact.id != context.artifact_id
@@ -831,11 +834,18 @@ impl DesktopApp {
             self.set_error("문서의 새 내용을 읽는 중입니다. 잠시 뒤 다시 시도하세요".into());
             return false;
         }
-        if board::node_page_index(artifact, node_id) != Some(page_index) {
+        let on_page = if flow {
+            self.page_textures.get(&page_index).is_some_and(|page| {
+                page.artifact_id == active.id && page.revision == active.revision && page.frames.contains_key(node_id)
+            })
+        } else {
+            board::node_page_index(artifact, node_id) == Some(page_index)
+        };
+        if !on_page {
             self.set_error("편집하려는 텍스트가 요청한 페이지에 없습니다".into());
             return false;
         }
-        let Some(node) = find_node(artifact, node_id) else {
+        let Some(original) = inline_target_text(artifact, node_id).map(std::borrow::Cow::into_owned) else {
             self.set_error("편집하려는 텍스트를 찾지 못했습니다".into());
             return false;
         };
@@ -867,7 +877,6 @@ impl DesktopApp {
             return false;
         }
 
-        let original = node.text.clone();
         let cell_text_length = original.graphemes(true).count().min(u32::MAX as usize) as u32;
         let (paragraph_id, paragraph_index, local_caret) = match (active.kind, position) {
             (ArtifactKind::Canvas, Some(position)) if position.paragraph_id == node_id => {
@@ -881,19 +890,30 @@ impl DesktopApp {
             (ArtifactKind::Slides, Some(position)) => slide_text_position(node_id, &position.paragraph_id)
                 .map(|index| (position.paragraph_id.clone(), index, position.grapheme_index))
                 .unwrap_or_else(|| last_text_position(active.kind, node_id, &original)),
+            (_, Some(position)) if flow && position.paragraph_id == node_id => {
+                (node_id.to_owned(), 0, position.grapheme_index.min(cell_text_length))
+            }
             _ => last_text_position(active.kind, node_id, &original),
         };
-        let caret = global_caret(&original, paragraph_index, local_caret);
+        let caret = if flow { local_caret } else { global_caret(&original, paragraph_index, local_caret) };
         let id = self.next_text_session_id;
         self.next_text_session_id = self.next_text_session_id.saturating_add(1);
-        self.text_target = Some(TextTarget::Node { node_id: node_id.to_owned(), original: original.clone(), editable: true });
+        self.text_target = Some(if flow {
+            TextTarget::Paragraph { paragraph_id: node_id.to_owned(), original: original.clone(), editable: true }
+        } else {
+            TextTarget::Node { node_id: node_id.to_owned(), original: original.clone(), editable: true }
+        });
         self.text_draft = original.clone();
         self.text_editor_focused = true;
         self.text_adapter = GraphemeAdapter::default();
         self.text_adapter.set_caret_at_grapheme(ctx, self.text_editor_id, &self.text_draft, Some(caret));
+        if flow {
+            ctx.memory_mut(|memory| memory.request_focus(self.text_editor_id));
+        }
         let view_id = self.view_id.clone();
         let actor = self.ui_test_inline_actor(&view_id).unwrap_or_else(|| inline_text_actor(&view_id));
         self.inline_text_edit = Some(InlineTextEdit {
+            paragraph_editor: false,
             id, actor, view_id, artifact_id: active.id.clone(), node_id: node_id.to_owned(), page_index, kind: active.kind,
             revision: context.revision, committed_text: original, queue: VecDeque::new(), in_flight: None,
             composing: false, ime_commit_pending: false, ime_cancelled_frame: false, ime_generation: 0, reservation_id: None,

@@ -415,10 +415,24 @@ impl DesktopApp {
     /// a click. A click on the cell itself reaches the board only in the editor's first frame, before the editor takes the
     /// pointer: it leaves the edit as it is.
     pub(super) fn click_ends_inline_cell_edit(&mut self, ctx: &Context, at: Option<(u32, Pos2, egui::Rect)>, pixels_per_point: f32) {
-        let Some(session) = self.inline_text_edit.as_ref().filter(|session| session.reservation_node_ids.len() > 1) else { return };
+        let Some(session) = self.inline_text_edit.as_ref() else { return };
         if session.composing || self.text_adapter.is_ime_active() {
             return;
         }
+        if matches!(session.kind, ArtifactKind::Docx | ArtifactKind::Hwpx | ArtifactKind::Hwp) {
+            if at.is_some_and(|(page_index, pos, rect)| page_index == session.page_index
+                && self.page_textures.get(&page_index).is_some_and(|page| page.frames.get(&session.node_id)
+                    .is_some_and(|frame| super::page_to_screen(*frame, page.page.size, rect).contains(pos)))) {
+                return;
+            }
+            let artifact_id = session.artifact_id.clone();
+            if let Some((page_index, ..)) = at { self.focus_page(page_index); }
+            self.set_cell_follow(ctx, CellEditFollow::Click { artifact_id,
+                at: at.map(|(page, position, _)| (page, position)), pixels_per_point, additive: super::multi::additive_modifier(ctx) });
+            self.finish_inline_text_edit();
+            return;
+        }
+        if session.reservation_node_ids.len() <= 1 { return; }
         let (artifact_id, table_id, cell_id, session_page) =
             (session.artifact_id.clone(), session.reservation_node_ids[1].clone(), session.node_id.clone(), session.page_index);
         let on_band = at.is_some_and(|(page_index, position, page_rect)| {
@@ -499,7 +513,13 @@ impl DesktopApp {
         }
         let (Some(active), Some(artifact)) = (self.active.as_ref(), self.artifact.as_ref()) else { return None };
         let node_id = self.selected_nodes[0].clone();
-        let page_index = super::board::node_page_index(artifact, &node_id)?;
+        let page_index = if matches!(artifact.body, ArtifactBody::Flow(_)) {
+            self.page_textures.iter().filter(|(_, page)| {
+                page.artifact_id == active.id && page.revision == active.revision && page.frames.contains_key(&node_id)
+            }).map(|(index, _)| *index).min_by_key(|index| index.abs_diff(self.page_index))?
+        } else {
+            super::board::node_page_index(artifact, &node_id)?
+        };
         let target = if find_node(artifact, &node_id).is_some_and(|node| node.ext.table.is_some()) && active.kind == ArtifactKind::Canvas {
             table_entry_cell(artifact, page_index, &node_id, self.cell_nav.last_edited.as_ref())?
         } else if inline_text_target_node_ids(artifact, active.kind, page_index, &node_id).is_some() {

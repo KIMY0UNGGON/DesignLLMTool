@@ -1477,7 +1477,11 @@ impl DesktopApp {
                 }
             }
             "file.save_as" => {
-                if let Some(path) = crate::dialogs::save_document(self.parent_hwnd, self.active.as_ref().map(|item| item.title.clone()).unwrap_or_default()) {
+                let artifact = self.active.as_ref().ok_or("작업물이 열려 있지 않습니다")?;
+                if let Some(path) = crate::dialogs::save_document(self.parent_hwnd, artifact.title.clone(), artifact.kind) {
+                    if self.home.project_folder.is_some() {
+                        return self.save_active_to(&json!({ "target_path": path }));
+                    }
                     self.save_path = path.to_string_lossy().into_owned();
                     self.save_active();
                 }
@@ -1616,6 +1620,7 @@ impl DesktopApp {
                 }
                 let mut runtime_changed = false;
                 if let Some(runtime) = text(args, "runtime") {
+                    if !self.runner_models.available(runtime) { return Err("로그인된 AI 실행기를 고르세요".into()); }
                     runtime_changed = super::runner_models::runtime_kind(runtime) != super::runner_models::runtime_kind(&self.ai_runtime);
                     self.ai_runtime = runtime.to_owned();
                 }

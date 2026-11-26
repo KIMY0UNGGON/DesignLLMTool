@@ -1,14 +1,14 @@
 //! designllm-runtimes: launches the AI agent CLIs for app jobs.
 //!
-//! - [`detect`]: finds `claude.exe` / `codex.exe` (or a configured mock agent) and reads `--version` and
-//!   `--help`. No model call and no login state is read.
+//! - [`detect`]: finds Claude, AGY and Codex executables and checks the capabilities their adapters use.
+//!   `detect::logged_in` checks account availability for the desktop picker without a model turn.
 //! - [`build_invocation`]: exact model and effort, the job-bound MCP configuration, and the prompt. Nothing
 //!   is substituted: an unsupported effort or an unknown runtime is an error.
 //! - [`start`] / [`start_with_transcript`]: runs the invocation inside a kill-on-close job object.
 //!   [`Attempt::kill_tree`] ends exactly the processes that attempt started.
 //! - [`audit`]: checks the model the CLI reports against the requested one (Claude: the init line, Codex: a
-//!   `session_configured` event). A mismatch ends the attempt. Each attempt can keep a bounded transcript.
-//!   Effort is not reported by either CLI; it is only checked as passed on the command line.
+//!   `session_configured` event, AGY: ACP options). A mismatch ends the attempt. Each attempt can keep
+//!   a bounded transcript. AGY confirms both model and effort before it receives the request.
 //!
 //! The host owns scheduling and calls these functions outside the core lock. Stdout is progress text
 //! only; it is never parsed into changes.
@@ -16,6 +16,7 @@
 #[cfg(not(windows))]
 compile_error!("designllm-runtimes uses Windows job objects; it targets Windows only");
 
+mod agy;
 pub mod attempt;
 pub mod audit;
 pub mod detect;

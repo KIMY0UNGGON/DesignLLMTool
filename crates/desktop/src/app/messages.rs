@@ -53,8 +53,13 @@ pub(super) enum Words {
 /// words is a contracts constant (`diag_codes`, `repeat_groups`, the PDF codes); the engine reports the same constant.
 pub(super) fn diagnostic_words(code: &str) -> Option<Words> {
     use designllm_contracts::{diag_codes as codes, repeat_groups as repeat};
+    use designllm_contracts::{PDF_EDIT_APPROXIMATE, PDF_EDIT_FAILED, PDF_EDIT_NO_TEXT, PDF_EDIT_WORD_REQUIRED};
     use Words::{Refusal, Silent, Warning};
     Some(match code {
+        PDF_EDIT_APPROXIMATE => Warning("PDF를 편집 가능한 문서로 변환했습니다. 표와 쪽 나눔을 확인해 주세요"),
+        PDF_EDIT_WORD_REQUIRED => Refusal("PDF를 편집하려면 이 PC에 Microsoft Word가 설치되어 있어야 합니다"),
+        PDF_EDIT_NO_TEXT => Refusal("이 PDF에서 편집 가능한 글자를 찾지 못했습니다"),
+        PDF_EDIT_FAILED => Refusal("PDF를 편집 가능한 문서로 변환하지 못했습니다"),
         "core.workspace_path_too_long" => Refusal(
             "작업공간 경로가 너무 깁니다. 더 짧은 폴더 경로로 옮긴 뒤 다시 여세요. 이번 시도에서는 데이터베이스와 기존 백업이 변경되지 않았습니다",
         ),

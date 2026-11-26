@@ -11,8 +11,9 @@
 //! names its base revision in that change, as for any other change.
 
 use crate::blobs::StagingAssets;
+use crate::pipeline::{is_pdf_path, PreparedPdfOpen};
 use crate::routes::PdfParams;
-use crate::{object_params, parse, respond, to_value, PdfReadHandler, PdfReading, RenderJob, Workspace};
+use crate::{object_params, parse, respond, to_value, PdfOpen, PdfReadHandler, PdfReading, RenderJob, Workspace};
 use designllm_contracts::{AssetRef, DltResult, JobRef, RpcRequest, RpcResponse, PROTOCOL_VERSION};
 use serde_json::{json, Value};
 use std::cell::RefCell;
@@ -28,6 +29,8 @@ pub enum Dispatch {
     Answered(RpcResponse),
     /// A checked PDF read. Run it without the workspace, then call [`Workspace::finish_pdf_read`].
     ReadPdf(PdfRead),
+    /// Convert a PDF without the workspace lock, then commit its editable copy.
+    OpenPdf { id: String, open: PdfOpen },
     /// A checked `render.get` or `render.pixels` (`render_split.rs`). Run it without the workspace, then call
     /// [`Workspace::finish_render`].
     Render(Box<RenderJob>),
@@ -108,6 +111,18 @@ impl Workspace {
     pub fn dispatch_start(&mut self, request: RpcRequest, bound_job: Option<JobRef>) -> Dispatch {
         if request.protocol_version == PROTOCOL_VERSION && matches!(request.method.as_str(), "render.get" | crate::render_split::PIXELS) {
             return self.dispatch_render(request, bound_job);
+        }
+        if request.protocol_version == PROTOCOL_VERSION && request.method == "artifact.open" && bound_job.is_none()
+            && request.params.get("path").and_then(Value::as_str).is_some_and(is_pdf_path)
+        {
+            let RpcRequest { id, params, .. } = request;
+            let mut params = object_params(params);
+            let agent_paths = crate::files::take_agent_path(&mut params) || self.agent_paths();
+            return match parse(params).and_then(|request| self.prepare_pdf_open(request, agent_paths)) {
+                Ok(PreparedPdfOpen::Pending(open)) => Dispatch::OpenPdf { id, open },
+                Ok(PreparedPdfOpen::Existing(result)) => Dispatch::Answered(respond(id, "artifact.open", Ok(result))),
+                Err(error) => Dispatch::Answered(respond(id, "artifact.open", Err(error))),
+            };
         }
         let split = request.method == METHOD && request.protocol_version == PROTOCOL_VERSION;
         let Some(reader) = self.pdf_read.filter(|_| split) else {

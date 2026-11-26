@@ -317,7 +317,7 @@ impl DesktopApp {
             }
         }
         let actor = event.pointer("/detail/actor").and_then(Value::as_str).unwrap_or_default();
-        if !matches!(kind, "artifact.created" | "artifact.changed") || !is_follow_agent_actor(actor) {
+        if !matches!(kind, "artifact.created" | "artifact.opened" | "artifact.changed") || !is_follow_agent_actor(actor) {
             return;
         }
         if let Some(id) = event.pointer("/detail/request_id").and_then(Value::as_str) {
