@@ -59,18 +59,48 @@ fn overlapping_saves_of_two_windows_keep_every_change() {
 }
 
 #[test]
-fn an_unreadable_settings_file_is_not_overwritten_and_the_change_waits() {
-    let root = scratch("settings-unreadable");
+fn an_unparsable_settings_file_is_moved_aside_and_the_save_goes_on_from_the_defaults() {
+    let root = scratch("settings-unparsable");
     let path = settings_path(&root);
     let mut app = app_on(&root);
     std::fs::create_dir_all(path.parent().expect("the folder")).expect("the folder");
     std::fs::write(&path, "{ not json").expect("a damaged file");
     app.home.starred.insert("project".into());
     app.save_star("project");
-    assert_eq!(std::fs::read_to_string(&path).expect("the file"), "{ not json", "a file that cannot be read is left as it is");
+    // The damaged file is kept byte for byte under a new name, and the star is saved into fresh settings.
+    let moved: Vec<std::path::PathBuf> = std::fs::read_dir(path.parent().expect("the folder"))
+        .expect("the folder")
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|entry| entry.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("settings.json.bad-")))
+        .collect();
+    assert_eq!(moved.len(), 1, "{moved:?}");
+    assert_eq!(std::fs::read_to_string(&moved[0]).expect("the moved file"), "{ not json");
+    let saved = load(&path);
+    assert!(saved.starred.contains("project"));
+    assert!(!app.settings_unsaved(), "the star is saved");
+    let notice = app.notices.current(std::time::Instant::now()).expect("a notice");
+    let name = moved[0].file_name().and_then(|name| name.to_str()).expect("a name");
+    assert!(notice.text.contains(name) && notice.text.contains("옮기고"), "{}", notice.text);
+    // The next save is an ordinary one: nothing more is moved.
+    app.home.starred.insert("other".into());
+    app.save_star("other");
+    assert!(load(&path).starred.contains("other") && load(&path).starred.contains("project"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_settings_file_that_cannot_be_read_is_not_replaced_and_the_change_waits() {
+    let root = scratch("settings-unreadable");
+    let path = settings_path(&root);
+    let mut app = app_on(&root);
+    // A folder where the settings file should be: reading it fails, which is not a parse error.
+    std::fs::create_dir_all(&path).expect("a folder in the way");
+    app.home.starred.insert("project".into());
+    app.save_star("project");
+    assert!(path.is_dir(), "nothing replaced it");
     assert!(app.settings_unsaved(), "the star waits to be saved");
     assert!(app.notices.current(std::time::Instant::now()).is_some_and(|notice| notice.text.contains("화면 설정을 저장하지 못했습니다")));
-    // The file is readable again (another window's Figure output in it): the next save merges into it.
+    std::fs::remove_dir(&path).expect("the folder goes");
     std::fs::write(&path, r#"{"figure_outputs":{"fig":{"profile":"high_res_print","dpi":600}}}"#).expect("a readable file");
     app.save_settings();
     let saved = load(&path);

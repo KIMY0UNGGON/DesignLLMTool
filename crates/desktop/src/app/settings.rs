@@ -72,15 +72,28 @@ pub(super) fn load(path: &Path) -> GuiSettings {
         .unwrap_or_default()
 }
 
-/// The settings on disk for a merge: the defaults only when there is no file yet. A file that cannot be read or parsed is an
-/// error, so a write never replaces settings it could not read.
-fn load_for_merge(path: &Path) -> std::io::Result<GuiSettings> {
+/// The settings on disk for a merge: the defaults when there is no file yet. A file that cannot be read (locked, no access)
+/// is an error, so a write never replaces settings it could not read. A file that is read but is no settings JSON (hand-edited,
+/// cut short) would fail every later save; it is moved aside to `settings.json.bad-<id>`, kept byte for byte, and the merge
+/// starts from the defaults. The second value names the moved file. Callers hold the settings lock.
+fn load_for_merge(path: &Path) -> std::io::Result<(GuiSettings, Option<PathBuf>)> {
     match std::fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str(&text).map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(GuiSettings::default()),
+        Ok(text) => match serde_json::from_str(&text) {
+            Ok(settings) => Ok((settings, None)),
+            Err(_) => {
+                let name = path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+                let aside = path.with_file_name(format!("{name}.bad-{}", designllm_contracts::new_id()));
+                std::fs::rename(path, &aside)?;
+                Ok((GuiSettings::default(), Some(aside)))
+            }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok((GuiSettings::default(), None)),
         Err(error) => Err(error),
     }
 }
+
+/// What the window says when the settings file could not be parsed and was moved aside (`{file}` is its new name, as it is).
+pub(super) const SETTINGS_MOVED_ASIDE: &str = "화면 설정 파일을 읽을 수 없어 '{file}'(으)로 옮기고 기본값에서 다시 저장했습니다";
 
 /// How long a window waits for another window's settings write before it gives up (its changes stay pending). The deadline
 /// holds on every path: a lock that never frees never keeps the window waiting longer.
@@ -152,11 +165,13 @@ impl Drop for SettingsLock {
 
 /// Reads the settings of `path`, lets `change` put this window's changes in, and writes them, all under the workspace's
 /// settings lock, so that two windows saving at once each keep the other's change.
-pub(super) fn update(path: &Path, change: impl FnOnce(&mut GuiSettings)) -> std::io::Result<()> {
+/// The returned path names a settings file that could not be parsed and was moved aside before the write.
+pub(super) fn update(path: &Path, change: impl FnOnce(&mut GuiSettings)) -> std::io::Result<Option<PathBuf>> {
     let _lock = SettingsLock::acquire(path)?;
-    let mut settings = load_for_merge(path)?;
+    let (mut settings, moved) = load_for_merge(path)?;
     change(&mut settings);
-    store(path, &settings)
+    store(path, &settings)?;
+    Ok(moved)
 }
 
 /// Writes `text` through a temporary file, synced before it takes the place of the old file: a crash leaves the old file
@@ -225,9 +240,17 @@ impl DesktopApp {
 
     /// Writes this window's unsaved choices to the settings file (nothing happens without a workspace path).
     pub(super) fn save_settings(&mut self) {
-        if self.write_settings().is_err() {
-            self.set_error(String::from(SETTINGS_SAVE_FAILED));
+        match self.write_settings() {
+            Ok(Some(moved)) => self.tell_settings_moved(&moved),
+            Ok(None) => {}
+            Err(_) => self.set_error(String::from(SETTINGS_SAVE_FAILED)),
         }
+    }
+
+    /// Says that an unparsable settings file was moved aside to `moved` (its file name shown as it is).
+    fn tell_settings_moved(&mut self, moved: &Path) {
+        let file = moved.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        self.notices.warning(SETTINGS_MOVED_ASIDE.replace("{file}", &file), std::time::Instant::now());
     }
 
     /// Saves a star this window toggled on `artifact_id`.
@@ -245,19 +268,26 @@ impl DesktopApp {
     /// Writes the confirmed migration notices (`seen_store_backups`). A failure is told once a session: the notice comes
     /// back at the next start, and a later confirmation does not raise the error again.
     pub(super) fn save_seen_store_backups(&mut self) {
-        if self.write_settings().is_err() && !std::mem::replace(&mut self.home.workspace_info.save_failure_told, true) {
-            self.set_error(String::from("이주 알림 확인을 저장하지 못했습니다. 다음에 열 때 다시 보일 수 있습니다"));
+        match self.write_settings() {
+            Ok(Some(moved)) => self.tell_settings_moved(&moved),
+            Ok(None) => {}
+            Err(_) => {
+                if !std::mem::replace(&mut self.home.workspace_info.save_failure_told, true) {
+                    self.set_error(String::from("이주 알림 확인을 저장하지 못했습니다. 다음에 열 때 다시 보일 수 있습니다"));
+                }
+            }
         }
     }
 
     /// Writes the settings file as it is on disk now with this window's changes put in (`SettingsChanges`): another window's
     /// choices stay. Confirmed migration notices are joined, never dropped. The changes count as saved once the write succeeds.
-    fn write_settings(&mut self) -> std::io::Result<()> {
+    /// The returned path names an unparsable settings file that was moved aside before the write.
+    fn write_settings(&mut self) -> std::io::Result<Option<PathBuf>> {
         let Some(path) = self.settings_path.clone() else {
-            return Ok(());
+            return Ok(None);
         };
         let changes = self.settings_changes.clone();
-        update(&path, |settings| {
+        let moved = update(&path, |settings| {
             for artifact_id in &changes.starred {
                 if self.home.starred.contains(artifact_id) {
                     settings.starred.insert(artifact_id.clone());
@@ -289,7 +319,7 @@ impl DesktopApp {
         if self.settings_changes == changes {
             self.settings_changes = SettingsChanges::default();
         }
-        Ok(())
+        Ok(moved)
     }
 
     /// Whether a settings change of this window is still to be written.

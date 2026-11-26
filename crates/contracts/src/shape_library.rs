@@ -90,6 +90,8 @@ pub const SHAPES: &[ShapeRecipe] = &[
     ShapeRecipe {
         id: "cylinder",
         use_for: "A store: database, memory bank, KV cache, codebook, retrieval index. Keep it upright; the top rim is drawn by the stroke.",
+        // The rim runs the same way round as the outline: the nonzero fill closes it, and an opposite rim would cancel the
+        // outline's winding and leave the band under the rim unpainted.
         commands: &[
             MoveTo { x: 0, y: 120 },
             CubicTo { x1: 0, y1: 54, x2: 224, y2: 0, x: 500, y: 0 },
@@ -98,9 +100,9 @@ pub const SHAPES: &[ShapeRecipe] = &[
             CubicTo { x1: 1000, y1: 946, x2: 776, y2: 1000, x: 500, y: 1000 },
             CubicTo { x1: 224, y1: 1000, x2: 0, y2: 946, x: 0, y: 880 },
             Close,
-            MoveTo { x: 0, y: 120 },
-            CubicTo { x1: 0, y1: 186, x2: 224, y2: 240, x: 500, y: 240 },
-            CubicTo { x1: 776, y1: 240, x2: 1000, y2: 186, x: 1000, y: 120 },
+            MoveTo { x: 1000, y: 120 },
+            CubicTo { x1: 1000, y1: 186, x2: 776, y2: 240, x: 500, y: 240 },
+            CubicTo { x1: 224, y1: 240, x2: 0, y2: 186, x: 0, y: 120 },
         ],
     },
     ShapeRecipe {
@@ -203,5 +205,50 @@ mod tests {
         }
         assert_eq!(shape("circle_plus").map(|r| r.commands.len()), Some(10));
         assert!(shape("nope").is_none());
+    }
+
+    /// Twice the signed area of each subpath of a recipe, from its points (curve control points included): the renderer
+    /// fills with the nonzero rule and closes open subpaths, so a subpath wound against the outline would cut a hole.
+    fn subpath_areas(commands: &[PathCommand]) -> Vec<i128> {
+        let mut areas = Vec::new();
+        let mut points: Vec<(i64, i64)> = Vec::new();
+        let flush = |points: &mut Vec<(i64, i64)>, areas: &mut Vec<i128>| {
+            if points.len() > 2 {
+                let area: i128 = (0..points.len()).map(|i| {
+                    let (a, b) = (points[i], points[(i + 1) % points.len()]);
+                    i128::from(a.0) * i128::from(b.1) - i128::from(b.0) * i128::from(a.1)
+                }).sum();
+                areas.push(area);
+            }
+            points.clear();
+        };
+        for command in commands {
+            match *command {
+                MoveTo { x, y } => {
+                    flush(&mut points, &mut areas);
+                    points.push((x, y));
+                }
+                LineTo { x, y } => points.push((x, y)),
+                CubicTo { x1, y1, x2, y2, x, y } => points.extend([(x1, y1), (x2, y2), (x, y)]),
+                Close => flush(&mut points, &mut areas),
+            }
+        }
+        flush(&mut points, &mut areas);
+        areas
+    }
+
+    #[test]
+    fn every_subpath_that_encloses_an_area_winds_the_same_way_as_the_outline() {
+        for recipe in SHAPES {
+            let areas = subpath_areas(recipe.commands);
+            let outline = areas.first().copied().unwrap_or_default();
+            assert_ne!(outline, 0, "{} has an outline", recipe.id);
+            for area in &areas[1..] {
+                assert!(*area == 0 || area.signum() == outline.signum(), "{}: a subpath winds against the outline ({areas:?})", recipe.id);
+            }
+        }
+        // The cylinder's rim encloses the band under it, wound with the outline.
+        let rim = subpath_areas(shape("cylinder").expect("cylinder").commands);
+        assert!(rim.len() == 2 && rim[1] != 0 && rim[1].signum() == rim[0].signum(), "{rim:?}");
     }
 }

@@ -335,6 +335,7 @@ pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("보류한 변경 취소", "Cancel held change"),
     ("작업 멈추고 편집", "Stop job and edit"),
     ("화면 설정을 저장하지 못했습니다", "Couldn't save display settings"),
+    ("화면 설정 파일을 읽을 수 없어 '{file}'(으)로 옮기고 기본값에서 다시 저장했습니다", "The display settings file could not be read, so it was moved to '{file}' and saved again from the defaults"),
     ("이주 알림 확인을 저장하지 못했습니다. 다음에 열 때 다시 보일 수 있습니다", "Couldn't save that you dismissed the migration notice. It may appear again next time you open the app"),
     ("제목 글꼴", "Heading font"),
     ("본문 글꼴", "Body font"),
