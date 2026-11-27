@@ -906,6 +906,7 @@ dependencies = [
  "designllm-contracts",
  "designllm-figures",
  "designllm-slides",
+ "libc",
  "rusqlite",
  "schemars",
  "serde",
