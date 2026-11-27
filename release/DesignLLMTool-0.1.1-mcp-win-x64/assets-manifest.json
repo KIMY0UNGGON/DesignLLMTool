@@ -338,8 +338,8 @@
                   {
                       "path":  "assets\\icons\\ui\\index.json",
                       "set":  "ui",
-                      "bytes":  39179,
-                      "sha256":  "f313319b420bd5ae55dac9b4c4135d111e5c9d329574fc8b7d8e96b871a91837"
+                      "bytes":  39241,
+                      "sha256":  "331683fee7fc5590a904338d4736f4dd00a5eb1f804bc7bc511b64ad957b80f1"
                   },
                   {
                       "path":  "assets\\icons\\ui\\ins-chart.svg",

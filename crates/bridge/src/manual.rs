@@ -95,7 +95,7 @@ const REFUSALS: Page = Page {
     task: false,
     tools: &["artifact_validate", "changes_validate", "changes_apply"],
     steps: &[
-        "An engine refuses a field or operation it does not support with UNSUPPORTED_OPERATION. The message names each refused item. Each one also has a blocking diagnostic: UNSUPPORTED_FIELD for a field, OPERATION_UNSUPPORTED for an operation.",
+        "An engine refuses a field or operation it does not support with UNSUPPORTED_OPERATION. The message names each refused item. Each one also has a blocking diagnostic, whose code depends on the engine: UNSUPPORTED_FIELD for a field and OPERATION_UNSUPPORTED for an operation on a Canvas, UNSUPPORTED_FIELD and UNSUPPORTED_OPERATION on a Figure, UNSUPPORTED_V12 on a deck; other engines use their own codes. Read the code from the diagnostic instead of assuming one.",
         "A refused change set is not applied, so the revision does not change. Send the corrected change set with a new request_id: the same request_id returns the stored refusal.",
         "TARGET_BUSY (a node another owner holds) and CONTENT_LOCKED (an operation outside a job's target scope) refuse the change set the same way. The collaboration page says what each one means.",
         "artifact_validate returns capabilities: one entry per feature (for example Effects, VectorPaths, GridLayout), each with read, render, edit, preserve, write and a reason.",
@@ -162,7 +162,7 @@ const DESIGN_SYSTEM: Page = Page {
         ("design_system_set", r##"{"request_id":"<new UUID>","actor":"agent","workspace_id":"<workspace_id>","artifact_id":"<consumer_id>","expected_revision":1,"design_system":null,"allowed_intents":["design"]}"##),
         ("design_system_set", r##"{"request_id":"<new UUID>","actor":"agent","workspace_id":"<workspace_id>","artifact_id":"<webcode_id>","expected_revision":1,"design_system":"<publisher_id>","expected_system_revision":2,"allowed_intents":["design","content"]}"##),
         ("design_system_set", r##"{"request_id":"<new UUID>","actor":"agent","workspace_id":"<workspace_id>","artifact_id":"<docx_id>","expected_revision":0,"design_system":"<publisher_id>","expected_system_revision":2,"allowed_intents":["design"],"direct_formatting":"keep"}"##),
-        ("changes_apply", r##"{"request_id":"<new UUID>","actor":"agent","workspace_id":"<workspace_id>","artifact_id":"<publisher_id>","base_revision":3,"allowed_intents":["design"],"operations":[{"op":"put_token","token_id":"brand.ink","name":"Brand ink","values":{"kind":"color","light":"#112233","dark":"#445566"}}]}"##),
+        ("changes_apply", r##"{"request_id":"<new UUID>","actor":"agent","workspace_id":"<workspace_id>","artifact_id":"<publisher_id>","base_revision":3,"allowed_intents":["design"],"operations":[{"op":"put_token","token_id":"brand.ink","name":"Brand ink","values":{"kind":"color","light":"#1C1C1C","dark":"#EDEDED"}}]}"##),
         ("changes_apply", r##"{"request_id":"<new UUID>","actor":"agent","workspace_id":"<workspace_id>","artifact_id":"<consumer_id>","base_revision":1,"allowed_intents":["design"],"operations":[{"op":"bind_token","node_ids":["title"],"target":{"kind":"style_color"},"token":{"source":"shared","token_id":"brand.ink"}}]}"##),
     ],
 };
@@ -436,7 +436,7 @@ const FIGURE_PRINT: &str = "Size the figure for print rather than a screen, and 
 const FIGURE_NO_EXTRA_TEXT: &str = "Make a paper figure understandable from its layout without auxiliary text. Do not put a title, subtitle, section headers, a source line, or explanatory sentences inside the figure; the caption below the figure in the paper provides the title and explanation. Never write labels such as Overall flow, Inside X, Step 1, Input/Output headers, or Legend when position, grouping, and arrows already show that meaning.";
 
 /// Functional palette for diagrams and categorical palette for data, both away from stock framework colours.
-const FIGURE_PALETTE: &str = "Use colour only to encode function or category, never for decoration. Use these diagram roles with a soft fill, a matching stroke, and dark #1C1C1C text: attention or mixing #FCE3C7 / #C77A2B; feed-forward or MLP #D6E6EF / #4F7CA8; normalization #F6EDB8 / #A8922E; embedding or input encoding #E5DDF0 / #7A5C99; output head or loss #D8EBD9 / #4E8A56; the paper's new component (use once) #F7D9D4 / #B4532A; plain operations and data white / #3A3A3A; frames and guides #BDBDBD. For data series, use the colour-blind-safe Okabe-Ito palette (#E69F00, #56B4E9, #009E73, #F0E442, #0072B2, #D55E00, #CC79A7, #000000), use one sequential ramp for ordered values, draw baselines in grey, and give the proposed method the strongest colour. In a Figure artifact the first series takes the panel's fill (set_style) and later series take the renderer's palette; choosing an output profile (the figure.output_profile GUI command) sets the panel fills from Okabe-Ito. Never use stock framework colours (COLOR_STOCK_DEFAULT).";
+const FIGURE_PALETTE: &str = "Use colour only to encode function or category, never for decoration. Use these diagram roles with a soft fill, a matching stroke, and dark #1C1C1C text: attention or mixing #FCE3C7 / #C77A2B; feed-forward or MLP #D6E6EF / #4F7CA8; normalization #F6EDB8 / #A8922E; embedding or input encoding #E5DDF0 / #7A5C99; output head or loss #D8EBD9 / #4E8A56; the paper's new component (use once) #F7D9D4 / #B4532A; plain operations and data white / #3A3A3A; frames and guides #BDBDBD. For data series, use the colour-blind-safe Okabe-Ito palette (#E69F00, #56B4E9, #009E73, #F0E442, #0072B2, #D55E00, #CC79A7, #000000), use one sequential ramp for ordered values, draw baselines in grey, and give the proposed method the strongest colour. In a Figure artifact the first series takes the panel's fill (set_style) and later series take the renderer's palette; choosing an output profile (the figure.output_profile GUI command) sets every plot panel to the profile's first colour: Okabe-Ito blue for single_column, one_half_column and double_column, near-black #1C1C1C for high_res_print and presentation_16_9. Never use stock framework colours (COLOR_STOCK_DEFAULT).";
 
 const PAPER_DIAGRAM: Page = Page {
     slug: "paper-diagram",
@@ -755,7 +755,7 @@ const DESIGN_THEME: Page = Page {
     ],
     examples: &[
         ("design_themes_search", r#"{"query":"cool blue minimal","limit":10}"#),
-        ("design_themes_record", r##"{"entry":{"id":"example-slug","tags":["cool","minimal"],"summary":"A crisp blue theme with restrained contrast.","colors":{"primary":"#2457A7","canvas":"#FFFFFF","ink":"#172033"},"fonts":{"heading":"Arial","body":"Arial"},"type_scale_px":[14,18,32],"radius_px":[4,8],"spacing_px":[8,16,24],"recorded_at":1732400000000}}"##),
+        ("design_themes_record", r##"{"entry":{"id":"example-slug","tags":["cool","minimal"],"summary":"A crisp blue theme with restrained contrast.","colors":{"primary":"#2457A7","canvas":"#FFFFFF","ink":"#1C1C1C"},"fonts":{"heading":"Arial","body":"Arial"},"type_scale_px":[14,18,32],"radius_px":[4,8],"spacing_px":[8,16,24],"recorded_at":1732400000000}}"##),
         ("design_themes_apply", r#"{"request_id":"00000000-0000-4000-8000-000000000001","actor":"agent","workspace_id":"workspace","artifact_id":"artifact","base_revision":0,"allowed_intents":["design"],"theme_id":"example-slug"}"#),
     ],
 };
@@ -1062,7 +1062,9 @@ pub fn page_body(page: &Page) -> String {
             for task in PAGES.iter().filter(|page| page.task) {
                 out.push_str(&format!("- {} ({})\n", task.title, page_uri(task)));
             }
-            out.push_str(&format!("\nReference pages: glossary, refusals, intents, presets, shapes, design-quality, design-theme, ai-jobs, gui. Presets JSON: {PRESETS_URI}. Shapes JSON: {SHAPES_URI}\n"));
+            // Every reference page, so a page added to PAGES cannot be left out of the index.
+            let references: Vec<&str> = PAGES.iter().filter(|page| !page.task && page.slug != "index").map(|page| page.slug).collect();
+            out.push_str(&format!("\nReference pages: {}. Presets JSON: {PRESETS_URI}. Shapes JSON: {SHAPES_URI}\n", references.join(", ")));
         }
         "shapes" => {
             for recipe in designllm_contracts::shape_library::SHAPES {

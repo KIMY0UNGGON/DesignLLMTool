@@ -5,7 +5,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 
-use eframe::egui::{Color32, ColorImage, Context, Pos2, Rect, TextureHandle, TextureOptions, Ui};
+use eframe::egui::{Color32, ColorImage, Context, Painter, Pos2, Rect, TextureHandle, TextureOptions, Ui};
 use designllm_render::{rasterize_icon, IconOptions};
 
 use crate::icons_table::ICONS;
@@ -71,7 +71,12 @@ pub fn snap(rect: Rect, pixels_per_point: f32) -> Rect {
 /// Paints the icon `name` inside `rect` (a square of logical points). `color` tints one-colour
 /// icons; multicolour icons ignore it. Returns false when the icon is unknown.
 pub fn paint(ui: &Ui, rect: Rect, name: &str, color: Color32) -> bool {
-    let ctx = ui.ctx();
+    paint_on(ui.painter(), rect, name, color)
+}
+
+/// `paint` on a painter of its own layer (a drag preview above the board).
+pub fn paint_on(painter: &Painter, rect: Rect, name: &str, color: Color32) -> bool {
+    let ctx = painter.ctx();
     let ppp = ctx.pixels_per_point();
     let target = snap(rect, ppp);
     let px = (target.width().min(target.height()) * ppp).round().max(1.0) as u32;
@@ -80,7 +85,7 @@ pub fn paint(ui: &Ui, rect: Rect, name: &str, color: Color32) -> bool {
     };
     let tint = if is_multicolour(name) { Color32::WHITE } else { color };
     let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-    ui.painter().image(texture.id(), target, uv, tint);
+    painter.image(texture.id(), target, uv, tint);
     true
 }
 

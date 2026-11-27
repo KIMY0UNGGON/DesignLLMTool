@@ -44,9 +44,11 @@ pub(super) fn profile_change(figure: &FigureDocument, profile: &FigureOutputProf
         if let PanelBody::Diagram(diagram) = &panel.body {
             let ids = diagram.nodes.iter().map(|node| node.id.clone()).chain(diagram.edges.iter().map(|edge| edge.id.clone())).collect::<Vec<_>>();
             if !ids.is_empty() {
+                // Type size and line weight only: a node's stroke colour encodes its role (the paper-figure palette), so
+                // the profile keeps it.
                 operations.push(Operation::SetStyle { node_ids: ids, patch: StylePatch {
                     font_size: Some(profile.font_size_emu), stroke_width: Some(profile.stroke_width_emu),
-                    stroke: Some(profile.palette[0].to_owned()), ..StylePatch::default()
+                    ..StylePatch::default()
                 }});
             }
         }

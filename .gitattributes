@@ -3,3 +3,6 @@ fixtures/** -text
 tests/integration/baseline/** -text
 crates/formats/hwp/tests/fixtures/** -text
 crates/canvas/tests/fixtures/** -text
+# Assets are checked byte for byte (font manifest SHA-256, icon index): keep the committed line endings.
+assets/** -text
+design/** -text

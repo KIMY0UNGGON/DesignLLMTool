@@ -22,11 +22,12 @@ pub(super) const TOOLBOX_SHAPES: &[(&str, &str, &str)] = &[
     ("cuboid", "텐서", "shape-cuboid"),
 ];
 
-/// The size (EMU) a library shape is inserted at: operators are small marks on a line, the others block-sized.
+/// The size (EMU) a library shape is inserted at: operators are small marks on a line (20 px, the top of the 16 to 20 px the
+/// shape library and the paper-diagram guide give), the others block-sized.
 pub(super) fn shape_size(shape: &str) -> (i64, i64) {
     let px = EMU_PER_CSS_PX;
     match shape {
-        "circle_plus" | "circle_times" => (24 * px, 24 * px),
+        "circle_plus" | "circle_times" => (20 * px, 20 * px),
         "cylinder" => (96 * px, 120 * px),
         "diamond" | "hexagon" => (120 * px, 96 * px),
         "cuboid" => (120 * px, 120 * px),

@@ -780,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-application"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-bridge",
  "designllm-canvas",
@@ -806,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-bridge"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "designllm-contracts",
@@ -818,7 +818,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-canvas"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "designllm-render",
@@ -831,7 +831,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-contracts"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "schemars",
  "serde",
@@ -844,7 +844,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "designllm-figures",
@@ -860,7 +860,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "designllm-bridge",
@@ -891,7 +891,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-docx"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "designllm-core",
@@ -907,7 +907,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-figures"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "designllm-render",
@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-flow"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "designllm-render",
@@ -930,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-host"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "designllm-bridge",
@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-hwp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cfb",
  "designllm-contracts",
@@ -958,7 +958,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-hwpx"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "designllm-flow",
@@ -973,7 +973,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-integration-tests"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cfb",
  "designllm-application",
@@ -1004,7 +1004,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-package"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "roxmltree 0.21.2",
@@ -1013,7 +1013,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-pptx"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "designllm-package",
@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-render"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "flate2",
@@ -1048,7 +1048,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-runtimes"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-bridge",
  "designllm-contracts",
@@ -1059,7 +1059,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-slides"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "designllm-package",
@@ -1072,7 +1072,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-sources"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "designllm-contracts",
  "flate2",
@@ -1083,7 +1083,7 @@ dependencies = [
 
 [[package]]
 name = "designllm-web-preview"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "designllm-contracts",

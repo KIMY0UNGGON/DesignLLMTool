@@ -164,10 +164,10 @@ fn schema_export() -> Value {
 const V12_NOTE: &str = "v1.2: support depends on the engine. artifact_validate returns the capability report (per feature: whether this engine supports it and why not). Unsupported values are refused with UNSUPPORTED_OPERATION; do not retry the same value unchanged.";
 const V12_OPEN_URL_NOTE: &str = "v1.2 (P2): Canvas supports OpenUrl for https:, mailto:, and tel: links in HTML/PDF. In mixed HTML action lists, OpenUrl runs at its stored position. The in-app WebView2 preview blocks external navigation and new windows. Give each link an accessible name; HTML export reports HTML_LINK_ACCESSIBLE_NAME_MISSING when one is absent. Other engines may refuse it with UNSUPPORTED_OPERATION; check the per-engine capability report.";
 const V12_BACK_NOTE: &str = "v1.2 (P2): Canvas supports Back in exported HTML, returning to the previously shown page in that export; with no prior in-export page visit it does nothing. It does not use browser history. Other engines may refuse it with UNSUPPORTED_OPERATION; check the per-engine capability report.";
-const V12_EFFECTS_NOTE: &str = "v1.2 (P0): in this build an engine refuses a value here with UNSUPPORTED_OPERATION. The Effects feature of the capability report (artifact_validate) says whether this engine supports it and why not. Do not retry the same value unchanged.";
-const V12_VECTOR_NOTE: &str = "v1.2 (P0): in this build an engine refuses a value here with UNSUPPORTED_OPERATION. The VectorPaths feature of the capability report (artifact_validate) says whether this engine supports it and why not. Do not retry the same value unchanged.";
-const V12_GRID_NOTE: &str = "v1.2 (P0): in this build an engine refuses a value here with UNSUPPORTED_OPERATION. The GridLayout feature of the capability report (artifact_validate) says whether this engine supports it and why not. Do not retry the same value unchanged.";
-const V12_CLEAR_NOTE: &str = "v1.2 (P0): in this build any non-empty clear is refused with UNSUPPORTED_OPERATION, including for v1.1 fields. artifact_validate returns the capability report. Do not retry the same clear unchanged.";
+const V12_EFFECTS_NOTE: &str = "v1.2 (P0): support depends on the engine. Canvas draws most of these values and a Figure some of them; a slide deck draws only an outer shadow; document engines refuse them. A value an engine does not draw is refused with UNSUPPORTED_OPERATION. The Effects feature of the capability report (artifact_validate) says what this engine supports and why not. Do not retry the same value unchanged.";
+const V12_VECTOR_NOTE: &str = "v1.2 (P0): Canvas supports this; other engines may refuse it with UNSUPPORTED_OPERATION. The VectorPaths feature of the capability report (artifact_validate) says whether this engine supports it and why not. Do not retry the same value unchanged.";
+const V12_GRID_NOTE: &str = "v1.2 (P0): Canvas supports this; other engines may refuse it with UNSUPPORTED_OPERATION. The GridLayout feature of the capability report (artifact_validate) says whether this engine supports it and why not. Do not retry the same value unchanged.";
+const V12_CLEAR_NOTE: &str = "v1.2 (P0): a non-empty clear is refused with UNSUPPORTED_OPERATION unless the engine supports clearing that field (Canvas clears most fields; a Figure refuses every clear). artifact_validate returns the capability report. Do not retry the same clear unchanged.";
 const V12_LISTS_NOTE: &str = "v1.2 (P2): Canvas supports bullet and numbered lists on Text nodes; each hard paragraph is one item and wrapped lines continue that item. Runtime support is reported in capability_extensions.lists by artifact.validate/context.read; other engines may refuse this value with UNSUPPORTED_OPERATION.";
 
 /// Style fields added in v1.2. Style and StylePatch use the same names.
@@ -203,6 +203,7 @@ const V12_VARIANTS: &[(&str, &str, &str)] = &[
     ("Operation", "set_node_appearance", V12_NOTE),
     ("Operation", "set_node_info", V12_NOTE),
     ("Operation", "set_node_list", V12_LISTS_NOTE),
+    ("Operation", "set_interactions", V12_NOTE),
     ("Operation", "rename_page", V12_NOTE),
 ];
 

@@ -439,7 +439,8 @@ impl DesktopApp {
             // The UI language, each in its own name; the choice shows from the next frame on.
             widgets::menu_separator(ui, palette);
             for language in crate::i18n::Language::ALL {
-                if widgets::menu_item(ui, palette, None, language.native_name(), "", self.language == language).clicked() {
+                // "" keeps the icon place of 프로젝트 폴더 열기 above, so every label of the menu starts in one column.
+                if widgets::menu_item(ui, palette, Some(""), language.native_name(), "", self.language == language).clicked() {
                     self.set_language(language);
                 }
             }

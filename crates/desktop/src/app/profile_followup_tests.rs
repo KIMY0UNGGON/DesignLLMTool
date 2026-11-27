@@ -167,6 +167,30 @@ fn a_legend_swatch_matches_its_series_as_a_colour_whatever_its_case_or_opaque_al
     assert_eq!(new.items[2].color, "#1F4E7980", "a half-transparent swatch is another colour and is kept");
 }
 
+#[test]
+fn an_output_profile_keeps_the_role_colours_of_a_diagram() {
+    let profile = figure_output_profile("high_res_print").expect("profile");
+    let mut doc = FigureDocument::new(Size::a4());
+    let edge = designllm_contracts::Edge {
+        id: "e".into(), from: "a".into(), to: "b".into(), label: String::new(), evidence_ids: Vec::new(), origin: "user".into(),
+        style: Style { stroke: "#C77A2B".into(), ..Style::default() },
+    };
+    doc.panels.push(FigurePanel {
+        id: "d".into(),
+        bounds: Default::default(),
+        label: "(a)".into(),
+        body: PanelBody::Diagram(designllm_contracts::Diagram { nodes: Vec::new(), edges: vec![edge], evidence_ids: Default::default(), node_origins: Default::default() }),
+        style: Style::default(),
+    });
+    let operations = profile_style_operations(&doc, profile);
+    let edge_patch = operations.iter().find_map(|operation| match operation {
+        Operation::SetStyle { node_ids, patch } if node_ids.iter().any(|id| id == "e") => Some(patch),
+        _ => None,
+    }).expect("the profile sizes the diagram's lines");
+    assert_eq!((edge_patch.font_size, edge_patch.stroke_width), (Some(profile.font_size_emu), Some(profile.stroke_width_emu)));
+    assert_eq!(edge_patch.stroke, None, "the stroke colour encodes the role and is kept");
+}
+
 fn home_frame(events: Vec<Event>) -> RawInput {
     let mut input = RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0))), ..Default::default() };
     input.viewports.get_mut(&ViewportId::ROOT).expect("root viewport").native_pixels_per_point = Some(1.0);

@@ -135,6 +135,15 @@ pub fn page_label(number: impl std::fmt::Display) -> String {
     }
 }
 
+/// One Korean word followed by a value, such as "표 1" / "Table 1" or "색 accent #C77A2B" / "Colors accent #C77A2B" (built
+/// here for the reason of `page_label`: `tr` keeps no template with fewer than two Korean letters).
+pub fn word_label(korean: &str, english: &str, value: impl std::fmt::Display) -> String {
+    match language() {
+        Language::English => format!("{english} {value}"),
+        _ => format!("{korean} {value}"),
+    }
+}
+
 /// A row count as the window writes it: "3행" in Korean, "3 rows" in English (built here for the reason of `page_label`).
 pub fn rows_label(count: usize) -> String {
     match language() {
@@ -516,6 +525,21 @@ mod tests {
             }
         }
         assert!(problems.is_empty(), "{}", problems.join("\n"));
+    }
+
+    #[test]
+    fn every_template_entry_has_enough_korean_to_be_kept() {
+        // `tables` drops a template with fewer than two Korean letters of its own, so such an entry would never be shown:
+        // build that label with `word_label`, `page_label` or `rows_label` instead.
+        let dropped: Vec<&str> = areas().into_iter().flatten().filter(|(korean, english)| {
+            let parts = parse(korean);
+            let hangul: usize = parts.iter().map(|part| match part {
+                Part::Text(text) => text.chars().filter(|c| is_hangul(*c)).count(),
+                Part::Hole(_) => 0,
+            }).sum();
+            !english.is_empty() && parts.iter().any(|part| matches!(part, Part::Hole(_))) && hangul < 2
+        }).map(|(korean, _)| *korean).collect();
+        assert!(dropped.is_empty(), "templates the lookup drops: {dropped:?}");
     }
 
     #[test]

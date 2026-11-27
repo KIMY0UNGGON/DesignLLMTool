@@ -78,7 +78,7 @@ pub(super) fn diagnostic_words(code: &str) -> Option<Words> {
         codes::PANEL_SIZE_INVALID | codes::PANEL_TOO_SMALL => Refusal("패널이 너무 작습니다"),
         codes::NODE_OUTSIDE_PANEL => Refusal("도형이 패널 밖으로 나갑니다"),
         codes::NODE_SIZE_INVALID => Refusal("도형의 크기는 0보다 커야 합니다"),
-        codes::NODE_KIND_UNSUPPORTED => Refusal("구조도에는 사각형과 원만 넣을 수 있습니다"),
+        codes::NODE_KIND_UNSUPPORTED => Refusal("구조도에는 사각형, 원, 수식만 넣을 수 있습니다"),
         codes::LABEL_OVERFLOW => Refusal("글자가 도형 안에 들어가지 않습니다. 도형을 키우거나 글자를 줄여 주세요"),
         codes::LABEL_OUTSIDE_PANEL => Refusal("축 글자가 패널 밖으로 나갑니다"),
         codes::LABEL_COLLISION => Refusal("글자를 겹치지 않게 놓을 공간이 부족합니다. 주변 항목을 옮기거나 패널을 키워 주세요"),

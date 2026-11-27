@@ -88,6 +88,7 @@ pub(super) struct LayoutProperties {
     pub(super) grid_columns: Option<u32>,
     pub(super) row_gap: Option<i64>,
     pub(super) align_self: Option<designllm_contracts::AlignSelf>,
+    pub(super) grid_span: Option<u32>,
 }
 
 impl From<&designllm_contracts::LayoutSpec> for LayoutProperties {
@@ -104,6 +105,7 @@ impl From<&designllm_contracts::LayoutSpec> for LayoutProperties {
             grid_columns: layout.grid_columns,
             row_gap: layout.row_gap,
             align_self: layout.align_self,
+            grid_span: layout.grid_span,
         }
     }
 }
@@ -460,7 +462,7 @@ pub(super) fn feature_shown(support: Option<Support>) -> bool {
     matches!(support, Some(Support::Supported | Support::Approximate | Support::PreserveOnly))
 }
 
-fn feature_editable(support: Option<Support>) -> bool {
+pub(super) fn feature_editable(support: Option<Support>) -> bool {
     matches!(support, Some(Support::Supported | Support::Approximate))
 }
 
@@ -1800,6 +1802,11 @@ mod node_properties_projection_tests {
 impl DesktopApp {
     /// Whether the parent of `id` lays its children out (a stack or a grid), so that `꽉 채우기` applies (§9.1).
     fn parent_lays_out(&self, id: &str) -> bool {
+        self.parent_layout_mode(id).is_some_and(|mode| matches!(mode.as_str(), "row" | "column" | "grid"))
+    }
+
+    /// The layout mode of the parent of `id` (Canvas and Slides), when it has a layout.
+    fn parent_layout_mode(&self, id: &str) -> Option<String> {
         fn parent_of<'a>(nodes: &'a [Node], id: &str) -> Option<&'a Node> {
             nodes.iter().find_map(|node| {
                 if node.children.iter().any(|child| child.id == id) {
@@ -1818,7 +1825,7 @@ impl DesktopApp {
             .into_iter()
             .find_map(|nodes| parent_of(nodes, id))
             .and_then(|parent| parent.layout.as_ref())
-            .is_some_and(|layout| matches!(layout.mode.as_str(), "row" | "column" | "grid"))
+            .map(|layout| layout.mode.clone())
     }
 
     /// Sections for a selected node, in the order of §9.1 and the selection kinds of §9.2 (mockups `canvas-board`,
@@ -1956,6 +1963,22 @@ impl DesktopApp {
                 }
                 if let Some(choice) = choice.filter(|choice| *choice != mode) {
                     self.invoke_ui("props.size_mode", if key == "w" { json!({ "width_mode": choice }) } else { json!({ "height_mode": choice }) });
+                }
+            }
+            // §9.1 크기 `칸`: how many columns a child of a grid frame takes (props.grid_span).
+            let grid_child = !many
+                && self.parent_layout_mode(&node.id).as_deref() == Some("grid")
+                && feature_editable(self.feature_support(Feature::GridLayout))
+                && self.command_enabled_for_current_kind("props.grid_span");
+            if grid_child {
+                let span = f64::from(layout.grid_span.unwrap_or(1));
+                if let Some(new) = row(ui, palette, Some("칸"), |ui| {
+                    let (icon_rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+                    icons::paint(ui, icon_rect, "grid-span", palette.ink_3);
+                    let width = ui.available_width();
+                    field(ui, palette, id("grid-span"), width, "", Some(span), "", 0, geometry_editable)
+                }) {
+                    self.invoke_ui("props.grid_span", json!({ "span": new.max(1.0).round() }));
                 }
             }
             ui.add_space(8.0);
@@ -2732,10 +2755,20 @@ impl DesktopApp {
         }) {
             self.invoke_ui("props.text_style", json!({ "font_size": new.max(1.0) }));
         }
-        let (bold, italic) = (style.bold, style.italic);
-        if let Some(chosen) = row(ui, palette, Some("모양"), |ui| seg(ui, palette, &[("bold", "굵게"), ("italic", "기울임")], &[bold, italic])) {
+        let (bold, italic, strike) = (style.bold, style.italic, style.strikethrough == Some(true));
+        // Strikethrough is a Canvas text extra (the Effects capability; a deck refuses it).
+        let strike_shown = self.active.as_ref().is_some_and(|item| item.kind == ArtifactKind::Canvas)
+            && feature_editable(self.feature_support(Feature::Effects));
+        let shapes: &[(&str, &str)] = if strike_shown { &[("bold", "굵게"), ("italic", "기울임"), ("strike", "취소선")] } else { &[("bold", "굵게"), ("italic", "기울임")] };
+        let flags: &[bool] = if strike_shown { &[bold, italic, strike] } else { &[bold, italic] };
+        if let Some(chosen) = row(ui, palette, Some("모양"), |ui| seg(ui, palette, shapes, flags)) {
             if editable {
-                self.invoke_ui("props.text_style", if chosen == 0 { json!({ "bold": !bold }) } else { json!({ "italic": !italic }) });
+                let args = match chosen {
+                    0 => json!({ "bold": !bold }),
+                    1 => json!({ "italic": !italic }),
+                    _ => json!({ "strikethrough": !strike }),
+                };
+                self.invoke_ui("props.text_style", args);
             }
         }
         let colour = agree(group, node, |other| other.style.color.clone()).then(|| style.color.clone());
@@ -2755,6 +2788,8 @@ impl DesktopApp {
             let line_mixed = !agree(group, node, |other| other.style.line_height_milli);
             if !self.command_enabled_for_current_kind("props.line_height") {
             } else if let Some(new) = row(ui, palette, Some("줄 높이"), |ui| {
+                let (icon_rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+                icons::paint(ui, icon_rect, "line-spacing", palette.ink_3);
                 let width = ui.available_width();
                 // Empty means the font's own line height; a typed multiple sets it.
                 field(ui, palette, id("line-height"), width, "", if line_mixed { None } else { Some(line.unwrap_or(1.2)) }, "배", 2, true)

@@ -3,6 +3,8 @@
 
 pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("페이지 이동", "Go to page"),
+    ("취소선", "Strikethrough"),
+    ("텍스트 스타일", "Text style"),
     ("표시 전환", "Toggle visibility"),
     ("상태 바꾸기", "Change state"),
     ("동작", "Action"),

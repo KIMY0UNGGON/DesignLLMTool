@@ -71,15 +71,18 @@ struct LayerRow {
     search_result: Option<usize>,
 }
 
-/// The icon for a node kind (§4 layer rows): frames are columns, paths are vectors.
+/// The icon for a node kind (§4 layer rows): frames are columns, paths are vectors, a component instance is an instance.
 pub(super) fn node_icon(node: &Node) -> &'static str {
+    if node.ext.instance.is_some() {
+        return "layer-instance";
+    }
     match node.kind {
         NodeKind::Text => "tool-text",
         // A frame shows how it lays out its children: a column, a row, a grid, or free.
         NodeKind::Rectangle if !node.children.is_empty() || node.layout.is_some() => match node.layout.as_ref().map(|layout| layout.mode.as_str()) {
             Some("column") => "layer-col",
             Some("row") => "layer-row",
-            Some("grid") => "layout-grid",
+            Some("grid") => "layer-grid",
             _ => "tool-frame",
         },
         NodeKind::Rectangle => "tool-rect",
@@ -851,7 +854,8 @@ impl DesktopApp {
                 let state = ui
                     .interact(state_rect, ui.id().with(("layer-locked", key.as_str())), Sense::click())
                     .on_hover_text(crate::i18n::tr("잠금 해제"));
-                icons::paint(ui, state_rect, "lock", palette.ink_2);
+                // Locked, and on hover the action the click takes (unlock).
+                icons::paint(ui, state_rect, if state.hovered() { "unlock" } else { "lock" }, palette.ink_2);
                 if state.clicked() {
                     if let Some(id) = &row.node_id {
                         state_action_clicked = true;
@@ -1159,7 +1163,8 @@ impl DesktopApp {
                     rows.push(LayerRow {
                         depth: 0,
                         label: self.page_title(index as u32),
-                        icon: "layer-page",
+                        // A component page holds component sources (D12).
+                        icon: if page.role == Some(designllm_contracts::PageRole::Component) { "layer-component" } else { "layer-page" },
                         page_index: Some(index as u32),
                         section_indent,
                         has_children: !page.nodes.is_empty(),

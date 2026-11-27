@@ -723,7 +723,7 @@ fn mobile_app(width: i64, height: i64) -> CanvasDocument {
             ..Default::default()
         },
         vec![
-            leaf("card.label", NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#111827", true, "left"), "오늘의 할 일", size_spec("fill", "hug")),
+            leaf("card.label", NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#1C1C1C", true, "left"), "오늘의 할 일", size_spec("fill", "hug")),
             leaf("card.body", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#374151", false, "left"), "[할 일 제목]", size_spec("fill", "hug")),
             named(
                 container(
@@ -738,10 +738,10 @@ fn mobile_app(width: i64, height: i64) -> CanvasDocument {
         ],
     );
     let mut children = vec![
-        leaf("title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(22), "#111827", true, "left"), "[앱 이름]", size_spec("fill", "hug")),
+        leaf("title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(22), "#1C1C1C", true, "left"), "[앱 이름]", size_spec("fill", "hug")),
         leaf("greeting", NodeKind::Text, at(0, 0, 1, 1), text_style(px(15), "#4B5563", false, "left"), "안녕하세요, [이름]님", size_spec("fill", "hug")),
         card,
-        leaf("list.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#111827", true, "left"), "최근 항목", size_spec("fill", "hug")),
+        leaf("list.title", NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#1C1C1C", true, "left"), "최근 항목", size_spec("fill", "hug")),
     ];
     for n in 1..=3 {
         children.push(container(
@@ -759,7 +759,7 @@ fn mobile_app(width: i64, height: i64) -> CanvasDocument {
             },
             vec![
                 leaf(&format!("row-{n}.dot"), NodeKind::Ellipse, px_rect(0, 0, 12, 12), plain("#1C1C1C"), "", None),
-                leaf(&format!("row-{n}.text"), NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#111827", false, "left"), &format!("[항목 {n}]"), size_spec("fill", "hug")),
+                leaf(&format!("row-{n}.text"), NodeKind::Text, at(0, 0, 1, 1), text_style(px(16), "#1C1C1C", false, "left"), &format!("[항목 {n}]"), size_spec("fill", "hug")),
                 icon(&format!("row-{n}.chevron"), "chevron-right", "#9CA3AF", px(16)),
             ],
         ));
@@ -796,8 +796,8 @@ fn mobile_app(width: i64, height: i64) -> CanvasDocument {
                         ..Default::default()
                     },
                     vec![
-                        icon(&format!("{id}.icon"), glyph, "#111827", px(24)),
-                        leaf(&format!("{id}.label"), NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#111827", true, "center"), label, size_spec("hug", "hug")),
+                        icon(&format!("{id}.icon"), glyph, "#1C1C1C", px(24)),
+                        leaf(&format!("{id}.label"), NodeKind::Text, at(0, 0, 1, 1), text_style(px(14), "#1C1C1C", true, "center"), label, size_spec("hug", "hug")),
                     ],
                 ),
                 "tab",
@@ -846,7 +846,7 @@ fn landing_page() -> CanvasDocument {
         graded("#F6F6F5", "#ECECE9", 135_000),
         LayoutSpec { mode: "column".into(), gap: px(24), justify: Some(designllm_contracts::Justify::Center), align: "center".into(), ..Default::default() },
         vec![
-            leaf("hero.title", NodeKind::Text, px_rect(0, 0, 1200, 72), Style { letter_spacing: Some(-PX), ..text_style(px(56), "#111827", true, "center") }, "[핵심 가치 제안]", None),
+            leaf("hero.title", NodeKind::Text, px_rect(0, 0, 1200, 72), Style { letter_spacing: Some(-PX), ..text_style(px(56), "#1C1C1C", true, "center") }, "[핵심 가치 제안]", None),
             leaf("hero.sub", NodeKind::Text, px_rect(0, 0, 1000, 32), text_style(px(22), "#374151", false, "center"), "[짧은 설명 문장]", None),
             named(
                 container(
@@ -879,7 +879,7 @@ fn landing_page() -> CanvasDocument {
                         LayoutSpec { mode: "row".into(), justify: Some(designllm_contracts::Justify::Center), align: "center".into(), ..Default::default() },
                         vec![icon(&format!("feature-{n}.icon"), glyph, "#1C1C1C", px(28))],
                     ),
-                    leaf(&format!("feature-{n}.title"), NodeKind::Text, px_rect(0, 0, 1, 36), text_style(px(24), "#111827", true, "left"), title, size_spec("fill", "fixed")),
+                    leaf(&format!("feature-{n}.title"), NodeKind::Text, px_rect(0, 0, 1, 36), text_style(px(24), "#1C1C1C", true, "left"), title, size_spec("fill", "fixed")),
                     leaf(&format!("feature-{n}.body"), NodeKind::Text, px_rect(0, 0, 1, 96), Style { line_height_milli: Some(1500), ..text_style(px(16), "#374151", false, "left") }, body, size_spec("fill", "fixed")),
                 ],
             )
@@ -905,7 +905,7 @@ fn landing_page() -> CanvasDocument {
         bordered("#FFFFFF", "#E5E7EB"),
         LayoutSpec { mode: "row".into(), justify: Some(designllm_contracts::Justify::SpaceBetween), align: "center".into(), padding_sides: Some([0, px(48), 0, px(48)]), ..Default::default() },
         vec![
-            leaf("nav.brand", NodeKind::Text, at(0, 0, 1, 1), text_style(px(20), "#111827", true, "left"), "[브랜드]", size_spec("hug", "hug")),
+            leaf("nav.brand", NodeKind::Text, at(0, 0, 1, 1), text_style(px(20), "#1C1C1C", true, "left"), "[브랜드]", size_spec("hug", "hug")),
             nav_links,
         ],
     );

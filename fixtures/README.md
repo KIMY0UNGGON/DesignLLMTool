@@ -24,15 +24,6 @@ For the expected transform, CropBox EMU is `{ x_min: 228600, y_min: 254000, x_ma
 
 The physical page index is zero-based (`11`); the viewer page number is one-based (`12`); the printed label (`9`) is independent. These values must not be conflated. The manifest records both index bases and the independent printed label.
 
-## Rebuild and structural check
+## Checks
 
-From the repository root in Windows PowerShell 5.1 (the scripts also run in PowerShell 7). Both scripts are BOM-less, and 5.1 reads such files in the ANSI code page, so every non-ASCII text in them is written as a `\uXXXX` escape.
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\probes\luna_validation\validate_fixtures.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\probes\luna_validation\generate_fixtures.ps1
-```
-
-The validator checks manifest fields and hashes, archive/XML integrity, DOCX/PPTX image-to-relationship links, opaque XML hashes at anchored part locations and occurrences, actual HWP CFB signature, CSV source strings, the canonical evidence origin and review state, and PDF page/index/region math for UserUnit 1 and 2. For PPTX and DOCX it also checks the package rules that PowerPoint and Word enforce: `CT_Presentation` child order, slide layout ids from 2147483648 up, the slide-to-layout link, a notes-master theme of its own, the `presProps`/`viewProps`/`tableStyles` and document-property parts, the DOCX settings relation, `CT_RPr` order in the `LunaAccent` style, and `w14:paraId` values below 0x80000000. These are structural checks: the validator does not open the files in PowerPoint or Word. The HWPX `mimetype` entry must be stored without compression. It must report `fail=0` (147 checks). It does not claim that a product format adapter can edit or roundtrip these files; `tests/integration` does that against the real adapters.
-
-The generator rewrites the files and the manifest together. Under 5.1 the PNG, CSV, HWP and PDF outputs are byte-identical to the committed ones. The DOCX and PPTX packages get the parts the generator writes, in new ZIP containers, so their whole-file hashes change. The HWPX package keeps its committed container: Windows PowerShell 5.1 writes the `mimetype` entry deflated, and the HWPX reader refuses that (`HWPX_MIMETYPE_INVALID`). The generator therefore requires the rebuilt HWPX parts to equal the committed package, and writes the rebuilt container only when its `mimetype` entry is stored. Regenerate only when a fixture itself changes, and keep the manifest that the same run wrote.
+The files are kept byte for byte (`.gitattributes` marks `fixtures/**` as `-text`), and `fixture-manifest.json` records each SHA-256. `tests/integration` and the crate tests open them with the real format adapters. Do not edit a fixture by hand: a changed file needs a new manifest hash and a reason in the commit.

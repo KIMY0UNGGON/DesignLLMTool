@@ -264,7 +264,10 @@ impl DesktopApp {
             }
         }
         if let Some(board_rect) = self.board_rect {
-            let tools = node_tools(&node, self.command_enabled_for_current_kind("props.corner_radius"));
+            // Strikethrough, line height and letter spacing are Canvas text extras (the Effects capability; a deck refuses them).
+            let text_extras = self.active.as_ref().is_some_and(|item| item.kind == designllm_contracts::ArtifactKind::Canvas)
+                && super::properties::feature_editable(self.feature_support(designllm_contracts::Feature::Effects));
+            let tools = node_tools(&node, self.command_enabled_for_current_kind("props.corner_radius"), text_extras);
             let mut toolbar = self.place_toolbar(board_rect, rect, toolbar_size(ui, &tools));
             // tokens.json `ctx.avoid-tag`: a toolbar above the node that meets the agent's name tag moves up so that
             // its bottom is 6 above the tag.
@@ -628,7 +631,7 @@ impl DesktopApp {
                                 // The data sheet under the board (§8): on while it is shown.
                                 if sheet_toggle {
                                     let shown = !self.view_ref().sheet_hidden;
-                                    if tool_button(ui, palette, Some("ins-data"), shown, "데이터 시트").clicked() {
+                                    if tool_button(ui, palette, Some("data-sheet"), shown, "데이터 시트").clicked() {
                                         self.invoke_ui("figure.toggle_sheet", json!({}));
                                     }
                                 }
@@ -647,7 +650,9 @@ impl DesktopApp {
                                     let Some(spec) = commands::find(command) else {
                                         continue;
                                     };
-                                    if widgets::menu_item(ui, palette, None, spec.label, spec.shortcut, false).clicked() {
+                                    // Arranging has no icon of its own: "" keeps the place so the labels line up.
+                                    let icon = if command == "figure.remove_panel" { "delete" } else { "" };
+                                    if widgets::menu_item(ui, palette, Some(icon), spec.label, spec.shortcut, false).clicked() {
                                         self.invoke_ui(command, args);
                                         ui.close();
                                     }
@@ -888,12 +893,33 @@ impl DesktopApp {
                     self.invoke_ui("props.text_style", json!({ "color": new }));
                 }
             }),
+            // 텍스트 스타일 ▾: the paragraph values the toolbar has no button for (line height with its line-spacing icon,
+            // letter spacing), the same fields and commands as the properties panel.
+            Action::TextStyle => popup(response, |ui| {
+                let line = f64::from(style.line_height_milli.unwrap_or(1200)) / 1000.0;
+                if let Some(new) = super::properties::row(ui, palette, Some("줄 높이"), |ui| {
+                    let (icon_rect, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
+                    icons::paint(ui, icon_rect, "line-spacing", palette.ink_3);
+                    let width = ui.available_width();
+                    super::properties::field(ui, palette, id("line-height"), width, "", Some(line), "배", 2, true)
+                }) {
+                    self.invoke_ui("props.line_height", json!({ "value": new.max(0.1) }));
+                }
+                let spacing = style.letter_spacing.unwrap_or(0) as f64 / super::properties::EMU_PER_PX;
+                if let Some(new) = super::properties::row(ui, palette, Some("자간"), |ui| {
+                    let width = ui.available_width();
+                    super::properties::field(ui, palette, id("letter-spacing"), width, "", Some(spacing), "px", 1, true)
+                }) {
+                    self.invoke_ui("props.letter_spacing", json!({ "value": new }));
+                }
+            }),
             Action::Direction if response.clicked() => {
                 let column = node.layout.as_ref().is_some_and(|layout| layout.mode == "column");
                 self.invoke_ui("props.layout_direction", json!({ "direction": if column { "row" } else { "column" } }));
             }
             Action::Bold if response.clicked() => self.invoke_ui("props.text_style", json!({ "bold": !style.bold })),
             Action::Italic if response.clicked() => self.invoke_ui("props.text_style", json!({ "italic": !style.italic })),
+            Action::Strike if response.clicked() => self.invoke_ui("props.text_style", json!({ "strikethrough": style.strikethrough != Some(true) })),
             Action::Group if response.clicked() => self.invoke_ui("edit.group", json!({})),
             Action::Ai if response.clicked() => self.invoke_ui("nav.ai", json!({})),
             Action::More => {
@@ -914,6 +940,8 @@ enum Action {
     Gap,
     Bold,
     Italic,
+    Strike,
+    TextStyle,
     TextColor,
     TextAlign,
     Align,
@@ -933,6 +961,8 @@ impl Action {
             Self::Gap => "간격",
             Self::Bold => "굵게  Ctrl+B",
             Self::Italic => "기울임  Ctrl+I",
+            Self::Strike => "취소선",
+            Self::TextStyle => "텍스트 스타일",
             Self::TextColor => "글자 색",
             Self::TextAlign => "정렬",
             Self::Align => "정렬",
@@ -956,7 +986,7 @@ enum Tool {
 
 /// The toolbar of one selected node by its kind (§9.3). `radius` is whether the document's engine takes a corner radius (the
 /// slides engine refuses one).
-fn node_tools(node: &NodeProperties, radius: bool) -> Vec<Tool> {
+fn node_tools(node: &NodeProperties, radius: bool, text_extras: bool) -> Vec<Tool> {
     use designllm_contracts::NodeKind;
     let icon = |icon: &'static str, action: Action| Tool::Icon { icon, action, active: false };
     let mut tools = Vec::new();
@@ -967,7 +997,13 @@ fn node_tools(node: &NodeProperties, radius: bool) -> Vec<Tool> {
             tools.push(Tool::Sep);
             tools.push(Tool::Icon { icon: "bold", action: Action::Bold, active: node.style.bold });
             tools.push(Tool::Icon { icon: "italic", action: Action::Italic, active: node.style.italic });
+            if text_extras {
+                tools.push(Tool::Icon { icon: "strike", action: Action::Strike, active: node.style.strikethrough == Some(true) });
+            }
             tools.push(icon("text-color", Action::TextColor));
+            if text_extras {
+                tools.push(icon("text-style", Action::TextStyle));
+            }
             tools.push(Tool::Sep);
             let align = match node.style.align.as_str() {
                 "center" => "text-align-center",

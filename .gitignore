@@ -1,4 +1,7 @@
 /target/
 **/target/
 *.log
-/release/DesignLLMTool-MCP-win-x64/
+# Local tools and design previews: not needed to build, test, or run the MCP server.
+/probes/
+/design/icons/**/_sheet*
+/design/icons/**/_preview*

@@ -17,7 +17,7 @@ pub(super) fn design_theme_notice(value: &Value) -> Option<String> {
                 let colors = note["colors"].as_object().map(|colors| colors.iter().filter_map(|(name, color)| color.as_str().map(|color| format!("{name} {color}"))).collect::<Vec<_>>().join(", ")).unwrap_or_default();
                 let heading = note["fonts"]["heading"].as_str().unwrap_or("");
                 let body = note["fonts"]["body"].as_str().unwrap_or("");
-                if !colors.is_empty() { parts.push(format!("색 {colors}")); }
+                if !colors.is_empty() { parts.push(crate::i18n::word_label("색", "Colors", colors)); }
                 parts.push(format!("글꼴 {heading}, {body}"));
                 if note["radius_px"].as_array().is_some_and(|radii| !radii.is_empty()) {
                     parts.push(format!("모서리 {}px", steps(&note["radius_px"])));

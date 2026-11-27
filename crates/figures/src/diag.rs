@@ -22,7 +22,6 @@ pub mod code {
     pub const ID_INVALID: &str = "ID_INVALID";
     pub const ID_DUPLICATE: &str = "ID_DUPLICATE";
     pub const NATIVE_VERIFY_FAILED: &str = "NATIVE_VERIFY_FAILED";
-    pub const ELEMENT_NOT_FOUND: &str = "ELEMENT_NOT_FOUND";
 
     pub const DATASET_INVALID: &str = "DATASET_INVALID";
     pub const DATASET_ORIGIN_INVALID: &str = "DATASET_ORIGIN_INVALID";
@@ -30,12 +29,10 @@ pub mod code {
     pub const DATASET_ROWS_MISMATCH: &str = "DATASET_ROWS_MISMATCH";
     pub const DATASET_ROW_ORDER_UNRECORDED: &str = "DATASET_ROW_ORDER_UNRECORDED";
     pub const ERROR_KEY_NOT_DRAWN: &str = "ERROR_KEY_NOT_DRAWN";
-    pub const DATASET_SOURCE_HASH_INVALID: &str = "DATASET_SOURCE_HASH_INVALID";
     pub const DATASET_SOURCE_MISMATCH: &str = "DATASET_SOURCE_MISMATCH";
     pub const DATASET_VERSION_MISMATCH: &str = "DATASET_VERSION_MISMATCH";
     pub const DATASET_LINEAGE_REQUIRED: &str = "DATASET_LINEAGE_REQUIRED";
     pub const DATASET_LINEAGE_INVALID: &str = "DATASET_LINEAGE_INVALID";
-    pub const DATASET_HISTORY_REWRITTEN: &str = "DATASET_HISTORY_REWRITTEN";
     pub const DATASET_TRANSFORM_MISMATCH: &str = "DATASET_TRANSFORM_MISMATCH";
     /// A scaled value with no exact decimal of at most 18 digits (the service refuses the same scale, see dataset.rs).
     pub const UNIT_SCALE_NOT_EXACT: &str = "UNIT_SCALE_NOT_EXACT";
@@ -96,7 +93,6 @@ pub mod code {
     /// Export info: the figure's caption is kept in the figure (document, digest, scene metadata) but not drawn in the
     /// exported file, as journals take the legend in the manuscript text. Non-blocking (`05-decisions/figures.md`).
     pub const FIGURE_CAPTION_NOT_RENDERED: &str = "FIGURE_CAPTION_NOT_RENDERED";
-    pub const CONTENT_LOCKED: &str = "CONTENT_LOCKED";
 
     /// A v1.2 operation that the figure engine refuses (see guard.rs).
     pub const UNSUPPORTED_OPERATION: &str = "UNSUPPORTED_OPERATION";
@@ -139,8 +135,7 @@ pub fn error_code_for(code: &str) -> ErrorCode {
         | "DATASET_NOT_FOUND"
         | "EVIDENCE_NOT_FOUND"
         | "EDGE_ENDPOINT_NOT_FOUND"
-        | "COLUMN_NOT_FOUND"
-        | "ELEMENT_NOT_FOUND" => ErrorCode::NotFound,
+        | "COLUMN_NOT_FOUND" => ErrorCode::NotFound,
         "DATASET_REF_STALE" => ErrorCode::RevisionConflict,
         "DATASET_SOURCE_MISMATCH"
         | "DATASET_VERSION_MISMATCH"
@@ -148,10 +143,8 @@ pub fn error_code_for(code: &str) -> ErrorCode {
         | "DATASET_ROWS_MISMATCH"
         | "DATASET_TRANSFORM_MISMATCH"
         | "EDIT_MISMATCH"
-        | "DATASET_HISTORY_REWRITTEN"
         | "IMAGE_HASH_MISMATCH"
         | "EVIDENCE_HASH_MISMATCH" => ErrorCode::IntegrityError,
-        "CONTENT_LOCKED" => ErrorCode::ContentLocked,
         // A request the dataset cannot take: a scale that is not exact, or a new id that does not name its parent.
         "UNIT_SCALE_NOT_EXACT" | "DATASET_LINEAGE_REQUIRED" => ErrorCode::InvalidArgument,
         _ => ErrorCode::InvalidArgument,

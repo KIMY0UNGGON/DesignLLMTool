@@ -25,7 +25,8 @@ pub const A4_HEIGHT_HU: i64 = 84186;
 /// Default margins in HWPUNIT: left, right, top, bottom.
 pub const DEFAULT_MARGINS_HU: (i64, i64, i64, i64) = (8504, 8504, 5668, 4252);
 
-const VERSION_XML: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="1" buildNumber="0" os="1" xmlVersion="1.5" application="DesignLLMTool" appVersion="0.1.0"/>"#;
+// appVersion follows the workspace version (Cargo.toml), so a release never writes a stale number.
+const VERSION_XML: &str = concat!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="1" buildNumber="0" os="1" xmlVersion="1.5" application="DesignLLMTool" appVersion=""#, env!("CARGO_PKG_VERSION"), r#""/>"#);
 
 const CONTAINER_XML: &str = r##"<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><ocf:container xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf"><ocf:rootfiles><ocf:rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/><ocf:rootfile full-path="Preview/PrvText.txt" media-type="text/plain"/><ocf:rootfile full-path="META-INF/container.rdf" media-type="application/rdf+xml"/></ocf:rootfiles></ocf:container>"##;
 

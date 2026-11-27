@@ -1,4 +1,4 @@
-Rust dependency licenses (normal dependencies for Windows x64 that are linked into DesignLLMTool.exe)
+Rust dependency licenses (normal dependencies for Windows x64 recorded in Cargo.lock: every crate linked into DesignLLMTool.exe, plus the proc-macro crates used to build it and a few optional crates that this build does not enable)
 
 Each license text is included under third-party-licenses\<crate>-<version>\.
 - ab_glyph 0.2.32: Apache-2.0 (third-party-licenses\ab_glyph-0.2.32\LICENSE)

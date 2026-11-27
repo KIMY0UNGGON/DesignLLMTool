@@ -41,7 +41,7 @@ pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("패널이 너무 작습니다", "The panel is too small"),
     ("도형이 패널 밖으로 나갑니다", "A shape extends outside the panel"),
     ("도형의 크기는 0보다 커야 합니다", "A shape’s size must be greater than 0"),
-    ("구조도에는 사각형과 원만 넣을 수 있습니다", "Diagrams can contain only rectangles and circles"),
+    ("구조도에는 사각형, 원, 수식만 넣을 수 있습니다", "Diagrams can contain only rectangles, ellipses, and formulas"),
     ("글자가 도형 안에 들어가지 않습니다. 도형을 키우거나 글자를 줄여 주세요", "The text doesn’t fit in the shape. Enlarge the shape or shorten the text"),
     ("축 글자가 패널 밖으로 나갑니다", "Axis text extends outside the panel"),
     ("글자를 겹치지 않게 놓을 공간이 부족합니다. 주변 항목을 옮기거나 패널을 키워 주세요", "There isn’t enough room to place the text without overlap. Move nearby items or enlarge the panel"),

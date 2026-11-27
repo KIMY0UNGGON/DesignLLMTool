@@ -30,6 +30,28 @@ fn node_menu_entries(kind: ArtifactKind, many: bool, hidden: bool, locked: bool)
     entries
 }
 
+/// The icon of a node menu item (design/icons/ui/index.json, `used_by` "⋯ 메뉴"). An item without one gets "", which
+/// paints nothing but keeps the icon's place, so every label of the menu starts in one column.
+pub(super) fn node_menu_icon(command: &str) -> &'static str {
+    match command {
+        "edit.duplicate" => "duplicate",
+        "edit.copy_properties" => "copy-style",
+        "edit.paste_properties" => "paste-style",
+        "edit.group" => "group",
+        "edit.ungroup" => "ungroup",
+        "edit.order_forward" => "bring-forward",
+        "edit.order_backward" => "send-backward",
+        "edit.order_front" => "bring-front",
+        "edit.order_back" => "send-back",
+        "edit.lock" => "lock",
+        "edit.unlock" => "unlock",
+        "edit.hide" => "eye-off",
+        "edit.show" => "eye",
+        "edit.delete" => "delete",
+        _ => "",
+    }
+}
+
 /// Whether `id` is a table or one of a table's cells on the pages.
 fn member_in(nodes: &[Node], id: &str) -> bool {
     nodes.iter().any(|node| {
@@ -81,7 +103,7 @@ impl DesktopApp {
                 continue;
             }
             let Some(spec) = commands::find(command) else { continue };
-            if widgets::menu_item(ui, palette, None, spec.label, spec.shortcut, false).clicked() {
+            if widgets::menu_item(ui, palette, Some(node_menu_icon(command)), spec.label, spec.shortcut, false).clicked() {
                 self.invoke_ui(command, json!({}));
                 ui.close();
             }
@@ -164,7 +186,8 @@ impl DesktopApp {
                     continue;
                 }
                 let Some(spec) = commands::find(command) else { continue };
-                if !widgets::menu_item(ui, &palette, None, spec.label, "", false).clicked() {
+                let icon = if command == "add.page" { "page-add" } else { "delete" };
+                if !widgets::menu_item(ui, &palette, Some(icon), spec.label, "", false).clicked() {
                     continue;
                 }
                 ui.close();
@@ -184,5 +207,25 @@ impl DesktopApp {
     fn canvas_page_ids(&self) -> Option<Vec<String>> {
         let artifact = self.artifact.as_ref()?;
         matches!(artifact.body, ArtifactBody::Canvas(_)).then(|| super::sidebar::page_ids_for_body(&artifact.body)).flatten()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_node_menu_item_names_an_icon_of_the_set_or_keeps_the_place() {
+        for kind in [ArtifactKind::Canvas, ArtifactKind::Slides] {
+            for (hidden, locked) in [(false, false), (true, false), (false, true)] {
+                for command in node_menu_entries(kind, false, hidden, locked).into_iter().flatten() {
+                    let icon = node_menu_icon(command);
+                    assert!(icon.is_empty() || crate::icons::exists(icon), "{command} names the missing icon {icon:?}");
+                }
+            }
+        }
+        for command in ["edit.duplicate", "edit.order_front", "edit.order_back", "edit.copy_properties", "edit.unlock"] {
+            assert!(!node_menu_icon(command).is_empty(), "{command} has its own icon");
+        }
     }
 }

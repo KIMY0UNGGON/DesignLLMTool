@@ -1201,6 +1201,7 @@ impl DesktopApp {
                 let patch = StylePatch {
                     bold: args.get("bold").and_then(Value::as_bool),
                     italic: args.get("italic").and_then(Value::as_bool),
+                    strikethrough: args.get("strikethrough").and_then(Value::as_bool),
                     font_size: number(args, "font_size").map(|pt| (pt * EMU_PER_PT as f64).round() as i64),
                     color: text(args, "color").map(str::to_owned),
                     ..Default::default()

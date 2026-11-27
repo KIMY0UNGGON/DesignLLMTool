@@ -5,13 +5,11 @@ Bundled font: Pretendard 1.307
 
 Font built into the executable: Hack (via epaint_default_fonts 0.33.3, egui default font): MIT License with the Bitstream Vera Sans Mono copyright notice. Text: third-party-licenses\epaint_default_fonts-0.33.3\fonts\Hack-Regular.txt.
 
-Microsoft Edge WebView2 Fixed Version Runtime
-- Version: 157.0.4341.46, x64. Official source page: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
-- Source CAB SHA-256: 0ac7317a08c3f3beebbb9b6d90f5b77352569f0a33a54a15ef6aaabc82899b7c
-- Runtime files in runtime\webview2\ were copied byte for byte from the source runtime. The Authenticode signature of
-  msedgewebview2.exe was Valid and signed by Microsoft Corporation when this package was built.
-- The runtime is Microsoft software distributed under Microsoft's terms and is shipped unmodified. Its third-party
-  credits are shown by the runtime itself (runtime\webview2\show_third_party_software_licenses.bat).
+Microsoft Edge WebView2
+- This package ships no WebView2 runtime. The web-code preview uses the Microsoft Edge WebView2 Runtime installed on
+  Windows (included in Windows 11), or a Fixed Version runtime the user places in runtime\webview2\ next to
+  DesignLLMTool.exe or in the folder named by DESIGNLLM_WEBVIEW2_DIR. That runtime is Microsoft software under
+  Microsoft's terms. Official source page: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 - WebView2 SDK loader (Microsoft.Web.WebView2 NuGet package, statically linked via webview2-com-sys). License: BSD 3-clause, full text below.
 
 Copyright (C) Microsoft Corporation. All rights reserved.

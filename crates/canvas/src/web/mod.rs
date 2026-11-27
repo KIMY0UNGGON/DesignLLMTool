@@ -126,19 +126,16 @@ const WEBGL_ANIMATION_HTML: &str = r#"<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__DLM_TITLE__</title>
 <style>
-:root { color-scheme: dark; font-family: Inter, "Segoe UI", sans-serif; background: #0b1020; color: #f4f6ff; }
+:root { color-scheme: dark; font-family: Inter, "Segoe UI", sans-serif; background: #141414; color: #EDEDED; }
 * { box-sizing: border-box; }
 body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 32px; }
-.stage { position: relative; width: min(960px, 100%); min-height: 540px; overflow: hidden; border: 1px solid rgba(148, 163, 255, .24); border-radius: 28px; background: #111936; box-shadow: 0 32px 100px rgba(0, 0, 0, .42); }
+.stage { position: relative; width: min(960px, 100%); min-height: 540px; overflow: hidden; border: 1px solid rgba(255, 255, 255, .12); border-radius: 28px; background: #1C1C1C; box-shadow: 0 32px 100px rgba(0, 0, 0, .42); }
 #shader { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .84; }
 .copy { position: relative; z-index: 1; max-width: 620px; padding: 92px 64px; pointer-events: none; }
-.eyebrow { color: #9eb7ff; font: 700 12px/1.2 "Segoe UI", sans-serif; letter-spacing: .18em; }
-h1 { max-width: 560px; margin: 18px 0; font-size: clamp(36px, 7vw, 76px); line-height: .98; }
-.summary { max-width: 420px; color: #c0c9e5; font-size: 17px; line-height: 1.55; }
-.status { display: flex; align-items: center; gap: 12px; margin-top: 38px; color: #dbe4ff; font-size: 13px; }
-.pulse { width: 12px; height: 12px; border-radius: 50%; background: #65e9c3; box-shadow: 0 0 18px #65e9c3; animation: pulse 760ms ease-in-out infinite alternate; }
+h1 { max-width: 560px; margin: 0 0 18px; font-size: clamp(36px, 7vw, 76px); line-height: .98; }
+.summary { max-width: 420px; color: #C8C8C8; font-size: 17px; line-height: 1.55; }
+.pulse { display: block; width: 12px; height: 12px; margin-top: 38px; border-radius: 50%; background: #E0A27A; box-shadow: 0 0 18px #E0A27A; animation: pulse 760ms ease-in-out infinite alternate; }
 @keyframes pulse { from { transform: scale(.72); opacity: .52; } to { transform: scale(1.18); opacity: 1; } }
-footer { position: absolute; right: 26px; bottom: 22px; z-index: 1; color: #aab5d1; font: 600 11px/1.2 "Segoe UI", sans-serif; letter-spacing: .12em; }
 @media (max-width: 600px) { body { padding: 12px; } .stage { min-height: 460px; border-radius: 18px; } .copy { padding: 72px 28px; } }
 </style>
 </head>
@@ -146,12 +143,10 @@ footer { position: absolute; right: 26px; bottom: 22px; z-index: 1; color: #aab5
 <main class="stage">
   <canvas id="shader" aria-label="Animated WebGL shader background"></canvas>
   <section class="copy">
-    <p class="eyebrow">WEBGL MOTION STUDY</p>
     <h1>__DLM_TITLE__</h1>
     <p class="summary">An editable WebCode template combining a live fragment shader with a restrained CSS motion cue.</p>
-    <div class="status"><span id="pulse" class="pulse" aria-hidden="true"></span><span>requestAnimationFrame · WebGL 1.0</span></div>
+    <span id="pulse" class="pulse" aria-hidden="true"></span>
   </section>
-  <footer>LOCAL SOURCE · NO REMOTE LIBRARIES</footer>
 </main>
 <script defer src="./animation.js"></script>
 </body>
@@ -182,7 +177,7 @@ const WEBGL_ANIMATION_SCRIPT: &str = r#"(() => {
       return shader;
     };
     const vertex = compile(gl.VERTEX_SHADER, 'attribute vec2 a_position; void main(){ gl_Position=vec4(a_position,0.0,1.0); }');
-    const fragment = compile(gl.FRAGMENT_SHADER, 'precision mediump float; uniform vec2 u_resolution; uniform float u_time; void main(){ vec2 uv=gl_FragCoord.xy/u_resolution; float wave=0.5+0.5*sin(u_time*2.4+uv.x*5.0+uv.y*4.0); vec3 low=vec3(0.08,0.38,0.75); vec3 high=vec3(0.86,0.32,0.62); gl_FragColor=vec4(mix(low,high,wave),1.0); }');
+    const fragment = compile(gl.FRAGMENT_SHADER, 'precision mediump float; uniform vec2 u_resolution; uniform float u_time; void main(){ vec2 uv=gl_FragCoord.xy/u_resolution; float wave=0.5+0.5*sin(u_time*2.4+uv.x*5.0+uv.y*4.0); vec3 low=vec3(0.18,0.36,0.38); vec3 high=vec3(0.71,0.33,0.16); gl_FragColor=vec4(mix(low,high,wave),1.0); }');
     const program = gl.createProgram();
     if (!program) throw new Error('program-allocation-failed');
     gl.attachShader(program, vertex);

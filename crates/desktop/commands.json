@@ -2608,6 +2608,9 @@
           },
           "italic": {
             "type": "boolean"
+          },
+          "strikethrough": {
+            "type": "boolean"
           }
         },
         "type": "object"

@@ -195,7 +195,7 @@ impl DesktopApp {
         tables
             .into_iter()
             .enumerate()
-            .map(|(index, node)| (node.id.clone(), node.ext.name.clone().unwrap_or_else(|| format!("표 {}", index + 1))))
+            .map(|(index, node)| (node.id.clone(), node.ext.name.clone().unwrap_or_else(|| crate::i18n::word_label("표", "Table", index + 1))))
             .collect()
     }
 

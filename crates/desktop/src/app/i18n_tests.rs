@@ -250,4 +250,7 @@ fn the_engine_texts_the_window_shows_have_their_english() {
     // Kept by hand in i18n/engine.rs: a change of the engine's text must change the table too.
     let disclaimer = designllm_contracts::figure_rules::FIGURE_OUTPUT_PROFILE_DISCLAIMER;
     assert!(!has_hangul(&i18n::tr(disclaimer)), "{disclaimer:?} has no English");
+    for profile in designllm_contracts::figure_rules::FIGURE_OUTPUT_PROFILES {
+        assert!(!has_hangul(&i18n::tr(profile.label)), "the output profile label {:?} has no English", profile.label);
+    }
 }

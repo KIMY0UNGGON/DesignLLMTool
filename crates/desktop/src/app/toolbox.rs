@@ -356,19 +356,25 @@ impl DesktopApp {
         }
     }
 
-    /// The outline of the object a tile would insert, at its size on the page under the pointer, centred on the pointer.
-    /// Nothing where a drop would be cancelled.
-    fn toolbox_preview(&self, ctx: &Context, palette: &theme::Palette, action: Action, pos: Pos2) {
+    /// The outline of the object a tile would insert, at its size on the page under the pointer, centred on the pointer,
+    /// with the tile's icon in its middle so the preview names what is dropped (a cylinder, a memo, a table). Nothing where a
+    /// drop would be cancelled.
+    fn toolbox_preview(&self, ctx: &Context, palette: &theme::Palette, tile: Tile, pos: Pos2) {
         let Some((at, page_rect, size)) = self.toolbox_drop_target(ctx, pos) else {
             return;
         };
-        let (width, height) = Self::toolbox_object_size(action, size);
+        let (width, height) = Self::toolbox_object_size(tile.action, size);
         let bounds = ModelRect { x: at.center.0 - width / 2, y: at.center.1 - height / 2, width, height };
         let rect = super::page_to_screen(bounds, size, page_rect);
         let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("toolbox-preview")));
         let corner = CornerRadius::same(theme::RADIUS_CONTROL);
         painter.rect_filled(rect, corner, palette.accent_soft.gamma_multiply(0.5));
         painter.rect_stroke(rect, corner, Stroke::new(2.0, palette.accent), StrokeKind::Inside);
+        // 24 px as on the tile; smaller when the outline is (a 20 px operator at a low zoom), and none when it has no room.
+        let side = (rect.width().min(rect.height()) - 8.0).min(24.0);
+        if side >= 8.0 {
+            icons::paint_on(&painter, Rect::from_center_size(rect.center(), Vec2::splat(side)), tile.icon, palette.accent);
+        }
     }
 
     /// The toolbox tab: the groups of tiles, two to a row, and the icon picker while an icon waits for its pick.
@@ -421,7 +427,7 @@ impl DesktopApp {
         let pos = ctx.input(|input| input.pointer.latest_pos());
         if response.dragged_by(egui::PointerButton::Primary) {
             if let Some(pos) = pos {
-                self.toolbox_preview(&ctx, palette, tile.action, pos);
+                self.toolbox_preview(&ctx, palette, tile, pos);
             }
         }
         // egui ends a drag on Esc: that stop is a cancel, and the release that follows ends no drag.

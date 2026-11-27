@@ -517,16 +517,17 @@ impl DesktopApp {
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show(|ui| {
                     ui.set_width(220.0);
-                    for (command, label, shortcut) in [
-                        ("view.zoom_in", "확대", "Ctrl+="),
-                        ("view.zoom_out", "축소", "Ctrl+-"),
-                        ("view.zoom_100", "100%", "Ctrl+0"),
-                        ("view.zoom_fit", "전체 맞춤", "Shift+1"),
-                        ("view.zoom_selection", "선택 맞춤", "Shift+2"),
+                    // 100% has no icon of its own: "" keeps the icon's place so the labels line up.
+                    for (command, icon, label, shortcut) in [
+                        ("view.zoom_in", "zoom-in", "확대", "Ctrl+="),
+                        ("view.zoom_out", "zoom-out", "축소", "Ctrl+-"),
+                        ("view.zoom_100", "", "100%", "Ctrl+0"),
+                        ("view.zoom_fit", "zoom-fit", "전체 맞춤", "Shift+1"),
+                        ("view.zoom_selection", "zoom-selection", "선택 맞춤", "Shift+2"),
                     ] {
                         // The judgement the run (`invoke`) and the registry listing use, so a disabled zoom reads as disabled.
                         let enabled = self.command_enabled_for_current_kind(command);
-                        let clicked = ui.add_enabled_ui(enabled, |ui| widgets::menu_item(ui, palette, None, label, shortcut, false).clicked()).inner;
+                        let clicked = ui.add_enabled_ui(enabled, |ui| widgets::menu_item(ui, palette, Some(icon), label, shortcut, false).clicked()).inner;
                         if clicked {
                             self.invoke_ui(command, json!({}));
                             ui.close();

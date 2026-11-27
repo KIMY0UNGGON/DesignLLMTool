@@ -690,7 +690,7 @@
       "group": "style",
       "priority": 3,
       "purpose": "모서리별 반경",
-      "used_by": "속성 › 모양 모서리 행 끝"
+      "used_by": "미사용: 모서리별 반경은 아직 지원하지 않음 (모서리 값은 하나)"
     },
     {
       "name": "border-weight",
@@ -935,7 +935,7 @@
       "group": "text",
       "priority": 1,
       "purpose": "줄 높이·줄 간격",
-      "used_by": "속성 › 텍스트·문단, 문단 선택 도구줄"
+      "used_by": "속성 › 텍스트 줄 높이, 텍스트 선택 도구줄 › 텍스트 스타일"
     },
     {
       "name": "letter-spacing",
@@ -977,14 +977,14 @@
       "group": "figure",
       "priority": 1,
       "purpose": "그림 갱신 (새 수정본이 있을 때)",
-      "used_by": "연결 그림 오른쪽 위 안쪽, 속성 › 연결된 그림, 선택 도구줄"
+      "used_by": "속성 › 연결된 그림 (새 수정본이 있을 때 갱신 단추)"
     },
     {
       "name": "figure-open",
       "group": "figure",
       "priority": 1,
       "purpose": "원본 열기",
-      "used_by": "속성 › 연결된 그림, 연결 그림 선택 도구줄"
+      "used_by": "속성 › 연결된 그림 (그림 이름 단추)"
     },
     {
       "name": "data-sheet",

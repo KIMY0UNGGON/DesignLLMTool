@@ -3,19 +3,20 @@
     Registers DesignLLMTool as an MCP server for the AI coding clients installed on this PC.
 
 .DESCRIPTION
-    Uses release\DesignLLMTool-0.1.0-mcp-win-x64\DesignLLMTool.exe in this repository, checks that it starts, and registers
+    Uses release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe in this repository, checks that it starts, and registers
     it as the MCP server "designllm" with Claude Code, Codex CLI and AGY when they are installed. It never removes or
     changes an existing registration: a client that already has a "designllm" server keeps it; to register this copy,
     change or remove that entry where it is defined (user or project settings), then run the script again. After each
     registration it reads the entry back and counts it only when its command is this copy's executable. For Gemini CLI
-    and other clients (Claude Desktop, Cursor, VS Code) it prints the configuration to paste, and for Codex CLI behind a
-    batch shim with a cmd.exe character in a path, a config.toml entry.
+    and other clients (Claude Desktop, Cursor, VS Code) it prints the configuration to paste. A client behind a batch
+    shim with a cmd.exe character in a path is not registered and is left to that configuration (for Codex CLI, a
+    config.toml entry).
 
     Windows 10/11 x64 only.
 
 .PARAMETER Project
     Optional existing folder. The workspace is kept in <Project>\.designllm and saved files go to <Project>\artifacts.
-    Without it the workspace is %LOCALAPPDATA%\DesignLLMTool\workspaces\default.
+    Without it the workspace is the folder in DESIGNLLM_WORKSPACE, or else %LOCALAPPDATA%\DesignLLMTool\workspaces\default.
 
 .PARAMETER Client
     auto (every installed client), claude, codex, gemini, agy, or print (only print the configuration). gemini only prints
@@ -49,14 +50,14 @@ if ($env:OS -ne "Windows_NT" -or -not [Environment]::Is64BitOperatingSystem) {
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 # The documented package first; any other build under release only when that one is missing.
-$packaged = Join-Path $root "release\DesignLLMTool-0.1.0-mcp-win-x64\DesignLLMTool.exe"
+$packaged = Join-Path $root "release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe"
 if (Test-Path -LiteralPath $packaged) {
     $exePath = $packaged
 } else {
     $exe = Get-ChildItem -Path (Join-Path $root "release") -Recurse -Filter "DesignLLMTool.exe" -ErrorAction SilentlyContinue |
         Sort-Object FullName | Select-Object -First 1
     if (-not $exe) {
-        throw "release\DesignLLMTool-0.1.0-mcp-win-x64\DesignLLMTool.exe was not found. Clone the whole repository: git clone https://github.com/KIMY0UNGGON/DesignLLMTool.git"
+        throw "release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe was not found. Clone the whole repository: git clone https://github.com/KIMY0UNGGON/DesignLLMTool.git"
     }
     $exePath = $exe.FullName
 }

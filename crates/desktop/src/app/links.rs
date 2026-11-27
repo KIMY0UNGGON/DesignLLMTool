@@ -516,12 +516,12 @@ impl DesktopApp {
         let updatable = supported && !self.link_in_progress();
         let palette = crate::theme::palette(ui.ctx());
         ui.horizontal_wrapped(|ui| {
-            if crate::widgets::labeled_button_verbatim(ui, &palette, None, &super::truncate(&figure.title, 22)).clicked() {
+            if crate::widgets::labeled_button_verbatim(ui, &palette, Some("figure-open"), &super::truncate(&figure.title, 22)).clicked() {
                 self.activate(figure.clone());
             }
             if let Some(current) = newer {
                 let label = format!("갱신 r{} → r{}", link.figure_revision, current);
-                let mut update = ui.add_enabled_ui(updatable, |ui| crate::widgets::labeled_button(ui, &palette, None, &label, false)).inner;
+                let mut update = ui.add_enabled_ui(updatable, |ui| crate::widgets::labeled_button(ui, &palette, Some("figure-update"), &label, false)).inner;
                 if !supported && !reason.is_empty() {
                     update = update.on_disabled_hover_text(crate::i18n::tr(&reason));
                 }

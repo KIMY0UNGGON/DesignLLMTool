@@ -481,7 +481,7 @@ impl DesktopApp {
         let dataset = figure.datasets.iter().find(|dataset| dataset.id == dataset_id).ok_or("자료를 찾지 못했습니다")?;
         let edit = match command {
             "data.add_column" => {
-                let name = text("name").unwrap_or_else(|| format!("열 {}", dataset.columns.len() + 1));
+                let name = text("name").unwrap_or_else(|| crate::i18n::word_label("열", "Column", dataset.columns.len() + 1));
                 if dataset.columns.iter().any(|column| column.name == name) {
                     return Err("같은 이름의 열이 있습니다".into());
                 }
@@ -495,10 +495,10 @@ impl DesktopApp {
                 let mut next = dataset.rows.len() + 1;
                 let rows: Vec<serde_json::Value> = (0..count)
                     .map(|_| {
-                        while taken(&format!("행 {next}")) {
+                        while taken(&crate::i18n::word_label("행", "Row", next)) {
                             next += 1;
                         }
-                        let name = format!("행 {next}");
+                        let name = crate::i18n::word_label("행", "Row", next);
                         next += 1;
                         let cells: serde_json::Map<String, serde_json::Value> = dataset
                             .columns
