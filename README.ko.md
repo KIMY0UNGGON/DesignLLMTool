@@ -78,7 +78,7 @@ DesignLLMTool은 MCP 서버가 내장된 Windows, macOS, Linux용 데스크톱 �
   - 저장소를 복제하기 위한 Git(macOS 및 Linux용 패키지 바이너리는 저장소에 포함되어 있지 않습니다).
   - 소스 빌드를 위한 Rust 툴체인(`1.93.1`, [rustup.rs](https://rustup.rs)에서 설치).
   - SQLite를 소스에서 컴파일하므로 C 컴파일러가 필요합니다: macOS에서는 Xcode Command Line Tools(`xcode-select --install`), Linux에서는 `build-essential`(또는 이에 준하는 패키지).
-  - Linux 런타임 요구 사항: OpenGL 또는 Vulkan 드라이버가 포함된 X11이나 Wayland 세션, 파일 열기/저장 대화 상자를 위한 `zenity` 또는 `kdialog`.
+  - Linux 런타임 요구 사항: OpenGL 또는 Vulkan 드라이버가 포함된 X11이나 Wayland 세션, 파일 열기/저장 대화 상자를 위한 `zenity` 또는 `kdialog`, 그리고 데스크톱 창이 런타임에 로드하는 키보드 라이브러리 `libxkbcommon-x11`(Wayland에서는 `libxkbcommon`)이 필요하며, 없으면 창이 열리지 않습니다. Ubuntu, Fedora 등의 데스크톱 설치에는 포함되어 있고 최소 설치에서는 배포판 패키지(Debian 및 Ubuntu의 경우 `libxkbcommon-x11-0`)로 추가할 수 있으며, 창에만 필요하므로 `--mcp --background`는 이 라이브러리 없이도 실행됩니다.
 
 ## 빠른 시작
 
