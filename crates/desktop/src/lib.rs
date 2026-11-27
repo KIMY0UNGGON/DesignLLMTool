@@ -115,13 +115,24 @@ fn project_folder(workspace: &Path) -> Option<std::path::PathBuf> {
 }
 
 fn open_project_window(project: &Path) -> std::io::Result<()> {
-    use std::{os::windows::process::CommandExt, process::{Command, Stdio}};
-    Command::new(std::env::current_exe()?)
+    use std::process::{Command, Stdio};
+    let mut command = Command::new(std::env::current_exe()?);
+    command
         .arg("--project").arg(project)
         .env_remove("DESIGNLLM_MCP_GUI")
-        .creation_flags(designllm_runtimes::win::CREATE_NO_WINDOW)
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
-        .spawn()?;
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(designllm_runtimes::job::CREATE_NO_WINDOW);
+    }
+    // Unix: its own process group, so closing this window's terminal does not end the new window.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command.spawn()?;
     Ok(())
 }
 
@@ -231,7 +242,9 @@ mod startup_error_tests {
         };
         assert_eq!(view.cause, "작업공간에 연결할 수 없습니다");
         assert_eq!(view.recovery_warning.as_deref(), Some("이전 저장의 복구가 일부 진행됐을 수 있습니다. 처리 건수는 확인할 수 없습니다. 자세한 내용은 로그를 확인해 주세요."));
-        assert_eq!(view.log_path, r"C:\workspaces\sample\logs\host.log");
+        if cfg!(windows) {
+            assert_eq!(view.log_path, r"C:\workspaces\sample\logs\host.log");
+        }
         assert!(!view.cause.contains("internal process"), "internal details stay in the log");
         assert!(!view.recovery_warning.as_ref().unwrap().contains("932"));
         assert!(!view.recovery_warning.as_ref().unwrap().contains("private staging"));

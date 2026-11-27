@@ -3,13 +3,23 @@
 //! on the user's screen. It is created outside the virtual screen instead, at the capture size, so it is shown and
 //! keeps drawing (the capture needs frames) but lies on no monitor.
 
-use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN};
-
 /// The outer position, in egui points, of a smoke window of `size` points.
 pub(crate) fn offscreen_position(size: [f32; 2]) -> [f32; 2] {
-    // SAFETY: GetSystemMetrics takes an index and only reads system values.
-    let (left, top) = unsafe { (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN)) };
+    let (left, top) = virtual_screen_origin();
     before_virtual_screen(left as f32, top as f32, size)
+}
+
+#[cfg(windows)]
+fn virtual_screen_origin() -> (i32, i32) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN};
+    // SAFETY: GetSystemMetrics takes an index and only reads system values.
+    unsafe { (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN)) }
+}
+
+/// macOS and Linux: the primary display starts at 0, 0; the margins below keep the window off every display.
+#[cfg(not(windows))]
+fn virtual_screen_origin() -> (i32, i32) {
+    (0, 0)
 }
 
 /// The virtual screen's left and top are 0 or less (the primary monitor starts at 0, 0). They come in this process's

@@ -20,22 +20,34 @@ serde_json.workspace = true
 sha2.workspace = true
 base64 = "0.22.1"
 eframe = { version = "=0.33.3", default-features = false, features = ["default_fonts", "glow", "wgpu"] }
-# The fallback renderer when OpenGL cannot open (task 65). eframe turns every wgpu feature off, so this entry (the
-# same wgpu as eframe's) only adds the DirectX 12 backend (egui-wgpu adds "std" and "wgsl"). No Vulkan, GL or
-# Metal backend.
-wgpu = { version = "=27.0.1", default-features = false, features = ["dx12"] }
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 raw-window-handle = "=0.6.2"
 unicode-segmentation.workspace = true
+
+# The fallback renderer when OpenGL cannot open (task 65). eframe turns every wgpu feature off, so each entry (the
+# same wgpu as eframe's) adds only the platform's native backend (egui-wgpu adds "std" and "wgsl"): DirectX 12 on
+# Windows, Metal on macOS, Vulkan on Linux.
+[target.'cfg(windows)'.dependencies]
+wgpu = { version = "=27.0.1", default-features = false, features = ["dx12"] }
 # Windows file dialogs (already in Cargo.lock through web-preview).
 # Win32_UI_WindowsAndMessaging: the tests count this process's visible windows (no dialog may open in a headless run).
 # Win32_System_Pipes lets the UI poll its preview child's READY without blocking the window.
 # Win32_UI_Input_KeyboardAndMouse: the system double-click time a layer row's double click follows (GetDoubleClickTime).
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Pipes", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_System_Time", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
-[dev-dependencies]
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { version = "=27.0.1", default-features = false, features = ["metal"] }
+
+# Linux and other Unix desktops: winit needs a window system backend (both load their libraries at run time).
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+wgpu = { version = "=27.0.1", default-features = false, features = ["vulkan"] }
+eframe = { version = "=0.33.3", default-features = false, features = ["x11", "wayland"] }
+
+[target.'cfg(windows)'.dev-dependencies]
 # The packaged GUI regression opens its window on a private Windows desktop.
 windows = { version = "0.62", features = ["Win32_Graphics_Gdi", "Win32_Security", "Win32_System_StationsAndDesktops", "Win32_System_Threading"] }
+
+[dev-dependencies]
 # The real engine, store and renderer, so the figure-creation tests send the window's own change
 # sets to the same code the host runs. Tests only; the product reaches the host through the bridge.
 designllm-canvas.workspace = true
@@ -48,3 +60,7 @@ designllm-hwpx.workspace = true
 designllm-host.workspace = true
 designllm-slides.workspace = true
 designllm-sources.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+# Local time zone offset (localtime_r) and process helpers. MIT OR Apache-2.0.
+libc = "0.2"

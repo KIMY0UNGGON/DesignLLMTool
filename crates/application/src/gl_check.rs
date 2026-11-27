@@ -8,10 +8,9 @@
 
 use designllm_contracts::{DltError, DltResult, ErrorCode};
 use designllm_desktop::renderer::{self, Renderer};
-use designllm_runtimes::win;
+use designllm_runtimes::job;
 use std::{
     io::Read,
-    os::windows::io::AsRawHandle,
     process::{Command, ExitStatus, Stdio},
     time::{Duration, Instant},
 };
@@ -77,15 +76,15 @@ pub fn run_probe(renderer: Renderer) -> DltResult<()> {
             return Ok(());
         }
         if value == "orphan" {
-            use std::os::windows::process::CommandExt;
             // stderr is inherited: the grandchild holds the parent's pipe after this child is gone.
-            let _ = Command::new(std::env::current_exe()?)
-                .arg(probe_argument(renderer))
-                .env(fail_hook(renderer), "hang")
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-                .spawn();
+            let mut command = Command::new(std::env::current_exe()?);
+            command.arg(probe_argument(renderer)).env(fail_hook(renderer), "hang").stdin(Stdio::null()).stdout(Stdio::null());
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            }
+            let _ = command.spawn();
         }
         std::process::exit(0xC000_0005_u32 as i32);
     }
@@ -125,10 +124,13 @@ fn probe(renderer: Renderer) -> Option<String> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
+    // Unix: the child leads its own process group, which the job below ends.
+    #[cfg(unix)]
+    job::own_process_group(&mut command);
     let mut child = command.spawn().ok()?;
     // A kill-on-close job ties the hidden child to this process: if the launcher dies first, Windows ends the
     // child with it. A job that cannot be made or joined does not stop the check; the time-limit kill below stays.
-    let job = win::JobObject::create().ok().filter(|job| job.assign(child.as_raw_handle() as _).is_ok());
+    let job = job::JobObject::create().ok().filter(|job| assign(job, &child).is_ok());
     // Read stderr on its own thread so a long panic text cannot fill the pipe and stall the child.
     let stderr = child.stderr.take().map(|pipe| {
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -163,6 +165,17 @@ fn probe(renderer: Renderer) -> Option<String> {
     }
 }
 
+#[cfg(windows)]
+fn assign(job: &job::JobObject, child: &std::process::Child) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    job.assign(child.as_raw_handle() as _)
+}
+
+#[cfg(unix)]
+fn assign(job: &job::JobObject, child: &std::process::Child) -> std::io::Result<()> {
+    job.assign(child.id())
+}
+
 /// The exit code (hex for an NTSTATUS such as 0xC0000005) and, if the child said why, its error message.
 fn reason(status: ExitStatus, stderr: &str) -> String {
     let code = match status.code() {
@@ -182,7 +195,7 @@ fn reason(status: ExitStatus, stderr: &str) -> String {
 fn message(failures: &[(Renderer, String)]) -> String {
     let mut interfaces: Vec<&str> = Vec::new();
     for (renderer, _) in failures {
-        let interface = if *renderer == Renderer::Glow { "OpenGL" } else { "DirectX 12" };
+        let interface = if *renderer == Renderer::Glow { "OpenGL" } else { renderer::NATIVE_API };
         if !interfaces.contains(&interface) {
             interfaces.push(interface);
         }
@@ -193,9 +206,10 @@ fn message(failures: &[(Renderer, String)]) -> String {
     };
     format!(
         "그래픽 드라이버({})를 열 수 없어 DesignLLMTool 화면을 띄우지 못했습니다.\n\
-         그래픽 카드 제조사(AMD·NVIDIA·Intel) 웹사이트나 Windows 업데이트에서 그래픽 드라이버를 최신으로 갱신한 뒤 다시 실행해 주세요.\n\n\
+         그래픽 카드 제조사(AMD·NVIDIA·Intel) 웹사이트나 {update}에서 그래픽 드라이버를 최신으로 갱신한 뒤 다시 실행해 주세요.\n\n\
          오류 코드:{codes}",
-        interfaces.join("·")
+        interfaces.join("·"),
+        update = if cfg!(windows) { "Windows 업데이트" } else { "시스템 업데이트" }
     )
 }
 
@@ -212,8 +226,30 @@ pub(super) fn show_message_box(text: &str) {
         // SAFETY: both strings are NUL-terminated UTF-16 buffers that outlive the call; no owner window.
         unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), MB_ICONERROR) };
     }
-    #[cfg(not(windows))]
-    let _ = text;
+    // macOS and Linux: the system's alert through a helper program (no GUI toolkit is linked). Without one, the text
+    // stays on stderr, where the caller already wrote it.
+    #[cfg(target_os = "macos")]
+    {
+        let quoted = |value: &str| format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""));
+        let script = format!("display alert {} message {} as critical", quoted("DesignLLMTool"), quoted(text));
+        let _ = Command::new("osascript").arg("-e").arg(script).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let shown = Command::new("zenity")
+            .args(["--error", "--title=DesignLLMTool", "--no-markup"])
+            .arg(format!("--text={text}"))
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.code().is_some());
+        if !shown {
+            let _ = Command::new("kdialog")
+                .args(["--title", "DesignLLMTool", "--error"])
+                .arg(text)
+                .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+                .status();
+        }
+    }
 }
 
 #[cfg(all(test, windows))]

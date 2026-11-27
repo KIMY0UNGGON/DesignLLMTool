@@ -10,8 +10,8 @@ use designllm_contracts::{DltError, DltResult};
 
 use crate::jobs::JobSupervisor;
 
-/// The application executable: `DesignLLMTool.exe`, next to the running host executable.
-pub const APP_EXECUTABLE: &str = "DesignLLMTool.exe";
+/// The application executable: `DesignLLMTool.exe` (`DesignLLMTool` on macOS and Linux), next to the running host executable.
+pub const APP_EXECUTABLE: &str = if cfg!(windows) { "DesignLLMTool.exe" } else { "DesignLLMTool" };
 
 /// Verifies a gui hello on `pipe`. `configured` lists extra executables allowed to hold the gui role (tests and
 /// development only; the product sets none). The refusal names the rule that failed.
@@ -42,11 +42,12 @@ pub(crate) fn allowed_executables(configured: &[PathBuf]) -> Vec<PathBuf> {
     allowed
 }
 
-/// True when both paths name the same file. Both sides are resolved first, so links and letter case do not matter,
-/// and a missing file never matches.
+/// True when both paths name the same file. Both sides are resolved first, so links do not matter, letter case does not
+/// matter on Windows and macOS (case-insensitive file systems), and a missing file never matches.
 pub(crate) fn same_executable(a: &Path, b: &Path) -> bool {
     match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-        (Ok(a), Ok(b)) => a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase(),
+        (Ok(a), Ok(b)) if cfg!(any(windows, target_os = "macos")) => a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase(),
+        (Ok(a), Ok(b)) => a == b,
         _ => false,
     }
 }
@@ -58,8 +59,11 @@ mod tests {
     #[test]
     fn the_same_file_matches_in_any_letter_case_and_a_missing_file_never_matches() {
         let exe = std::env::current_exe().expect("test executable");
-        let shouted = PathBuf::from(exe.to_string_lossy().to_uppercase());
-        assert!(same_executable(&exe, &shouted));
+        assert!(same_executable(&exe, &exe));
+        if cfg!(any(windows, target_os = "macos")) {
+            let shouted = PathBuf::from(exe.to_string_lossy().to_uppercase());
+            assert!(same_executable(&exe, &shouted));
+        }
         assert!(!same_executable(&exe, Path::new(r"C:\no\such\folder\DesignLLMTool.exe")));
     }
 }

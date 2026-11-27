@@ -64,6 +64,7 @@ mod tests {
     /// Arial is metric-compatible with Helvetica for the Latin set. Its advances, scaled to 1000 units, must equal
     /// the table for every printable ASCII code. Requires the Windows font file, which is part of standard Windows.
     #[test]
+    #[cfg(windows)]
     fn helvetica_table_matches_windows_arial_advance_widths() {
         let windir = std::env::var("WINDIR").unwrap_or_else(|_| "C:/Windows".into());
         let path = std::path::Path::new(&windir).join("Fonts").join("arial.ttf");

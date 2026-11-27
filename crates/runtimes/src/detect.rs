@@ -61,9 +61,9 @@ impl RuntimeKind {
 
     fn exe_name(self) -> Option<&'static str> {
         match self {
-            RuntimeKind::Claude => Some("claude.exe"),
-            RuntimeKind::Agy => Some("agy.exe"),
-            RuntimeKind::Codex => Some("codex.exe"),
+            RuntimeKind::Claude => Some(if cfg!(windows) { "claude.exe" } else { "claude" }),
+            RuntimeKind::Agy => Some(if cfg!(windows) { "agy.exe" } else { "agy" }),
+            RuntimeKind::Codex => Some(if cfg!(windows) { "codex.exe" } else { "codex" }),
             RuntimeKind::Mock => None,
         }
     }
@@ -803,10 +803,12 @@ mod tests {
     }
 
     /// The program `search_path` found, without its environment.
+    #[cfg(windows)]
     fn program(found: Option<(PathBuf, Vec<EnvChange>)>) -> Option<PathBuf> {
         found.map(|(program, _)| program)
     }
 
+    #[cfg(windows)]
     fn npm_env(package: &Path) -> Vec<EnvChange> {
         vec![
             ("CODEX_MANAGED_PACKAGE_ROOT", Some(package.as_os_str().to_owned())),
@@ -817,6 +819,8 @@ mod tests {
         ]
     }
 
+    // Windows layouts: npm shims, .exe names, drive paths, cmd.exe.
+    #[cfg(windows)]
     #[test]
     fn npm_codex_resolves_to_the_native_exe_not_the_cmd_shim() {
         let root = TempDir::new("npm-nested");
@@ -834,6 +838,8 @@ mod tests {
         assert_eq!(env, npm_env(&prefix.join(r"node_modules\@openai\codex")), "the environment bin/codex.js gives it");
     }
 
+    // Windows layouts: npm shims, .exe names, drive paths, cmd.exe.
+    #[cfg(windows)]
     #[test]
     fn npm_codex_follows_the_hoisted_platform_package_and_the_vendor_fallback() {
         let (platform, triple) = platform_dirs();
@@ -872,6 +878,8 @@ mod tests {
         assert!(!not_found(RuntimeKind::Claude, "claude.exe").message.contains("npm"));
     }
 
+    // Windows layouts: npm shims, .exe names, drive paths, cmd.exe.
+    #[cfg(windows)]
     #[test]
     fn path_order_decides_and_a_direct_exe_gets_no_npm_environment() {
         let (platform, triple) = platform_dirs();
@@ -895,6 +903,8 @@ mod tests {
         assert_eq!(search_path(RuntimeKind::Claude, root.join("claude").as_os_str()), Some((claude, Vec::new())));
     }
 
+    // Windows layouts: npm shims, .exe names, drive paths, cmd.exe.
+    #[cfg(windows)]
     #[test]
     fn empty_and_relative_path_entries_are_skipped() {
         // An unset PATH reads as an empty value; split_paths yields one empty entry for it, which would
@@ -909,6 +919,8 @@ mod tests {
         }
     }
 
+    // Windows layouts: npm shims, .exe names, drive paths, cmd.exe.
+    #[cfg(windows)]
     #[test]
     fn the_runtime_environment_reaches_the_child() {
         let root = TempDir::new("env-child");
@@ -922,6 +934,24 @@ mod tests {
         assert_eq!(code, 0, "{text}");
         assert!(text.contains("CODEX_MANAGED_BY_NPM=1"), "{text}");
         assert!(text.contains(&format!("CODEX_MANAGED_PACKAGE_ROOT={}", root.display())), "{text}");
+        assert!(!text.contains("CODEX_MANAGED_BY_BUN="), "{text}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_path_search_and_environment() {
+        let root = TempDir::new("unix-path");
+        let claude = root.join("bin").join("claude");
+        write(&claude, "claude");
+        let path = env::join_paths([root.join("empty").as_path(), root.join("bin").as_path()]).unwrap();
+        assert_eq!(search_path(RuntimeKind::Claude, &path), Some((claude, Vec::new())), "a direct install gets no env");
+        assert_eq!(search_path(RuntimeKind::Codex, &path), None);
+        assert_eq!(path_dirs(OsStr::new("::.:bin:/abs/one")).collect::<Vec<_>>(), vec![PathBuf::from("/abs/one")]);
+
+        let env: Vec<EnvChange> = vec![("CODEX_MANAGED_BY_NPM", Some("1".into())), ("CODEX_MANAGED_BY_BUN", None)];
+        let (code, text) = run_capture(Path::new("/bin/sh"), &["-c", "env"], &env, DETECT_TIMEOUT).unwrap();
+        assert_eq!(code, 0, "{text}");
+        assert!(text.contains("CODEX_MANAGED_BY_NPM=1"), "{text}");
         assert!(!text.contains("CODEX_MANAGED_BY_BUN="), "{text}");
     }
 

@@ -1,0 +1,111 @@
+# Builds and tests DesignLLMTool on Windows, macOS and Linux, and packages the macOS and Linux executables.
+# A pushed tag `v*` also attaches the packages to the GitHub release of that tag.
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-22.04, platform: linux-x64 }
+          - { runner: ubuntu-22.04-arm, platform: linux-arm64 }
+          - { runner: macos-15, platform: macos-arm64 }
+          - { runner: macos-15-intel, platform: macos-x64 }
+          - { runner: windows-2022, platform: win-x64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.93.1
+        shell: bash
+        run: |
+          rustup toolchain install 1.93.1 --profile minimal
+          rustup default 1.93.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        shell: bash
+        run: cargo build --release -p designllm-application
+
+      - name: Test
+        shell: bash
+        run: cargo test --no-fail-fast -p designllm-bridge -p designllm-contracts -p designllm-canvas -p designllm-runtimes -p designllm-host -p designllm-core -p designllm-package -p designllm-docx -p designllm-pptx -p designllm-hwpx -p designllm-web-preview
+
+      # The desktop crate's headless GUI tests (dialogs, settings lock, command registry). Reported, not blocking.
+      - name: Test desktop
+        if: matrix.platform != 'win-x64'
+        continue-on-error: true
+        shell: bash
+        run: cargo test -p designllm-desktop --lib
+
+      - name: Package
+        if: matrix.platform != 'win-x64'
+        shell: bash
+        run: |
+          version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          name="DesignLLMTool-${version}-mcp-${{ matrix.platform }}"
+          mkdir -p "dist/$name/assets"
+          cp target/release/DesignLLMTool "dist/$name/DesignLLMTool"
+          cp -R assets/fonts "dist/$name/assets/fonts"
+          cp release/DesignLLMTool-*-mcp-win-x64/THIRD_PARTY_LICENSES.txt release/DesignLLMTool-*-mcp-win-x64/THIRD_PARTY_NOTICES.txt "dist/$name/" || true
+          "dist/$name/DesignLLMTool" --version
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          echo "PACKAGE=dist/$name.tar.gz" >> "$GITHUB_ENV"
+          echo "PACKAGE_EXE=dist/$name/DesignLLMTool" >> "$GITHUB_ENV"
+
+      # An MCP stdio session against the packaged executable: host start over the Unix socket, guide, create, render.
+      - name: MCP probe
+        if: matrix.platform != 'win-x64'
+        shell: bash
+        run: |
+          mkdir -p probe
+          python3 .github/scripts/mcp_probe.py "$PACKAGE_EXE" "$RUNNER_TEMP/probe-ws" probe/render.png
+          "$PACKAGE_EXE" --command --workspace "$RUNNER_TEMP/probe-ws" <<< '{"method":"host.stop","params":{}}'
+
+      # The desktop window on this runner's display (Xvfb on Linux). Hosted runners have no GPU, so a failure here is
+      # reported, not blocking; the screenshot is uploaded when it exists.
+      - name: GUI smoke test
+        if: matrix.platform != 'win-x64'
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p probe
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get install -y --no-install-recommends xvfb libgl1 libegl1 >/dev/null
+            runner=(xvfb-run -a -s "-screen 0 1600x1000x24")
+          else
+            runner=()
+          fi
+          # macOS has no timeout(1): perl's alarm ends a hung window after 180 s.
+          "${runner[@]}" perl -e 'alarm shift; exec @ARGV' 180 "$PACKAGE_EXE" --smoke-test --workspace "$RUNNER_TEMP/smoke-ws" --output probe/smoke.png
+          "$PACKAGE_EXE" --command --workspace "$RUNNER_TEMP/smoke-ws" <<< '{"method":"host.stop","params":{}}' || true
+
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.platform != 'win-x64'
+        with:
+          name: probe-${{ matrix.platform }}
+          path: probe/
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform != 'win-x64'
+        with:
+          name: DesignLLMTool-${{ matrix.platform }}
+          path: ${{ env.PACKAGE }}
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.platform != 'win-x64'
+        with:
+          files: ${{ env.PACKAGE }}

@@ -33,3 +33,7 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 webview2-com = "0.39"
+
+[target.'cfg(unix)'.dependencies]
+# Process liveness for stale temporary files (kill with signal 0). MIT OR Apache-2.0.
+libc = "0.2"

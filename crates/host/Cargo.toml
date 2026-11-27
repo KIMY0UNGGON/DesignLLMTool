@@ -25,3 +25,7 @@ name = "designllm-host-harness"
 path = "tests/support/harness.rs"
 test = false
 doc = false
+
+[target.'cfg(unix)'.dependencies]
+# setsid for the detached managed host. MIT OR Apache-2.0.
+libc = "0.2"

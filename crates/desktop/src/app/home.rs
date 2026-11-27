@@ -1545,6 +1545,7 @@ pub(super) fn now_ms() -> u64 {
 }
 
 /// The local time zone's offset from UTC in minutes: Windows' bias, with daylight time when it is in effect.
+#[cfg(windows)]
 pub(super) fn local_offset_minutes() -> i64 {
     use windows::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
     let mut info = TIME_ZONE_INFORMATION::default();
@@ -1552,6 +1553,18 @@ pub(super) fn local_offset_minutes() -> i64 {
     let state = unsafe { GetTimeZoneInformation(&mut info) };
     let daylight = if state == 2 { info.DaylightBias } else { 0 };
     -(i64::from(info.Bias) + i64::from(daylight))
+}
+
+/// The local time zone's offset from UTC in minutes, with daylight time when it is in effect (`tm_gmtoff`).
+#[cfg(unix)]
+pub(super) fn local_offset_minutes() -> i64 {
+    let now = unsafe { libc::time(std::ptr::null_mut()) };
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY: localtime_r writes only the structure it is given.
+    if unsafe { libc::localtime_r(&now, &mut tm) }.is_null() {
+        return 0;
+    }
+    i64::from(tm.tm_gmtoff as i32) / 60
 }
 
 /// Days since 1970-01-01 to (year, month, day), in the proleptic Gregorian calendar.

@@ -58,9 +58,7 @@ fn a_lock_file_left_without_a_holder_does_not_block_and_is_never_deleted() {
     app.save_star("project");
     assert!(started.elapsed() < LOCK_WAIT, "no holder: no wait");
     assert!(!app.settings_unsaved());
-    if cfg!(windows) {
-        assert!(path.with_extension("json.lock").exists(), "the lock file stays; only its handle locks");
-    }
+    assert!(path.with_extension("json.lock").exists(), "the lock file stays; only its handle locks");
     let _ = std::fs::remove_dir_all(&root);
 }
 

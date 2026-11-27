@@ -6,3 +6,5 @@ crates/canvas/tests/fixtures/** -text
 # Assets are checked byte for byte (font manifest SHA-256, icon index): keep the committed line endings.
 assets/** -text
 design/** -text
+# Shell scripts run on macOS and Linux: keep LF line endings on every checkout.
+*.sh text eol=lf

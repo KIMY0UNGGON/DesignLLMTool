@@ -1,5 +1,6 @@
 //! Which eframe renderer the windows of this process use (task 65). OpenGL (`egui_glow`) stays the default; where
-//! the OpenGL driver cannot open, the launcher (`designllm_application`'s GL check) picks wgpu on DirectX 12, first on
+//! the OpenGL driver cannot open, the launcher (`designllm_application`'s GL check) picks wgpu on the native backend
+//! (DirectX 12 on Windows, Metal on macOS, Vulkan on Linux), first on
 //! a hardware adapter and then on WARP, the software adapter that Windows always has. Every `NativeOptions` of this
 //! crate comes from `native_options`, so the probe child and the real window start the same renderer.
 
@@ -42,8 +43,8 @@ impl Renderer {
     pub fn api_name(self) -> &'static str {
         match self {
             Renderer::Glow => "OpenGL",
-            Renderer::Wgpu => "DirectX 12",
-            Renderer::WgpuWarp => "DirectX 12 WARP",
+            Renderer::Wgpu => NATIVE_API,
+            Renderer::WgpuWarp => NATIVE_SOFTWARE_API,
         }
     }
 
@@ -54,6 +55,31 @@ impl Renderer {
         Self::parse(&value)
             .map(Some)
             .ok_or_else(|| format!("{RENDERER_ENV}={value} is not one of glow, wgpu, wgpu-warp"))
+    }
+}
+
+/// The wgpu backend of this platform, by the name users know: DirectX 12 (Windows), Metal (macOS), Vulkan (Linux).
+#[cfg(windows)]
+pub const NATIVE_API: &str = "DirectX 12";
+#[cfg(windows)]
+const NATIVE_SOFTWARE_API: &str = "DirectX 12 WARP";
+#[cfg(target_os = "macos")]
+pub const NATIVE_API: &str = "Metal";
+#[cfg(target_os = "macos")]
+const NATIVE_SOFTWARE_API: &str = "Metal (software)";
+#[cfg(all(unix, not(target_os = "macos")))]
+pub const NATIVE_API: &str = "Vulkan";
+#[cfg(all(unix, not(target_os = "macos")))]
+const NATIVE_SOFTWARE_API: &str = "Vulkan (software)";
+
+/// The wgpu backend set of this platform.
+fn native_backends() -> wgpu::Backends {
+    if cfg!(windows) {
+        wgpu::Backends::DX12
+    } else if cfg!(target_os = "macos") {
+        wgpu::Backends::METAL
+    } else {
+        wgpu::Backends::VULKAN
     }
 }
 
@@ -84,12 +110,12 @@ pub(crate) fn options_for(renderer: Renderer, viewport: egui::ViewportBuilder) -
     options
 }
 
-/// DirectX 12 only, with the FXC shader compiler that Windows ships (no dxcompiler.dll). `WGPU_*` environment
-/// variables do not change the backend, the compiler or the adapter.
+/// The platform's native backend only: DirectX 12 with the FXC shader compiler that Windows ships (no dxcompiler.dll),
+/// Metal on macOS, Vulkan on Linux. `WGPU_*` environment variables do not change the backend, the compiler or the adapter.
 fn wgpu_configuration(software: bool) -> egui_wgpu::WgpuConfiguration {
     let setup = egui_wgpu::WgpuSetupCreateNew {
         instance_descriptor: wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::DX12,
+            backends: native_backends(),
             flags: wgpu::InstanceFlags::from_build_config(),
             backend_options: wgpu::BackendOptions::default(),
             memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
@@ -117,8 +143,8 @@ fn pick_adapter(adapters: &[wgpu::Adapter], surface: Option<&wgpu::Surface<'_>>,
         .min_by_key(|adapter| rank(adapter.get_info().device_type))
         .cloned()
         .ok_or_else(|| {
-            let kind = if software { "software (WARP)" } else { "hardware" };
-            format!("No DirectX 12 {kind} adapter can draw to the window")
+            let kind = if software { if cfg!(windows) { "software (WARP)" } else { "software" } } else { "hardware" };
+            format!("No {NATIVE_API} {kind} adapter can draw to the window")
         })
 }
 
@@ -143,7 +169,8 @@ mod tests {
             let options = options_for(renderer, egui::ViewportBuilder::default());
             assert_eq!(options.renderer, eframe::Renderer::Wgpu);
             let egui_wgpu::WgpuSetup::CreateNew(setup) = &options.wgpu_options.wgpu_setup else { panic!("a new wgpu setup") };
-            assert_eq!(setup.instance_descriptor.backends, wgpu::Backends::DX12);
+            assert_eq!(setup.instance_descriptor.backends, native_backends());
+            #[cfg(windows)]
             assert!(matches!(setup.instance_descriptor.backend_options.dx12.shader_compiler, wgpu::Dx12Compiler::Fxc));
             assert!(setup.native_adapter_selector.is_some());
         }

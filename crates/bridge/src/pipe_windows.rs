@@ -1,4 +1,4 @@
-//! Named pipe transport (Windows only).
+//! Named pipe transport (Windows). The Unix transport is `pipe_unix.rs`, with the same API.
 //!
 //! - Current-user DACL: owner, group, and the single ACE are the current user's SID; the DACL is
 //!   protected (no inherited ACEs). No NULL security descriptor is used.

@@ -20,7 +20,7 @@ use crate::{read_pdf_in_process, withheld_request_error, withheld_worker_error};
 use designllm_bridge::frame::{read_frame, write_frame};
 use designllm_contracts::{AssetRef, AssetStore, Diagnostic, DltError, DltResult, ErrorCode, MAX_FRAME_BYTES};
 use designllm_core::{PdfCancel, PdfReading};
-use designllm_runtimes::win;
+use designllm_runtimes::job as win;
 use designllm_sources::MAX_PDF_BYTES;
 use serde::Deserialize;
 use std::io::{Cursor, Read, Write};

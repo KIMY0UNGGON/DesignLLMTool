@@ -136,12 +136,18 @@ fn process_running(pid: u32) -> bool {
     waited != WAIT_OBJECT_0
 }
 
-#[cfg(not(windows))]
-fn process_running(_pid: u32) -> bool {
-    true
+/// Unix: `kill(pid, 0)` reports ESRCH only when no such process exists; any other answer counts as running.
+#[cfg(unix)]
+fn process_running(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else { return true };
+    if unsafe { libc::kill(pid, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
 }
 
-#[cfg(test)]
+// The fixtures use cmd.exe, ping and directory junctions.
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
     use std::path::PathBuf;

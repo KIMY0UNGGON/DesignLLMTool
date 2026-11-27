@@ -9,7 +9,12 @@ use super::DesktopApp;
 /// The commands that open a WebView2 preview window.
 pub(super) const WEB_RUNTIME_COMMANDS: &[&str] = &["web.preview", "view.play"];
 
-const NO_RUNTIME: &str = "웹 미리보기를 사용하려면 WebView2 런타임을 설치한 뒤 앱을 다시 시작하세요. 코드 편집은 가능합니다.";
+/// macOS and Linux have no WebView2: the preview is a Windows feature there.
+const NO_RUNTIME: &str = if cfg!(windows) {
+    "웹 미리보기를 사용하려면 WebView2 런타임을 설치한 뒤 앱을 다시 시작하세요. 코드 편집은 가능합니다."
+} else {
+    "웹 미리보기는 Windows에서만 열 수 있습니다. 코드 편집은 가능합니다."
+};
 
 /// The reason this process cannot open previews, or `None`. Asked once; the technical detail goes to the log of the run.
 pub(super) fn web_runtime_reason_at_start() -> Option<String> {
@@ -72,7 +77,9 @@ mod tests {
         });
         let shown = drawn_text(&output);
         assert!(shown.iter().any(|text| text == super::NO_RUNTIME), "the board shows the reason: {shown:?}");
-        assert!(super::NO_RUNTIME.contains("설치한 뒤 앱을 다시 시작하세요"), "the reason explains when to restart");
+        if cfg!(windows) {
+            assert!(super::NO_RUNTIME.contains("설치한 뒤 앱을 다시 시작하세요"), "the reason explains when to restart");
+        }
         assert!(!shown.iter().any(|text| text == "웹 미리보기 열기"), "and no preview button");
     }
 }

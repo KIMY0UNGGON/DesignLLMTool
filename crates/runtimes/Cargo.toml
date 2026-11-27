@@ -21,3 +21,7 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_System_JobObjects",
     "Win32_System_Threading",
 ] }
+
+[target.'cfg(unix)'.dependencies]
+# Process groups, rlimits and process listing (killpg, setrlimit, proc_listpids). MIT OR Apache-2.0.
+libc = "0.2"

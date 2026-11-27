@@ -105,8 +105,6 @@ pub(super) const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs
 /// ever takes a lock another one holds, however long it holds it.
 pub(super) struct SettingsLock {
     _handle: std::fs::File,
-    #[cfg(not(windows))]
-    path: PathBuf,
 }
 
 impl SettingsLock {
@@ -143,23 +141,21 @@ impl SettingsLock {
         error.raw_os_error() == Some(32) || error.kind() == std::io::ErrorKind::PermissionDenied
     }
 
-    /// Elsewhere the lock is a file only one window can create; it is removed by the window that made it, never by another.
+    /// macOS and Linux: an exclusive advisory lock (`flock`) on the open handle. The system frees it when the handle closes,
+    /// also when the window's process ends; as on Windows, the file stays and is never deleted.
     #[cfg(not(windows))]
     fn open(lock: &Path) -> std::io::Result<Self> {
-        let handle = std::fs::OpenOptions::new().write(true).create_new(true).open(lock)?;
-        Ok(Self { _handle: handle, path: lock.to_owned() })
+        let handle = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(lock)?;
+        match handle.try_lock() {
+            Ok(()) => Ok(Self { _handle: handle }),
+            Err(std::fs::TryLockError::WouldBlock) => Err(std::io::Error::from(std::io::ErrorKind::WouldBlock)),
+            Err(std::fs::TryLockError::Error(error)) => Err(error),
+        }
     }
 
     #[cfg(not(windows))]
     fn busy(error: &std::io::Error) -> bool {
-        error.kind() == std::io::ErrorKind::AlreadyExists
-    }
-}
-
-#[cfg(not(windows))]
-impl Drop for SettingsLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        error.kind() == std::io::ErrorKind::WouldBlock
     }
 }
 

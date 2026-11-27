@@ -11,7 +11,7 @@ use std::io::{Cursor, Write};
 
 use designllm_contracts::{DltResult, ErrorCode};
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use zip::{CompressionMethod, System, ZipWriter};
 
 use crate::diag;
 use crate::package::{CONTAINER, CONTAINER_RDF, CONTENT_HPF, HEADER, MIMETYPE, PREVIEW_TEXT, SETTINGS};
@@ -152,10 +152,11 @@ pub fn blank_package(width_hu: i64, height_hu: i64, margins: (i64, i64, i64, i64
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let zip_err = |what: &str, e: &dyn std::fmt::Display| diag::error(ErrorCode::Internal, diag::PACKAGE_INVALID, format!("{what}: {e}"));
     writer
-        .start_file("mimetype", SimpleFileOptions::default().compression_method(CompressionMethod::Stored))
+        .start_file("mimetype", SimpleFileOptions::default().compression_method(CompressionMethod::Stored).system(System::Dos))
         .map_err(|e| zip_err("mimetype", &e))?;
     writer.write_all(MIMETYPE.as_bytes()).map_err(|e| zip_err("mimetype", &e))?;
-    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    // The host OS byte is fixed, so every OS writes the same archive.
+    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated).system(System::Dos);
     for (name, bytes) in parts {
         writer.start_file(name, deflated).map_err(|e| zip_err(name, &e))?;
         writer.write_all(&bytes).map_err(|e| zip_err(name, &e))?;
