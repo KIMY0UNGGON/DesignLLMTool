@@ -20,3 +20,7 @@ unicode-segmentation.workspace = true
 schemars.workspace = true
 designllm-figures = { workspace = true }
 designllm-slides = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# open(2) flags by architecture (O_DIRECTORY, O_NOFOLLOW differ between x86_64 and aarch64). MIT OR Apache-2.0.
+libc = "0.2"

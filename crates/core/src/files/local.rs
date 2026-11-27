@@ -69,14 +69,25 @@ impl Parent {
                 handle.metadata()?
             };
             #[cfg(not(windows))]
-            let meta = fs::symlink_metadata(&path).map_err(path_error)?;
+            let meta = {
+                use std::os::unix::fs::MetadataExt;
+                let entry = fs::symlink_metadata(&path).map_err(path_error)?;
+                // A link owned by root is part of the system layout (macOS `/var`, `/tmp` and `/etc` point into
+                // `/private`): no user, so no agent, can plant one. It is followed; every other link is refused below.
+                if entry.file_type().is_symlink() && entry.uid() == 0 {
+                    path = fs::canonicalize(&path).map_err(path_error)?;
+                    fs::symlink_metadata(&path).map_err(path_error)?
+                } else {
+                    entry
+                }
+            };
             reject_link(&meta)?;
             if !meta.is_dir() { return Err(not_found("parent is not a directory")); }
             #[cfg(target_os = "linux")]
             {
                 use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
-                // O_DIRECTORY | O_NOFOLLOW. Resolve the next component relative to this inode.
-                let handle = OpenOptions::new().read(true).custom_flags(0x10000 | 0x20000).open(&path).map_err(path_error)?;
+                // O_DIRECTORY | O_NOFOLLOW (values differ by architecture: libc). Resolve the next component relative to this inode.
+                let handle = OpenOptions::new().read(true).custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW).open(&path).map_err(path_error)?;
                 path = PathBuf::from(format!("/proc/self/fd/{}", handle.as_raw_fd()));
                 directory = Some(handle);
             }
@@ -134,7 +145,7 @@ pub(super) fn open_file(path: &Path, write: bool, strict: bool) -> DltResult<Fil
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(0x20000 | 0x800); // O_NOFOLLOW | O_NONBLOCK (also refuse a swapped FIFO).
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK); // also refuse a swapped FIFO
     }
     let file = options.open(path).map_err(path_error)?;
     let meta = file.metadata()?;

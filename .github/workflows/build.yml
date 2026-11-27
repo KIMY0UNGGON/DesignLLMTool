@@ -39,9 +39,13 @@ jobs:
         shell: bash
         run: cargo build --release -p designllm-application
 
+      # The WebView2 session tests start real preview windows; hosted Windows runners have no interactive desktop for them.
       - name: Test
         shell: bash
-        run: cargo test --no-fail-fast -p designllm-bridge -p designllm-contracts -p designllm-canvas -p designllm-runtimes -p designllm-host -p designllm-core -p designllm-package -p designllm-docx -p designllm-pptx -p designllm-hwpx -p designllm-web-preview
+        run: |
+          skip=()
+          if [ "$RUNNER_OS" = "Windows" ]; then skip=(-- --skip isolation::session_tests); fi
+          cargo test --no-fail-fast -p designllm-bridge -p designllm-contracts -p designllm-canvas -p designllm-runtimes -p designllm-host -p designllm-core -p designllm-package -p designllm-docx -p designllm-pptx -p designllm-hwpx -p designllm-web-preview "${skip[@]}"
 
       # The desktop crate's headless GUI tests (dialogs, settings lock, command registry). Reported, not blocking.
       - name: Test desktop
