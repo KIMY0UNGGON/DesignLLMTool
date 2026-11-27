@@ -16,9 +16,6 @@
 //!   host owns the workspace; the caller then joins it (see [`ensure_host`]).
 //! - GUI start: [`ensure_host`] connects to a running host or starts a hidden managed one.
 
-#[cfg(not(windows))]
-compile_error!("designllm-host serves a Windows named pipe; it targets Windows only");
-
 mod conn;
 mod gui_identity;
 mod identity;
@@ -127,6 +124,20 @@ pub fn spawn_managed_host(host_program: &Path, workspace: &Path) -> DltResult<Ch
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // A new session: the host keeps running when the terminal or the GUI that started it goes away.
+        // SAFETY: setsid is async-signal-safe and touches no memory of the parent.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
     }
     command.spawn().map_err(|e| {
         DltError::new(ErrorCode::HostNotRunning, format!("cannot start the host {}: {e}", host_program.display()))

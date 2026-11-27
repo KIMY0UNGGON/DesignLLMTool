@@ -249,8 +249,9 @@ fn launch_and_wait(shared: &std::sync::Arc<Shared>, job: &JobRef) -> Result<(), 
     let kind = RuntimeKind::parse(&request.runtime)?;
     // The OS lock spans workspaces and processes of this user, and is released on crash.
     let _provider_lease = if kind == RuntimeKind::Claude {
-        let root = std::env::var_os("LOCALAPPDATA").ok_or_else(|| DltError::invalid("LOCALAPPDATA is required for Claude serialization"))?;
-        let path = std::path::PathBuf::from(root).join("DesignLLMTool/runtime-locks/claude.lock");
+        let root = designllm_contracts::local_path::local_app_data_dir()
+            .ok_or_else(|| DltError::invalid("the local application data folder (LOCALAPPDATA or HOME) is required for Claude serialization"))?;
+        let path = root.join("DesignLLMTool").join("runtime-locks").join("claude.lock");
         let lease = crate::provider::acquire(&path, || shared.core_call(|ws| {
             let current = ws.job(&job.job_id)?;
             Ok(current.attempt_id == job.attempt_id && current.status == JobStatus::Queued)

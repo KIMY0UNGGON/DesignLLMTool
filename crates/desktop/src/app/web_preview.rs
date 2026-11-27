@@ -170,6 +170,10 @@ impl DesktopApp {
         if self.smoke_output.is_some() || crate::dialogs::preview_refused() {
             return Ok(None);
         }
+        // The isolated preview is a WebView2 window; macOS and Linux have no WebView2.
+        if cfg!(not(windows)) {
+            return Err(DltError::unsupported("웹 미리보기는 Windows에서만 열 수 있습니다"));
+        }
         let parent_hwnd = self.parent_hwnd.ok_or_else(|| DltError::new(ErrorCode::Unavailable, "웹 미리보기 창을 현재 작업공간에 연결할 수 없습니다"))?;
         let mut command = Command::new(std::env::current_exe()?);
         command

@@ -44,9 +44,16 @@ pub(super) fn agent_actor_parts(actor: &str) -> (String, String) {
 
 /// The longest gap in seconds between the two clicks of a double click on a layer row: the system's double-click time
 /// (Windows `GetDoubleClickTime`, 500 ms unless the user changed it).
+#[cfg(windows)]
 pub(super) fn double_click_secs() -> f64 {
     // SAFETY: GetDoubleClickTime takes no arguments and only reads a system setting.
     f64::from(unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime() }) / 1000.0
+}
+
+/// macOS and Linux: 500 ms, the common system default (neither exposes one setting every desktop shares).
+#[cfg(not(windows))]
+pub(super) fn double_click_secs() -> f64 {
+    0.5
 }
 
 /// One row of the layers tree, computed before anything is drawn so the artifact is not borrowed

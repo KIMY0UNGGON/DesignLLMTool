@@ -487,6 +487,7 @@ pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("READY 응답을 기다리는 동안 작업물이나 판 번호가 바뀌었습니다", "The project or version number changed while waiting for the READY response"),
     (" (미리보기 종료 실패: {stop})", " (failed to stop preview: {stop})"),
     ("웹 미리보기를 사용하려면 WebView2 런타임을 설치한 뒤 앱을 다시 시작하세요. 코드 편집은 가능합니다.", "To use web preview, install the WebView2 runtime and restart the app. You can still edit code."),
+    ("웹 미리보기는 Windows에서만 열 수 있습니다. 코드 편집은 가능합니다.", "Web preview is only available on Windows. You can still edit code."),
     ("원본 요소 편집", "Edit source element"),
     ("미리보기 요청이 취소되었습니다", "The preview request was canceled"),
     ("문서를 떠나 재생 요청이 취소되었습니다", "Left the document, so the playback request was canceled"),

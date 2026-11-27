@@ -16,6 +16,8 @@
 //!
 //! Host window handle contract for the desktop GUI: pass the main window HWND as the lifetime anchor of the independent preview window.
 
+// The WebView2 host (Windows) is the only user of most of the serving rules.
+#[cfg_attr(not(windows), allow(dead_code))]
 mod isolation;
 mod runtime;
 mod stale_temp;
@@ -446,6 +448,7 @@ fn parse_video_poster_message(message: &str, expected_file: &str) -> DltResult<V
 enum VideoContainer { Mp4, Webm }
 
 impl VideoContainer {
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn file_name(self) -> &'static str {
         match self { Self::Mp4 => "video.mp4", Self::Webm => "video.webm" }
     }

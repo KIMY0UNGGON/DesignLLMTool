@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use designllm_contracts::{sha256, Diagnostic, DltError, DltResult, ErrorCode, PartFingerprint, PreservationManifest};
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
+use zip::{CompressionMethod, DateTime, System, ZipArchive, ZipWriter};
 
 use crate::opc::ContentTypes;
 
@@ -697,7 +697,9 @@ fn entry_options() -> DltResult<SimpleFileOptions> {
     Ok(SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .last_modified_time(stamp)
-        .unix_permissions(0o644))
+        .unix_permissions(0o644)
+        // The zip crate writes the host OS into "version made by" unless told: fixed, so every OS writes the same bytes.
+        .system(System::Dos))
 }
 
 /// Builds a `DltError` that carries one blocking diagnostic with the given code.

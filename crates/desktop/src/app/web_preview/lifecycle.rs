@@ -75,6 +75,7 @@ impl DesktopApp {
         if ticket.is_none() { self.web_preview_state.deferred_exit_notice = None; }
     }
 
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(super) fn preview_is_refresh(&self) -> bool {
         self.web_preview_state.opening && self.web_preview_state.refresh_ticket.is_some()
     }

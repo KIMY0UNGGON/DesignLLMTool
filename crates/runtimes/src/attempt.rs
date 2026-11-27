@@ -16,7 +16,7 @@ use crate::audit::{ModelCheck, RunAudit};
 use crate::detect::{RuntimeInfo, RuntimeKind};
 use crate::invocation::{build, LaunchSpec};
 use crate::progress::ProgressBuffer;
-use crate::win::{resume_child, spawn_suspended_in_job_with_env, JobObject};
+use crate::job::{resume_child, spawn_suspended_in_job_with_env, JobObject};
 
 /// Poll interval for the exit check.
 const EXIT_POLL: Duration = Duration::from_millis(25);

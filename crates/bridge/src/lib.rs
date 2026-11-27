@@ -8,10 +8,8 @@
 //! - [`run_stdio`]: the MCP 2025-11-25 stdio server (`--mcp`). With a `JobRef`, the connection is bound
 //!   to that app job's attempt.
 //!
-//! Windows only: the transport is a named pipe with a current-user DACL.
-
-#[cfg(not(windows))]
-compile_error!("designllm-bridge implements the host transport with Windows named pipes only");
+//! Transport: a named pipe with a current-user DACL on Windows, a Unix domain socket in a private folder on macOS
+//! and Linux. Both check that the peer runs as the current user.
 
 pub mod assets;
 pub mod catalog;
@@ -21,6 +19,11 @@ pub mod home;
 pub mod manual;
 pub mod mcp;
 pub mod operation_exposure;
+#[cfg(windows)]
+#[path = "pipe_windows.rs"]
+pub mod pipe;
+#[cfg(unix)]
+#[path = "pipe_unix.rs"]
 pub mod pipe;
 pub mod protocol;
 pub mod review_gate;

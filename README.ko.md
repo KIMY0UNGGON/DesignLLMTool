@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-DesignLLMTool은 MCP 서버가 내장된 Windows 데스크톱 디자인 앱입니다. 사용자가 앱 창에서 지켜보는 동안 AI 에이전트(`Claude Code`, `Codex CLI`, `Gemini CLI`, `AGY`, `Claude Desktop`, `Cursor`, `VS Code` 및 기타 MCP 클라이언트)가 편집 가능한 디자인 아티팩트를 생성하고 수정합니다.
+DesignLLMTool은 MCP 서버가 내장된 Windows, macOS, Linux용 데스크톱 디자인 앱입니다. 사용자가 앱 창에서 지켜보는 동안 AI 에이전트(`Claude Code`, `Codex CLI`, `Gemini CLI`, `AGY`, `Claude Desktop`, `Cursor`, `VS Code` 및 기타 MCP 클라이언트)가 편집 가능한 디자인 아티팩트를 생성하고 수정합니다.
 
 ## 목차
 
@@ -68,10 +68,17 @@ DesignLLMTool은 MCP 서버가 내장된 Windows 데스크톱 디자인 앱입�
 
 ## 요구 사항
 
-- Windows 10 또는 11, 64비트.
-- 저장소를 복제하기 위한 Git(바로 실행할 수 있는 빌드가 저장소에 포함되어 있으며 체크아웃 기준 약 115 MB입니다).
-- 선택 사항: Microsoft Word(PDF를 편집 가능한 DOCX 사본으로 여는 경우에만 필요).
-- 선택 사항: Microsoft Edge WebView2 Runtime(Windows 11에 기본 포함, 웹 코드 미리 보기용).
+- **Windows**:
+  - Windows 10 또는 11, 64비트.
+  - 저장소를 복제하기 위한 Git(바로 실행할 수 있는 빌드가 저장소에 포함되어 있으며 체크아웃 기준 약 115 MB입니다).
+  - 선택 사항(Windows 전용): Microsoft Word(PDF를 편집 가능한 DOCX 사본으로 여는 경우에만 필요).
+  - 선택 사항(Windows 전용): Microsoft Edge WebView2 Runtime(Windows 11에 기본 포함, 웹 코드 미리 보기 및 자동 비디오 포스터 추출용).
+- **macOS 및 Linux**:
+  - macOS 11 이상(Apple silicon 및 Intel) 또는 X11이나 Wayland 데스크톱 환경의 Linux(`x64` 및 `arm64`).
+  - 저장소를 복제하기 위한 Git(macOS 및 Linux용 패키지 바이너리는 저장소에 포함되어 있지 않습니다).
+  - 소스 빌드를 위한 Rust 툴체인(`1.93.1`, [rustup.rs](https://rustup.rs)에서 설치).
+  - SQLite를 소스에서 컴파일하므로 C 컴파일러가 필요합니다: macOS에서는 Xcode Command Line Tools(`xcode-select --install`), Linux에서는 `build-essential`(또는 이에 준하는 패키지).
+  - Linux 런타임 요구 사항: OpenGL 또는 Vulkan 드라이버가 포함된 X11이나 Wayland 세션, 파일 열기/저장 대화 상자를 위한 `zenity` 또는 `kdialog`.
 
 ## 빠른 시작
 
@@ -82,13 +89,23 @@ DesignLLMTool은 MCP 서버가 내장된 Windows 데스크톱 디자인 앱입�
    cd DesignLLMTool
    ```
 
-2. `install.ps1`을 실행합니다:
+2. 설치 프로그램을 실행합니다:
+
+   Windows(`install.ps1`):
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\install.ps1
    ```
 
    `install.ps1`은 `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`를 사용하여 정상 실행 여부를 확인한 뒤, `Claude Code`, `Codex CLI`, `AGY` 중 설치되어 있는 모든 클라이언트에 `designllm` MCP 서버를 등록합니다. 요청된 등록에 실패하면 종료 코드 `1`로 종료합니다.
+
+   macOS 및 Linux(`install.sh`):
+
+   ```bash
+   ./install.sh
+   ```
+
+   `install.sh`는 Rust `1.93.1`(`rustup`이 있으면 이를 사용하고, 없으면 `PATH`의 `cargo` 사용)로 소스에서 빌드하여 `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`(`<os>`는 `macos` 또는 `linux`, `<arch>`는 `x64` 또는 `arm64`)에 생성합니다. `release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool` 폴더(예: 압축을 푼 GitHub Actions 빌드)가 이미 있으면 해당 파일을 사용합니다. 정상 실행 여부를 확인한 뒤 `Claude Code`, `Codex CLI`, `AGY` 중 설치되어 있는 모든 클라이언트에 `designllm` MCP 서버를 등록하며, 요청된 등록에 실패하면 종료 코드 `1`로 종료합니다. `DISPLAY`나 `WAYLAND_DISPLAY`가 없는 Linux 환경에서는 `--background`를 사용하라는 경고를 표시합니다.
 
 3. AI 클라이언트를 다시 시작하고 `design_guide` 도구를 호출하도록 요청합니다.
 
@@ -98,36 +115,37 @@ DesignLLMTool은 MCP 서버가 내장된 Windows 데스크톱 디자인 앱입�
 ## 설치 프로그램 및 클라이언트 설정
 
 > [!IMPORTANT]
-> 설치 프로그램은 기존의 `designllm` 항목을 제거하거나 변경하지 않습니다. 해당 항목이 정의된 클라이언트 설정에서 직접 변경하거나 제거한 뒤 `install.ps1`을 다시 실행합니다.
+> 설치 프로그램은 기존의 `designllm` 항목을 제거하거나 변경하지 않습니다. 해당 항목이 정의된 클라이언트 설정에서 직접 변경하거나 제거한 뒤 `install.ps1`(또는 `install.sh`)을 다시 실행합니다.
 
 > [!NOTE]
-> `Gemini CLI`의 경우 `install.ps1`은 서버를 등록하는 대신 `mcpServers` 항목을 출력합니다. 확장에서 `designllm`을 제공할 수 있으므로 먼저 `gemini mcp list`를 확인합니다.
+> `Gemini CLI`의 경우 `install.ps1`과 `install.sh`는 서버를 등록하는 대신 `mcpServers` 항목을 출력합니다. 확장에서 `designllm`을 제공할 수 있으므로 먼저 `gemini mcp list`를 확인합니다.
 
 ### 설치 프로그램 옵션
 
-| 플래그 | 동작 |
-| --- | --- |
-| `-Project "<existing folder>"` | 작업 공간을 해당 폴더에 유지합니다. |
-| `-Client claude\|codex\|gemini\|agy\|print` | 클라이언트 하나만 등록하거나 설정만 출력합니다. |
-| `-Background` | 창을 열지 않고 도구를 실행합니다. |
-| `-DryRun` | 아무것도 실행하거나 변경하지 않고 명령어만 출력합니다. |
+| `install.ps1` | `install.sh` | 동작 |
+| --- | --- | --- |
+| `-Project "<existing folder>"` | `--project DIR` | 작업 공간을 해당 폴더에 유지합니다. |
+| `-Client claude\|codex\|gemini\|agy\|print` | `--client auto\|claude\|codex\|gemini\|agy\|print` | 클라이언트 하나만 등록하거나 설정만 출력합니다. |
+| `-Background` | `--background` | 창을 열지 않고 도구를 실행합니다. |
+| `-DryRun` | `--dry-run` | 아무것도 실행하거나 변경하지 않고 명령어만 출력합니다. |
+| — | `--build` | `release/` 아래에 패키지된 바이너리가 있더라도 소스 빌드를 강제합니다. |
 
 ### 클라이언트 설정 개요
 
 | 클라이언트 | 방식 | 설정 형식 / 대상 |
 | --- | --- | --- |
-| `Claude Code`, `Codex CLI`, `AGY` | `install.ps1`로 등록 | 클라이언트 CLI MCP 레지스트리 |
-| `Gemini CLI` | `install.ps1`로 출력 | `%USERPROFILE%\.gemini\settings.json`(또는 `GEMINI_CLI_HOME` 아래의 `.gemini\settings.json`)의 `mcpServers` JSON |
-| `Claude Desktop`, `Cursor` | `install.ps1`로 출력 | `mcpServers` JSON |
-| `VS Code` | `install.ps1`로 출력 | `.vscode/mcp.json`의 `servers` JSON |
+| `Claude Code`, `Codex CLI`, `AGY` | `install.ps1` / `install.sh`로 등록 | 클라이언트 CLI MCP 레지스트리 |
+| `Gemini CLI` | `install.ps1` / `install.sh`로 출력 | Windows에서는 `%USERPROFILE%\.gemini\settings.json`(또는 `GEMINI_CLI_HOME` 아래의 `.gemini\settings.json`), macOS 및 Linux에서는 `~/.gemini/settings.json`의 `mcpServers` JSON |
+| `Claude Desktop`, `Cursor` | `install.ps1` / `install.sh`로 출력 | `mcpServers` JSON |
+| `VS Code` | `install.ps1` / `install.sh`로 출력 | `.vscode/mcp.json`의 `servers` JSON |
 
 <details>
 <summary>설치 프로그램 동작 세부 정보</summary>
 
-- **기존 등록 항목**: 설치 프로그램은 복원할 수 없는 설정이 들어 있거나 프로젝트 설정에서 비롯된 항목일 수 있으므로 기존의 `designllm` 항목을 제거하거나 변경하지 않습니다. 해당 항목이 정의된 클라이언트 설정에서 변경하거나 제거한 뒤 `install.ps1`을 다시 실행합니다.
-- **검증 및 읽을 수 없는 클라이언트**: 각 등록 후 설치 프로그램은 해당 항목을 다시 읽어 이 사본의 `DesignLLMTool.exe`를 실행하는 경우에만 등록된 것으로 간주합니다. 클라이언트가 결과를 명확하게 보고하지 않거나 서버 목록을 읽을 수 없는 경우 해당 클라이언트를 변경하지 않고 미등록 상태로 보고합니다.
+- **기존 등록 항목**: 설치 프로그램은 복원할 수 없는 설정이 들어 있거나 프로젝트 설정에서 비롯된 항목일 수 있으므로 기존의 `designllm` 항목을 제거하거나 변경하지 않습니다. 해당 항목이 정의된 클라이언트 설정에서 변경하거나 제거한 뒤 `install.ps1`(또는 `install.sh`)을 다시 실행합니다.
+- **검증 및 읽을 수 없는 클라이언트**: 각 등록 후 설치 프로그램은 해당 항목을 다시 읽어 이 사본의 `DesignLLMTool.exe`(macOS 및 Linux에서는 `DesignLLMTool`)를 실행하는 경우에만 등록된 것으로 간주합니다. 클라이언트가 결과를 명확하게 보고하지 않거나 서버 목록을 읽을 수 없는 경우 해당 클라이언트를 변경하지 않고 미등록 상태로 보고합니다.
 - **`Gemini CLI`**: `gemini mcp add`는 다른 서버 설정을 포함한 전체 Gemini 설정 파일을 다시 쓰며 저장하지 않고도 성공을 보고할 수 있으므로 설치 프로그램은 이를 건너뜁니다. 대신 `mcpServers` 항목을 출력하며, 확장에서 `designllm`을 제공할 수 있으므로 먼저 `gemini mcp list`를 확인합니다.
-- **배치 심(Batch shim)**: 클라이언트가 `.cmd` 또는 `.bat` 심을 통해 실행되고 경로에 `cmd.exe`가 해석하는 문자가 포함된 경우, 설치 프로그램은 해당 클라이언트를 등록하지 않고 미등록 상태로 보고한 뒤 설정을 출력합니다. `Codex CLI`의 경우 `[mcp_servers.designllm]` TOML 항목과 Codex 설정 경로(`%USERPROFILE%\.codex\config.toml` 또는 `CODEX_HOME`의 `config.toml`)도 함께 출력합니다.
+- **배치 심(Batch shim)**: Windows에서 클라이언트가 `.cmd` 또는 `.bat` 심을 통해 실행되고 경로에 `cmd.exe`가 해석하는 문자가 포함된 경우, 설치 프로그램은 해당 클라이언트를 등록하지 않고 미등록 상태로 보고한 뒤 설정을 출력합니다. `Codex CLI`의 경우 `[mcp_servers.designllm]` TOML 항목과 Codex 설정 경로(`%USERPROFILE%\.codex\config.toml` 또는 `CODEX_HOME`의 `config.toml`)도 함께 출력합니다.
 - **출력되는 설정**: `Gemini CLI`, `Claude Desktop`, `Cursor`, `VS Code`의 경우 설치 프로그램은 붙여넣을 JSON 항목을 출력합니다(앞의 세 클라이언트는 `mcpServers`, `VS Code`는 `servers`).
 
 </details>
@@ -136,6 +154,8 @@ DesignLLMTool은 MCP 서버가 내장된 Windows 데스크톱 디자인 앱입�
 <summary>클라이언트별 수동 등록 명령어</summary>
 
 `<repo>`를 복제한 폴더 경로로 바꿉니다.
+
+**Windows**:
 
 Claude Code:
 
@@ -182,6 +202,43 @@ VS Code(`.vscode/mcp.json`):
 }
 ```
 
+**macOS 및 Linux**(`<os>`는 `macos` 또는 `linux`, `<arch>`는 `x64` 또는 `arm64`):
+
+Claude Code, Codex CLI(`codex.cmd` 불필요), AGY:
+
+```bash
+claude mcp add --scope user designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+codex mcp add designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+agy mcp add designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+```
+
+`Gemini CLI`(`~/.gemini/settings.json`), `Claude Desktop`, `Cursor`(`mcpServers` JSON):
+
+```json
+{
+  "mcpServers": {
+    "designllm": {
+      "command": "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+VS Code(`.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "designllm": {
+      "type": "stdio",
+      "command": "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
 </details>
 
 ## 서버 옵션
@@ -189,15 +246,35 @@ VS Code(`.vscode/mcp.json`):
 | 플래그 | 동작 |
 | --- | --- |
 | `--mcp` | stdio를 통해 MCP 서버로 실행합니다. 첫 번째 도구 호출 시 데스크톱 창이 열리며, 창 없이 실행하려면 호출 시 `background: true`를 전달하거나 `--background`로 시작합니다. |
-| `--project "<existing folder>"` | 작업 공간을 `<folder>\.designllm`에 두고 네이티브 파일은 `<folder>\artifacts`에 저장합니다. 이 플래그가 없으면 작업 공간은 `%LOCALAPPDATA%\DesignLLMTool\workspaces\default`(또는 `DESIGNLLM_WORKSPACE`에 지정된 폴더)가 됩니다. |
+| `--project "<existing folder>"` | 작업 공간을 `<folder>\.designllm`에 두고 네이티브 파일은 `<folder>\artifacts`에 저장합니다. 이 플래그가 없으면 기본 작업 공간은 Windows에서 `%LOCALAPPDATA%\DesignLLMTool\workspaces\default`, macOS에서 `~/Library/Application Support/DesignLLMTool/workspaces/default`, Linux에서 `$XDG_DATA_HOME/DesignLLMTool/workspaces/default`(기본값 `~/.local/share/DesignLLMTool/workspaces/default`)가 되며, 모든 플랫폼에서 `DESIGNLLM_WORKSPACE`로 재정의할 수 있습니다. |
+
+### 플랫폼 차이
+
+- **Windows 전용 기능**(macOS 및 Linux에서는 지원되지 않음):
+  - 웹 코드 미리 보기 창(WebView2 필요). 대신 웹 코드를 `HTML` 또는 `ZIP`으로 내보내 브라우저에서 엽니다.
+  - 자동 비디오 포스터 추출(WebView2 필요).
+  - PDF를 편집 가능한 `DOCX` 사본으로 열기(Microsoft Word COM 자동화 필요).
+- **그 외 모든 기능**: 아티팩트 종류, 편집, 렌더링, 내보내기(`PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, `ZIP`, `DOCX`, `HWPX`, `HWP`)는 모든 플랫폼에서 동일하게 작동합니다.
+- **호스트 연결**: Windows에서는 명명된 파이프를 사용합니다. macOS 및 Linux에서는 해당 사용자만 열 수 있는 디렉터리(`$XDG_RUNTIME_DIR` 또는 권한 모드 `0700`의 `<temp>/dllm-<uid>`)의 Unix 도메인 소켓을 사용하므로 모든 클라이언트를 같은 사용자로 실행해야 합니다.
+- **AI 작업 프로세스**: Windows에서는 Windows 작업 객체를 사용하고, macOS 및 Linux에서는 작업별 프로세스 그룹을 사용하여 `SIGKILL`로 함께 종료합니다.
+- **그래픽**: OpenGL을 우선 사용하고 기본 백엔드에서 `wgpu`로 폴백합니다(Windows는 DirectX 12, macOS는 Metal, Linux는 Vulkan). `DESIGNLLM_RENDERER=glow|wgpu|wgpu-warp`로 특정 렌더러를 지정할 수 있습니다.
 
 ## 데스크톱 앱
 
-AI 없이 앱을 사용하려면 `DesignLLMTool.exe`를 직접 실행하거나 프로젝트 폴더를 전달합니다:
+AI 없이 앱을 사용하려면 앱을 직접 실행하거나 프로젝트 폴더를 전달합니다:
+
+Windows:
 
 ```powershell
 .\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe
 .\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe --project "<existing folder>"
+```
+
+macOS 및 Linux:
+
+```bash
+./target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool
+./target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool --project "<existing folder>"
 ```
 
 - **인터페이스 언어 전환**: 홈 화면에서 작업 공간 메뉴(왼쪽 위 작업 공간 이름)를 열고 `한국어` 또는 `English`를 선택합니다. 설정은 즉시 적용되며 작업 공간의 `.gui\settings.json`에 저장됩니다.
@@ -211,7 +288,9 @@ cargo +1.93.1 build --release -p designllm-application
 cargo +1.93.1 test -p designllm-bridge -p designllm-contracts -p designllm-canvas -p designllm-runtimes
 ```
 
-릴리스 빌드는 `target\release\DesignLLMTool.exe`를 생성합니다. 패키지된 빌드를 업데이트하려면 이 파일을 `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`에 덮어씁니다.
+릴리스 빌드는 Windows에서 `target\release\DesignLLMTool.exe`를 생성하며(패키지된 빌드를 업데이트하려면 `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`에 덮어씁니다), macOS 및 Linux에서는 `target/release/DesignLLMTool`을 생성합니다. 이 실행 파일은 같은 디렉터리에 `assets/fonts`가 필요합니다(`install.sh`가 `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` 구성을 생성합니다).
+
+GitHub Actions 워크플로(`.github/workflows/build.yml`)는 Windows, macOS(`arm64` 및 `x64`), Linux(`x64` 및 `arm64`)에서 빌드와 테스트를 수행하고, `DesignLLMTool-<version>-mcp-<platform>.tar.gz` 패키지를 워크플로 아티팩트로 업로드하며, `v*` 태그를 푸시할 때 GitHub 릴리스에 첨부합니다.
 
 ## 라이선스
 

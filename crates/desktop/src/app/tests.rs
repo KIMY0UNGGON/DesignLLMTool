@@ -2052,6 +2052,11 @@ mod ui_channel_tests {
     use serde_json::{json, Value};
     use std::time::{Duration, Instant};
 
+    /// An absolute local path on this platform for a file the test never writes (`C:/tmp/<name>` on Windows).
+    fn local_test_path(name: &str) -> String {
+        if cfg!(windows) { format!("C:/tmp/{name}") } else { format!("/tmp/{name}") }
+    }
+
     /// Publishes the window's state now and answers with a token; returns the request sent.
     fn publish_with_guard(harness: &mut Harness, guard_version: Option<u32>) -> Value {
         harness.app.publish_ui_if_due();
@@ -2279,6 +2284,8 @@ mod ui_channel_tests {
     #[test]
     fn native_dialog_and_confirmation_commands_are_agent_disabled_but_remain_gui_enabled() {
         let mut harness = Harness::new();
+        // The preview commands also need a WebView2 runtime (none on macOS and Linux); this test is about agent runs only.
+        harness.app.web_runtime_unavailable = None;
         harness.sent();
         harness.app.screen = super::super::Screen::Editor;
         harness.app.active = Some(serde_json::from_value(summary("a1", "canvas", 1)).expect("Canvas summary"));
@@ -3461,7 +3468,7 @@ mod ui_channel_tests {
             &harness,
             "save-pending-edit",
             "file.save",
-            json!({ "target_path": "C:/tmp/current.canvas" }),
+            json!({ "target_path": local_test_path("current.canvas") }),
             "file_write",
             json!([]),
         );
@@ -3489,7 +3496,7 @@ mod ui_channel_tests {
             &harness,
             "save-stale-revision",
             "file.save",
-            json!({ "target_path": "C:/tmp/stale.canvas" }),
+            json!({ "target_path": local_test_path("stale.canvas") }),
             "file_write",
             json!([]),
         );
@@ -3523,7 +3530,7 @@ mod ui_channel_tests {
             &harness,
             "export-pending-edit",
             "file.export",
-            json!({ "format": "pdf", "target_path": "C:/tmp/output.pdf", "allowed_losses": [] }),
+            json!({ "format": "pdf", "target_path": local_test_path("output.pdf"), "allowed_losses": [] }),
             "file_write",
             json!([]),
         );

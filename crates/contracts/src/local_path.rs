@@ -111,6 +111,21 @@ fn local_walk_refusal(raw: &str, to_folder: bool, missing: &str) -> Option<Strin
     None
 }
 
+/// The per-user folder for application data that stays on this machine: `%LOCALAPPDATA%` on Windows,
+/// `~/Library/Application Support` on macOS, `$XDG_DATA_HOME` (or `~/.local/share`) elsewhere. `None` when the
+/// environment names none. Callers add `DesignLLMTool/...` below it.
+pub fn local_app_data_dir() -> Option<std::path::PathBuf> {
+    use std::path::PathBuf;
+    let absolute = |name: &str| std::env::var_os(name).map(PathBuf::from).filter(|path| path.is_absolute());
+    if cfg!(windows) {
+        absolute("LOCALAPPDATA")
+    } else if cfg!(target_os = "macos") {
+        absolute("HOME").map(|home| home.join("Library").join("Application Support"))
+    } else {
+        absolute("XDG_DATA_HOME").or_else(|| absolute("HOME").map(|home| home.join(".local").join("share")))
+    }
+}
+
 fn is_link(meta: &std::fs::Metadata) -> bool {
     #[cfg(windows)]
     {
@@ -118,7 +133,14 @@ fn is_link(meta: &std::fs::Metadata) -> bool {
         // FILE_ATTRIBUTE_REPARSE_POINT also covers junctions and cloud placeholders.
         meta.file_attributes() & 0x400 != 0
     }
-    #[cfg(not(windows))]
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // A link owned by root is part of the system layout (macOS `/var`, `/tmp`, `/etc` point into `/private`): no
+        // user, and so no agent, can plant one. Every other symbolic link is refused.
+        meta.file_type().is_symlink() && meta.uid() != 0
+    }
+    #[cfg(not(any(windows, unix)))]
     {
         meta.file_type().is_symlink()
     }
@@ -227,6 +249,17 @@ mod agent_file_tests {
             dir.to_string_lossy().into_owned(),
         ] {
             assert!(agent_file_refusal(&bad).is_some(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            // A symbolic link the user made is refused before the file is opened.
+            let target = dir.join("real");
+            std::fs::create_dir_all(&target).unwrap();
+            std::fs::write(target.join("b.png"), b"x").unwrap();
+            let link = dir.join("link");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            assert!(agent_file_refusal(&link.join("b.png").to_string_lossy()).is_some(), "a symbolic link is refused");
+            assert_eq!(agent_file_refusal(&target.join("b.png").to_string_lossy()), None);
         }
         #[cfg(windows)]
         {

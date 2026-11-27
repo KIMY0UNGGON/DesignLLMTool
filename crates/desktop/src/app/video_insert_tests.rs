@@ -362,13 +362,20 @@ fn a_start_removes_a_poster_left_by_a_killed_window_and_keeps_running_windows_po
     // The cleanup looks only at the system temporary folder itself, where the posters are written (under cargo-log.ps1 the
     // lane's own TEMP). Every file here has a fresh UUID in its name and is removed at the end.
     let directory = std::env::temp_dir();
-    use std::os::windows::process::CommandExt;
-    // CREATE_NO_WINDOW: the helper processes open no console window.
     let quiet = |command: &mut Command| {
-        command.creation_flags(0x0800_0000).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()
+        // CREATE_NO_WINDOW: the helper processes open no console window.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()
     };
-    let mut running = quiet(Command::new("ping").args(["-n", "60", "127.0.0.1"]));
-    let mut killed = quiet(Command::new("cmd").args(["/C", "exit 0"]));
+    #[cfg(windows)]
+    let (mut running, mut killed) =
+        (quiet(Command::new("ping").args(["-n", "60", "127.0.0.1"])), quiet(Command::new("cmd").args(["/C", "exit 0"])));
+    #[cfg(not(windows))]
+    let (mut running, mut killed) = (quiet(Command::new("sleep").arg("60")), quiet(&mut Command::new("true")));
     let killed_pid = killed.id();
     killed.wait().unwrap();
 

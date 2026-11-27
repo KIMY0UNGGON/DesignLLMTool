@@ -4,28 +4,39 @@ Instructions for AI agents installing, connecting to, and working with DesignLLM
 
 ## Install and connect
 
-1. Verify the host meets the requirements: Windows 10 or 11 (64-bit) and Git. Optional: Microsoft Word (only for opening a PDF as an editable DOCX copy) and Microsoft Edge WebView2 Runtime (included in Windows 11, for web-code preview).
-2. Clone the repository and enter the clone directory (about 115 MB checked out; contains the ready-to-run binary `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`):
+1. Verify the host meets the requirements:
+   - **Windows**: Windows 10 or 11 (64-bit) and Git. Optional (Windows-only): Microsoft Word (only for opening a PDF as an editable DOCX copy) and Microsoft Edge WebView2 Runtime (included in Windows 11, for web-code preview and automatic video poster extraction).
+   - **macOS and Linux**: macOS 11 or later (Apple silicon and Intel) or Linux (`x64` and `arm64`) with an X11 or Wayland desktop, Git, Rust toolchain (`1.93.1`, from `https://rustup.rs`) for the source build, and a C compiler because SQLite is compiled from source (Xcode Command Line Tools on macOS via `xcode-select --install`, or `build-essential` or equivalent on Linux). Linux at run time also requires an X11 or Wayland session with OpenGL or Vulkan drivers and `zenity` or `kdialog` for file open/save dialogs.
+2. Clone the repository and enter the clone directory (about 115 MB checked out). On Windows, it contains the ready-to-run binary `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`. On macOS and Linux, there is no packaged binary in the repository and `install.sh` builds from source:
 
 ```powershell
 git clone https://github.com/KIMY0UNGGON/DesignLLMTool.git
 cd DesignLLMTool
 ```
 
-3. Optionally ask the user which existing project folder to use for the workspace. With a project folder, the workspace lives in `<folder>\.designllm` and native files are saved to `<folder>\artifacts`. Without it, the workspace is `%LOCALAPPDATA%\DesignLLMTool\workspaces\default` (or the folder in `DESIGNLLM_WORKSPACE`).
-4. Run `install.ps1`. It verifies that `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe` starts, and it registers the MCP server `designllm` with every installed client among `Claude Code`, `Codex CLI`, and `AGY`. For `Gemini CLI`, it only prints the `mcpServers` entry because `gemini mcp add` rewrites the entire settings file and can report success without saving:
+3. Optionally ask the user which existing project folder to use for the workspace. With a project folder, the workspace lives in `<folder>\.designllm` and native files are saved to `<folder>\artifacts`. Without it, the default workspace is `%LOCALAPPDATA%\DesignLLMTool\workspaces\default` on Windows, `~/Library/Application Support/DesignLLMTool/workspaces/default` on macOS, and `$XDG_DATA_HOME/DesignLLMTool/workspaces/default` (defaulting to `~/.local/share/DesignLLMTool/workspaces/default`) on Linux; `DESIGNLLM_WORKSPACE` overrides this on every platform.
+4. Run the installer (`install.ps1` on Windows; `install.sh` on macOS and Linux). On Windows, `install.ps1` verifies that `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe` starts. On macOS and Linux, `install.sh` uses `release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool` if that folder exists (for example, an unpacked GitHub Actions build), or builds from source with Rust `1.93.1` (through `rustup` when present, otherwise `cargo` on `PATH`) into `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` (`<os>` is `macos` or `linux`; `<arch>` is `x64` or `arm64`), containing `DesignLLMTool` and `assets/fonts`, and verifies that it starts. Both register the MCP server `designllm` with every installed client among `Claude Code`, `Codex CLI`, and `AGY`. For `Gemini CLI`, they only print the `mcpServers` entry because `gemini mcp add` rewrites the entire settings file and can report success without saving. On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, `install.sh` warns to use `--background`:
+
+   Windows (`install.ps1`):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-   Available installer flags:
-   - `-Project "<existing folder>"`: keep the workspace in that folder.
-   - `-Client claude|codex|gemini|agy|print`: target one client, or print configuration only.
-   - `-Background`: tools run without opening the app window.
-   - `-DryRun`: print commands without running or changing anything.
+   macOS and Linux (`install.sh`):
 
-   Note: `install.ps1` never removes or changes an existing `designllm` registration. To register this copy, change or remove that existing entry in the client settings where it is defined (user or project), then run `install.ps1` again. The installer counts a registration only when reading the entry back shows this copy's `DesignLLMTool.exe`. If a client does not report its server list clearly, the installer leaves that client unchanged. When a requested registration fails, `install.ps1` exits with code `1`. When a client runs through a batch shim (`.cmd` or `.bat`) and a path contains a character that `cmd.exe` would read, the installer does not register that client, reports it as not registered, and leaves it to the printed configuration; for `Codex CLI` it also prints a `[mcp_servers.designllm]` TOML entry together with the path to the Codex settings file that the client uses (`%USERPROFILE%\.codex\config.toml`, or `config.toml` in `CODEX_HOME` when that variable is set).
+```bash
+./install.sh
+```
+
+   Available installer flags:
+   - `-Project "<existing folder>"` / `--project DIR`: keep the workspace in that folder.
+   - `-Client claude|codex|gemini|agy|print` / `--client auto|claude|codex|gemini|agy|print`: target one client, or print configuration only.
+   - `-Background` / `--background`: tools run without opening the app window.
+   - `-DryRun` / `--dry-run`: print commands without running or changing anything.
+   - `--build` (`install.sh` only): force a source build even if a packaged binary exists under `release/`.
+
+   Note: the installer never removes or changes an existing `designllm` registration. To register this copy, change or remove that existing entry in the client settings where it is defined (user or project), then run `install.ps1` (or `install.sh`) again. The installer counts a registration only when reading the entry back shows this copy's `DesignLLMTool.exe` (or `DesignLLMTool` on macOS and Linux). If a client does not report its server list clearly, the installer leaves that client unchanged. When a requested registration fails, the installer exits with code `1`. On Windows, when a client runs through a batch shim (`.cmd` or `.bat`) and a path contains a character that `cmd.exe` would read, the installer does not register that client, reports it as not registered, and leaves it to the printed configuration; for `Codex CLI` it also prints a `[mcp_servers.designllm]` TOML entry together with the path to the Codex settings file that the client uses (`%USERPROFILE%\.codex\config.toml`, or `config.toml` in `CODEX_HOME` when that variable is set).
 
 5. If a CLI is missing, or when setting up `Claude Desktop`, `Cursor`, or `VS Code`, print the JSON configuration and tell the user where to paste it:
 
@@ -33,14 +44,26 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Client print
 ```
 
-   - For `Gemini CLI`, `Claude Desktop`, and `Cursor`, paste the printed `mcpServers` JSON entry into the client's MCP configuration unless that client already has a `designllm` server (for `Gemini CLI`, check `gemini mcp list` because an extension can provide one). For `Gemini CLI`, use `%USERPROFILE%\.gemini\settings.json` or the settings file under `GEMINI_CLI_HOME`.
+```bash
+./install.sh --client print
+```
+
+   - For `Gemini CLI`, `Claude Desktop`, and `Cursor`, paste the printed `mcpServers` JSON entry into the client's MCP configuration unless that client already has a `designllm` server (for `Gemini CLI`, check `gemini mcp list` because an extension can provide one). For `Gemini CLI`, use `%USERPROFILE%\.gemini\settings.json` or the settings file under `GEMINI_CLI_HOME` on Windows, and `~/.gemini/settings.json` on macOS and Linux.
    - For `VS Code`, paste the printed `servers` JSON entry into `.vscode/mcp.json`.
-   - For manual CLI registration (replacing `<repo>` with the clone folder), use `codex.cmd` in PowerShell for Codex CLI so PowerShell does not drop the bare `--`:
+   - For manual CLI registration on Windows (replacing `<repo>` with the clone folder), use `codex.cmd` in PowerShell for Codex CLI so PowerShell does not drop the bare `--`:
 
 ```powershell
 claude mcp add --scope user designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe" --mcp
 codex.cmd mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe" --mcp
 agy mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe" --mcp
+```
+
+   - For manual CLI registration on macOS and Linux (`<os>` is `macos` or `linux`; `<arch>` is `x64` or `arm64`, no `codex.cmd` needed):
+
+```bash
+claude mcp add --scope user designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+codex mcp add designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+agy mcp add designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
 ```
 
 6. Verify the connection: have the user restart the AI client, then call `design_guide`. If it returns the design guide index, the connection works.
@@ -71,6 +94,7 @@ agy mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignL
 - **Paper figures (`paper-figure`)**: Data plots use the `Figure` artifact with Okabe-Ito colours and axis labels that include units. A diagram inside a `Figure` supports only rectangles, ellipses, math formulas, and straight connectors from node centre to node centre; draw elbows, residual bypasses, and typed shapes on a `Canvas`. A Figure output profile (`single_column`, `one_half_column`, `double_column`, `high_res_print`, or `presentation_16_9`, chosen with the `figure.output_profile` GUI command, also through `ui_command_run`) assigns the first colour of its palette to every plot panel, so the same series has the same colour in every panel. Later series follow the palette order (Okabe-Ito, with `high_res_print` and `presentation_16_9` starting with near-black), and each swatch in a common legend is recoloured to match its series when the series it stands for is unambiguous. A `Figure` without a chosen profile keeps its earlier colours, except when a plot has two or more series and either its panel colour is in an output profile palette or a later series repeated the panel colour; that plot gets the series colours of the current rule, and its visual approval must be given again.
 - **Anti-generic design rules**: let layout explain structure and omit auxiliary labels. Do not place a coloured bar along the top or left edge of a card or box (the blog-callout look) unless the user asks for it (`ACCENT_BAR`). Avoid stock framework and assistant colours—Tailwind blue/indigo/emerald/red, Bootstrap, Material, Google blue, ChatGPT green, Claude orange, Gemini violet, and dark navy surfaces (`COLOR_STOCK_DEFAULT`). Decks are always checked. A `Canvas` gets every design-quality warning, `ACCENT_BAR` and `COLOR_STOCK_DEFAULT` included, only once it uses a v1.2 value such as a corner radius, opacity, a shadow, a gradient, or a path, keeping older `Canvas` files' validation output unchanged. Built-in `Canvas` templates use no stock framework colours.
 - **Window visibility**: `--mcp` opens the desktop window on the first tool call so the user can watch. Pass `background: true` on a call, or start the server with `--background`, to run without opening the window.
+- **Windows-only features** (not available on macOS or Linux): web-code preview window (requires WebView2; export the web code as `HTML` or `ZIP` and open it in a browser instead), automatic video poster extraction (requires WebView2), and opening a PDF as an editable `DOCX` copy (requires Microsoft Word COM automation). All other artifact kinds, editing, rendering, and exports (`PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, `ZIP`, `DOCX`, `HWPX`, `HWP`) work the same on every platform.
 
 ## Developing this repository
 
@@ -82,6 +106,9 @@ cargo +1.93.1 build --release -p designllm-application
 cargo +1.93.1 test -p designllm-bridge -p designllm-contracts -p designllm-canvas -p designllm-runtimes
 ```
 
-- Release output path: `target\release\DesignLLMTool.exe`.
-- To update the packaged build, copy `target\release\DesignLLMTool.exe` over `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`.
+- Release output path: `target\release\DesignLLMTool.exe` on Windows; `target/release/DesignLLMTool` on macOS and Linux.
+- On macOS and Linux, the executable requires `assets/fonts` next to it (`./install.sh` lays out `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` with `DesignLLMTool` and `assets/fonts`).
+- To update the Windows packaged build, copy `target\release\DesignLLMTool.exe` over `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`.
+- Windows-only code lives behind `cfg(windows)` with Unix counterparts (`pipe_unix.rs` in `designllm-bridge`, `unix.rs` process groups in `designllm-runtimes`, exposed as `designllm_runtimes::job`).
+- CI workflow (`.github/workflows/build.yml`) builds and tests on Windows, macOS (`arm64` and `x64`), and Linux (`x64` and `arm64`), uploads `DesignLLMTool-<version>-mcp-<platform>.tar.gz` packages as workflow artifacts, and attaches them to the GitHub release when a `v*` tag is pushed.
 - Third-party licences and notices live in `release\DesignLLMTool-0.1.1-mcp-win-x64\THIRD_PARTY_LICENSES.txt`, `release\DesignLLMTool-0.1.1-mcp-win-x64\THIRD_PARTY_NOTICES.txt`, and `assets\fonts\OFL-Pretendard.txt`.

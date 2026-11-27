@@ -3,6 +3,11 @@ use std::{path::{Path, PathBuf}, sync::Arc};
 
 /// The PDF reader worker (task 34c): the product's `source.extract_pdf` read runs in a child process of this executable.
 pub mod pdf_worker;
+#[cfg(windows)]
+#[path = "pdf_edit_windows.rs"]
+mod pdf_edit;
+#[cfg(not(windows))]
+#[path = "pdf_edit_unix.rs"]
 mod pdf_edit;
 
 /// Host connection of this launcher outside the desktop window (`--command`, host probes, the
@@ -370,12 +375,13 @@ pub fn restore_migration_checkpoint(
 
 pub fn default_workspace() -> DltResult<PathBuf> {
     if let Some(path) = std::env::var_os("DESIGNLLM_WORKSPACE") { return Ok(PathBuf::from(path)); }
-    let base = std::env::var_os("LOCALAPPDATA").ok_or_else(|| DltError::invalid("LOCALAPPDATA is not set; pass --workspace"))?;
-    Ok(PathBuf::from(base).join("DesignLLMTool/workspaces/default"))
+    let base = local_path::local_app_data_dir()
+        .ok_or_else(|| DltError::invalid("the local application data folder (LOCALAPPDATA or HOME) is not set; pass --workspace"))?;
+    Ok(base.join("DesignLLMTool").join("workspaces").join("default"))
 }
 
 pub fn project_workspace(project: &Path) -> DltResult<PathBuf> {
-    use std::{io::ErrorKind, os::windows::fs::MetadataExt};
+    use std::io::ErrorKind;
 
     if project.as_os_str().is_empty() { return Err(DltError::invalid("--project needs an existing local folder")); }
     let project = std::fs::canonicalize(project).map_err(|error| match error.kind() {
@@ -389,7 +395,7 @@ pub fn project_workspace(project: &Path) -> DltResult<PathBuf> {
     // Keep the normal drive path when the canonical path has a Win32 verbatim prefix.
     if let Some(plain) = path.strip_prefix(r"\\?\") { workspace = plain.into(); }
     match std::fs::symlink_metadata(&workspace) {
-        Ok(meta) if !meta.is_dir() || meta.file_attributes() & 0x400 != 0 => {
+        Ok(meta) if !meta.is_dir() || is_reparse_point(&meta) => {
             return Err(DltError::invalid(format!("{PROJECT_STORE_DIR} must be a regular folder inside the project")));
         }
         Ok(_) => {}
@@ -397,6 +403,19 @@ pub fn project_workspace(project: &Path) -> DltResult<PathBuf> {
         Err(error) => return Err(error.into()),
     }
     Ok(workspace)
+}
+
+/// A junction, symbolic link or other reparse point (Windows), or a symbolic link (Unix).
+fn is_reparse_point(meta: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        meta.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        meta.file_type().is_symlink()
+    }
 }
 
 #[cfg(test)]
@@ -486,6 +505,9 @@ pub fn ensure_host(workspace: &Path) -> DltResult<()> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
+    // Unix: a session of its own, so the host outlives the terminal or window that started it (managed hosts exit when idle).
+    #[cfg(unix)]
+    detach_session(&mut command);
     let mut child = command.spawn()?;
     // Same rules as designllm_host::ensure_host, but this launcher keeps the host's stderr in logs/host.log.
     // Exit 3 means another process owns the workspace (main maps WORKSPACE_LOCKED to 3): keep trying to
@@ -519,7 +541,7 @@ pub fn ensure_host(workspace: &Path) -> DltResult<()> {
 }
 
 pub fn ensure_visible_app(workspace: &Path) -> DltResult<()> {
-    use std::{os::windows::process::CommandExt, process::{Command, Stdio}, time::{Duration, Instant}};
+    use std::{process::{Command, Stdio}, time::{Duration, Instant}};
 
     let logs = workspace.join("logs");
     std::fs::create_dir_all(&logs)?;
@@ -540,11 +562,19 @@ pub fn ensure_visible_app(workspace: &Path) -> DltResult<()> {
     let prior = last_view()?;
 
     let log = std::fs::OpenOptions::new().create(true).append(true).open(logs.join("desktop.log"))?;
-    let mut child = Command::new(std::env::current_exe()?)
+    let mut command = Command::new(std::env::current_exe()?);
+    command
         .arg("--workspace").arg(workspace)
         .env("DESIGNLLM_MCP_GUI", "1")
-        .creation_flags(designllm_runtimes::win::CREATE_NO_WINDOW)
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(log).spawn()?;
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(log);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(designllm_runtimes::job::CREATE_NO_WINDOW);
+    }
+    #[cfg(unix)]
+    detach_session(&mut command);
+    let mut child = command.spawn()?;
     let deadline = Instant::now() + Duration::from_secs(45);
     loop {
         if last_view()?.is_some_and(|view| Some(&view) != prior.as_ref()) { return Ok(()); }
@@ -554,6 +584,21 @@ pub fn ensure_visible_app(workspace: &Path) -> DltResult<()> {
             )));
         }
         std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Starts the child in a new session (`setsid`): no controlling terminal, so a closed terminal sends it no SIGHUP.
+#[cfg(unix)]
+fn detach_session(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: setsid is async-signal-safe and touches no memory of the parent.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
     }
 }
 

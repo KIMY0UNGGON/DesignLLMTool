@@ -21,6 +21,7 @@ use eframe::egui::{
     self, Context, Id, Pos2, Rect, Sense,
     Ui, Vec2, ViewportCommand,
 };
+#[cfg(windows)]
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use serde::Deserialize;
 use serde_json::{json, Value};

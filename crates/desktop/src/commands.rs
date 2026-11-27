@@ -896,7 +896,9 @@ mod snapshot_tests {
             return;
         }
         let checked_in = std::fs::read_to_string(path)
-            .expect("commands.json is checked in; regenerate it with DESIGNLLM_COMMANDS_WRITE=1");
+            .expect("commands.json is checked in; regenerate it with DESIGNLLM_COMMANDS_WRITE=1")
+            // A Windows checkout with core.autocrlf has CRLF line endings; the registry is compared line by line.
+            .replace("\r\n", "\n");
         assert!(
             checked_in == generated,
             "commands.json differs from the registry; regenerate with DESIGNLLM_COMMANDS_WRITE=1 and review the diff"
