@@ -87,7 +87,7 @@ jobs:
         run: |
           mkdir -p probe
           if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo apt-get install -y --no-install-recommends xvfb libgl1 libegl1 libgl1-mesa-dri >/dev/null
+            sudo apt-get install -y --no-install-recommends xvfb libgl1 libegl1 libgl1-mesa-dri libxkbcommon-x11-0 >/dev/null
             runner=(xvfb-run -a -s "-screen 0 1600x1000x24")
           else
             runner=()

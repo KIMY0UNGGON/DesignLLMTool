@@ -78,7 +78,7 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
   - Git, to clone the repository (there is no packaged binary in the repository for macOS or Linux).
   - Rust toolchain (`1.93.1`, from [rustup.rs](https://rustup.rs)) for the source build.
   - A C compiler, because SQLite is compiled from source: Xcode Command Line Tools on macOS (`xcode-select --install`), or `build-essential` (or equivalent) on Linux.
-  - Linux at run time: an X11 or Wayland session with OpenGL or Vulkan drivers, and `zenity` or `kdialog` for file open/save dialogs.
+  - Linux at run time: an X11 or Wayland session with OpenGL or Vulkan drivers, `zenity` or `kdialog` for file open/save dialogs, and the keyboard library `libxkbcommon-x11` (and `libxkbcommon` on Wayland), which the desktop window loads at run time and without which the window cannot open; desktop installs of Ubuntu, Fedora, and similar include it, a minimal install can add it with the distribution package (`libxkbcommon-x11-0` on Debian and Ubuntu), and it is needed only for the window (`--mcp --background` runs without it).
 
 ## Quick start
 
