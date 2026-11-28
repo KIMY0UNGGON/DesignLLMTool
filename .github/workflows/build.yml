@@ -47,10 +47,9 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then skip=(-- --skip isolation::session_tests); fi
           cargo test --no-fail-fast -p designllm-bridge -p designllm-contracts -p designllm-canvas -p designllm-runtimes -p designllm-host -p designllm-core -p designllm-package -p designllm-docx -p designllm-pptx -p designllm-hwpx -p designllm-web-preview "${skip[@]}"
 
-      # The desktop crate's headless GUI tests (dialogs, settings lock, command registry). Reported, not blocking.
+      # The desktop crate's headless GUI tests (dialogs, settings lock, command registry, board input).
       - name: Test desktop
         if: matrix.platform != 'win-x64'
-        continue-on-error: true
         shell: bash
         run: cargo test -p designllm-desktop --lib
 

@@ -327,7 +327,7 @@ impl DesktopApp {
         view.zoom = zoom;
         view.pan = origin - board_rect.min;
         view.fitted = true;
-        view.zoom_changed = std::time::Instant::now();
+        view.zoom_changed = None;
         Ok(())
     }
 

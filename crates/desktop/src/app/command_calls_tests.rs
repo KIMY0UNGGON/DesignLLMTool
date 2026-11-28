@@ -967,7 +967,7 @@ fn a_page_zoomed_past_the_texture_limit_gets_its_visible_part_rendered_sharp() {
     };
     draw(&mut recorder);
     recorder.settle(&mut host);
-    std::thread::sleep(super::board::SETTLE + std::time::Duration::from_millis(30));
+    recorder.app.view().zoom_changed = Some(f64::NEG_INFINITY);
     let mark = recorder.calls.len();
     draw(&mut recorder);
     recorder.settle(&mut host);
