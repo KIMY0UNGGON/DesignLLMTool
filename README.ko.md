@@ -57,9 +57,13 @@ DesignLLMTool은 MCP 서버가 내장된 Windows, macOS, Linux용 데스크톱 �
 
 ### 디자인 품질 규칙
 
-- 레이아웃으로 구조를 설명하며 보조 레이블은 생략합니다. 요청이 없는 한 카드나 상자의 위쪽 또는 왼쪽 강조 막대(블로그 콜아웃 형태)는 `ACCENT_BAR`로 보고됩니다.
-- 기본 프레임워크 및 어시스턴트 색상(Tailwind 파랑/남색/에메랄드/빨강, Bootstrap, Material, Google 파랑, ChatGPT 초록, Claude 주황, Gemini 보라, 짙은 네이비 배경면)은 `COLOR_STOCK_DEFAULT`로 보고됩니다. 내장 `Canvas` 템플릿은 기본 프레임워크 색상을 사용하지 않습니다.
-- 덱은 항상 검사합니다. `Canvas`는 v1.2 값(모서리 반경, 불투명도, 그림자, 그라데이션 또는 경로)을 사용할 때만 `ACCENT_BAR` 및 `COLOR_STOCK_DEFAULT`를 포함한 모든 디자인 품질 경고를 받으므로 기존 `Canvas`의 검증 출력은 변경되지 않습니다.
+- 레이아웃으로 구조를 설명하며 보조 레이블은 생략합니다. 요청이 없는 한 카드나 상자의 어느 한쪽 가장자리(위, 아래, 왼쪽, 오른쪽)에 있는 색상 막대는 `ACCENT_BAR`로 보고됩니다.
+- 기본 프레임워크 및 어시스턴트 색상(Tailwind 파랑/남색/에메랄드/빨강, Bootstrap, Material, Google 파랑, ChatGPT 초록, Claude 주황, Gemini 보라, 짙은 네이비 배경면)은 `COLOR_STOCK_DEFAULT`로 보고됩니다. 내장 `Canvas` 템플릿은 기본 프레임워크 색상을 사용하지 않으며, 내장 랜딩 페이지 템플릿의 기능 카드에는 외곽선 아래 그림자가 없습니다.
+- `ICON_EMOJI`는 아이콘 대신 사용된 체크, X, 별, 반짝임, 화살표 기호(`✓ ✗ ★ ✦ →`) 뒤에 공백과 텍스트가 이어지는 경우도 보고합니다.
+- 추가 비차단 경고: `SHADOW_HARD_OFFSET`(흐림 없이 2 px 이상 떨어져 있고 불투명도가 0.25 이상인 그림자, 즉 네오브루탈리스트 블록 그림자), `SHADOW_GLOW`(오프셋 없이 색상이 있는 그림자, 즉 색상 후광), `CARD_GHOST`(흐림이 16 px 이상인 그림자 아래에 2 px 이하의 외곽선이 있는 경우; 입체감은 한 번만 표현하며 새 도형은 기본적으로 1 pt 회색 외곽선을 가지므로 그림자를 유지하는 카드에서는 `stroke_width`를 0으로 설정), `CARD_NESTED`(더 큰 그림자 카드 안에 들어 있는 그림자 카드), `TEXT_EYEBROW`(제목 바로 위의 짧은 대문자 또는 자간이 넓은 레이블), `TEXT_SECTION_NUMBER`(한 페이지에 장식용 `01`, `02`, `03`을 배치한 경우).
+- 내장 디자인 가이드는 요청이 허용하는 범위에서 큰 숫자 히어로 지표, 코드나 데이터가 아닌 텍스트에 장식으로 쓰는 고정폭 글꼴, 디스플레이 서체로의 Impact 또는 Arial Black, 뒤에 주제가 없는 줄무늬나 격자 질감, 지어낸 숫자를 피하고, 입체감은 한 번만 표현하며, 작업이 쓰이는 환경에 맞춰 밝은 페이지 또는 어두운 페이지를 선택하고, 이러한 기본값보다 사용자 요청이 우선한다고 안내합니다.
+- 이 규칙들은 오픈소스 디자인 스킬 [impeccable](https://github.com/pbakaus/impeccable)(Apache-2.0)의 안티패턴을 참고해 고쳐 쓴 것입니다.
+- 덱은 항상 검사합니다. `Canvas`는 v1.2 값(모서리 반경, 불투명도, 그림자, 그라데이션 또는 경로)을 사용할 때만 `ACCENT_BAR` 및 `COLOR_STOCK_DEFAULT`를 포함한 모든 비차단 디자인 품질 경고를 받으므로 기존 `Canvas`의 검증 출력은 변경되지 않습니다.
 
 ### 다이어그램 도형
 
@@ -114,7 +118,7 @@ DesignLLMTool은 MCP 서버가 내장된 Windows, macOS, Linux용 데스크톱 �
 ## 설치 프로그램 및 클라이언트 설정
 
 > [!IMPORTANT]
-> 설치 프로그램은 기존의 `designllm` 항목을 제거하거나 변경하지 않습니다. 해당 항목이 정의된 클라이언트 설정에서 직접 변경하거나 제거한 뒤 `install.ps1`(또는 `install.sh`)을 다시 실행합니다.
+> 기존 `designllm` 항목이 이 복제본의 실행 파일(`release/DesignLLMTool-*-mcp-*/` 또는 `target/package/DesignLLMTool-*-mcp-*/`, 예: 이전 버전)을 가리키는 경우, 설치 프로그램은 이를 현재 실행 파일로 교체하고 업데이트됨으로 보고합니다(단, 인수가 이번 실행 옵션과 다르거나 `Claude Code`에서 사용자 범위가 아닌 경우는 제외). 다른 위치(다른 복제본, 다른 프로그램)를 가리키는 항목은 변경하지 않으므로, 해당 항목이 정의된 클라이언트 설정에서 직접 변경하거나 제거한 뒤 `install.ps1`(또는 `install.sh`)을 다시 실행합니다.
 
 > [!NOTE]
 > `Gemini CLI`의 경우 `install.ps1`과 `install.sh`는 서버를 등록하는 대신 `mcpServers` 항목을 출력합니다. 확장에서 `designllm`을 제공할 수 있으므로 먼저 `gemini mcp list`를 확인합니다.
@@ -141,7 +145,7 @@ DesignLLMTool은 MCP 서버가 내장된 Windows, macOS, Linux용 데스크톱 �
 <details>
 <summary>설치 프로그램 동작 세부 정보</summary>
 
-- **기존 등록 항목**: 설치 프로그램은 복원할 수 없는 설정이 들어 있거나 프로젝트 설정에서 비롯된 항목일 수 있으므로 기존의 `designllm` 항목을 제거하거나 변경하지 않습니다. 해당 항목이 정의된 클라이언트 설정에서 변경하거나 제거한 뒤 `install.ps1`(또는 `install.sh`)을 다시 실행합니다.
+- **기존 등록 항목**: 기존 `designllm` 항목의 명령어가 이 복제본의 실행 파일(`release/DesignLLMTool-*-mcp-*/` 또는 `target/package/DesignLLMTool-*-mcp-*/`, 예: 이전 버전)인 경우, 현재 실행 파일로 교체하고 업데이트됨으로 보고합니다. 이때 교체된 항목에 수동으로 설정한 환경 변수는 이어지지 않습니다. 인수가 이번 실행 옵션과 다르거나 `Claude Code`에서 사용자 범위가 아닌 항목은 메시지와 함께 그대로 유지합니다. 다른 위치(다른 복제본, 다른 프로그램)를 가리키는 항목은 복원할 수 없는 설정이 들어 있거나 프로젝트 설정에서 비롯된 항목일 수 있으므로 변경하지 않으며, 이 경우 해당 항목이 정의된 클라이언트 설정에서 변경하거나 제거한 뒤 `install.ps1`(또는 `install.sh`)을 다시 실행합니다.
 - **검증 및 읽을 수 없는 클라이언트**: 각 등록 후 설치 프로그램은 해당 항목을 다시 읽어 이 사본의 `DesignLLMTool.exe`(macOS 및 Linux에서는 `DesignLLMTool`)를 실행하는 경우에만 등록된 것으로 간주합니다. 클라이언트가 결과를 명확하게 보고하지 않거나 서버 목록을 읽을 수 없는 경우 해당 클라이언트를 변경하지 않고 미등록 상태로 보고합니다.
 - **`Gemini CLI`**: `gemini mcp add`는 다른 서버 설정을 포함한 전체 Gemini 설정 파일을 다시 쓰며 저장하지 않고도 성공을 보고할 수 있으므로 설치 프로그램은 이를 건너뜁니다. 대신 `mcpServers` 항목을 출력하며, 확장에서 `designllm`을 제공할 수 있으므로 먼저 `gemini mcp list`를 확인합니다.
 - **배치 심(Batch shim)**: Windows에서 클라이언트가 `.cmd` 또는 `.bat` 심을 통해 실행되고 경로에 `cmd.exe`가 해석하는 문자가 포함된 경우, 설치 프로그램은 해당 클라이언트를 등록하지 않고 미등록 상태로 보고한 뒤 설정을 출력합니다. `Codex CLI`의 경우 `[mcp_servers.designllm]` TOML 항목과 Codex 설정 경로(`%USERPROFILE%\.codex\config.toml` 또는 `CODEX_HOME`의 `config.toml`)도 함께 출력합니다.
@@ -245,12 +249,18 @@ VS Code(`.vscode/mcp.json`):
 
 </details>
 
+### 업데이트
+
+복제한 폴더에서 `git pull`을 실행한 다음 처음 설치할 때 사용한 것과 같은 옵션(예: 같은 `-Project` / `--project` 및 `-Background` / `--background`)으로 설치 프로그램(Windows에서는 `install.ps1`, macOS 및 Linux에서는 `./install.sh`)을 다시 실행하고, AI 클라이언트를 다시 시작합니다.
+
 ## 서버 옵션
 
 | 플래그 | 동작 |
 | --- | --- |
 | `--mcp` | stdio를 통해 MCP 서버로 실행합니다. 첫 번째 도구 호출 시 데스크톱 창이 열리며, 창 없이 실행하려면 호출 시 `background: true`를 전달하거나 `--background`로 시작합니다. |
 | `--project "<existing folder>"` | 작업 공간을 `<folder>\.designllm`에 두고 네이티브 파일은 `<folder>\artifacts`에 저장합니다. 이 플래그가 없으면 기본 작업 공간은 Windows에서 `%LOCALAPPDATA%\DesignLLMTool\workspaces\default`, macOS에서 `~/Library/Application Support/DesignLLMTool/workspaces/default`, Linux에서 `$XDG_DATA_HOME/DesignLLMTool/workspaces/default`(기본값 `~/.local/share/DesignLLMTool/workspaces/default`)가 되며, 모든 플랫폼에서 `DESIGNLLM_WORKSPACE`로 재정의할 수 있습니다. |
+
+- **업데이트 확인(`--mcp`)**: `--mcp`로 실행하면 백그라운드 확인이 GitHub 릴리스 API에 최신 릴리스를 최대 24시간마다 한 번 요청하고, 결과를 사용자별 앱 데이터 폴더(`DesignLLMTool/update-check.json`: Windows에서는 `%LOCALAPPDATA%`, macOS에서는 `~/Library/Application Support`, Linux에서는 `$XDG_DATA_HOME` 또는 `~/.local/share`)에 캐시합니다. 이 확인은 MCP 핸드셰이크나 도구 호출을 지연시키지 않으며, 요청이 실패해도 조용히 넘어갑니다. 더 새로운 릴리스가 있으면 연결당 한 번 첫 번째 성공 도구 결과에 두 버전과 업데이트 방법을 알리는 안내와 함께 `structuredContent.update_available`(`latest_version`, `current_version`, `url`, `how_to_update`)이 포함됩니다. 끄려면 `DESIGNLLM_NO_UPDATE_CHECK=1`을 설정합니다.
 
 ### 플랫폼 차이
 
@@ -294,7 +304,7 @@ cargo +1.93.1 test -p designllm-bridge -p designllm-contracts -p designllm-canva
 
 릴리스 빌드는 Windows에서 `target\release\DesignLLMTool.exe`를 생성하며(패키지된 빌드를 업데이트하려면 `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`에 덮어씁니다), macOS 및 Linux에서는 `target/release/DesignLLMTool`을 생성합니다. 이 실행 파일은 같은 디렉터리에 `assets/fonts`가 필요합니다(`install.sh --build` 또는 다운로드 실패 시 `install.sh`가 `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` 구성을 생성합니다).
 
-GitHub Actions 워크플로(`.github/workflows/build.yml`)는 Windows, macOS(`arm64` 및 `x64`), Linux(`x64` 및 `arm64`)에서 빌드와 테스트를 수행하고, 모든 빌드마다 각 `DesignLLMTool-<version>-mcp-<platform>.tar.gz` 패키지 옆에 `.sha256` 파일을 작성하고 두 파일을 모두 워크플로 아티팩트로 업로드하며, `v*` 태그를 푸시할 때는 두 파일을 GitHub 릴리스에 첨부합니다. `.github/workflows/install-check.yml` 워크플로(수동 실행 또는 릴리스 게시 시 실행)는 macOS(`arm64`, `x64`)와 Linux(`x64`, `arm64`)의 새 클론에서 `PATH`로부터 `cargo`와 `rustup`을 제거한 상태로 `install.sh`가 릴리스 패키지의 압축을 풀고 빌드는 수행하지 않았는지 확인한 뒤 MCP 세션을 실행합니다.
+GitHub Actions 워크플로(`.github/workflows/build.yml`)는 Windows, macOS(`arm64` 및 `x64`), Linux(`x64` 및 `arm64`)에서 빌드와 테스트를 수행하고, 모든 빌드마다 각 `DesignLLMTool-<version>-mcp-<platform>.tar.gz` 패키지 옆에 `.sha256` 파일을 작성하고 두 파일을 모두 워크플로 아티팩트로 업로드하며, `v*` 태그를 푸시할 때는 두 파일을 GitHub 릴리스에 첨부합니다. `.github/workflows/install-check.yml` 워크플로(수동 실행 또는 릴리스 게시 시 실행)는 macOS(`arm64`, `x64`)와 Linux(`x64`, `arm64`)의 새 클론에서 `PATH`로부터 `cargo`와 `rustup`을 제거한 상태로 `install.sh`가 릴리스 패키지의 압축을 풀고 빌드는 수행하지 않았는지 확인한 뒤 `DESIGNLLM_NO_UPDATE_CHECK=1`로 MCP 세션을 실행합니다.
 
 ## 라이선스
 
