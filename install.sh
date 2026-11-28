@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Registers DesignLLMTool as an MCP server for the AI coding clients installed on this Mac or Linux PC.
 #
-# Uses release/DesignLLMTool-<version>-mcp-<os>-<arch>/DesignLLMTool when this repository carries a package for this
-# platform. Otherwise it builds one from source (Rust toolchain 1.93.1 through rustup, or the cargo on PATH) into
-# target/package/DesignLLMTool-<version>-mcp-<os>-<arch>/. It checks that the executable starts and registers it as the
+# Uses release/DesignLLMTool-<version>-mcp-<os>-<arch>/DesignLLMTool when that package is already there. Otherwise it
+# downloads the package for this platform from the GitHub release v<version> (DesignLLMTool-<version>-mcp-<os>-<arch>.tar.gz),
+# checks it against the release's .sha256 file and unpacks it into release/; no Rust is needed for that. Only when the
+# download fails, or with --build, it builds from source (Rust toolchain 1.93.1 through rustup, or the cargo on PATH) into
+# target/package/DesignLLMTool-<version>-mcp-<os>-<arch>/. DESIGNLLM_RELEASE_URL replaces the download folder
+# (https://github.com/KIMY0UNGGON/DesignLLMTool/releases/download/v<version>). It checks that the executable starts and registers it as the
 # MCP server "designllm" with Claude Code, Codex CLI and AGY when they are installed. It never removes or changes an
 # existing registration: a client that already has a "designllm" server keeps it; to register this copy, change or remove
 # that entry where it is defined (user or project settings), then run the script again. After each registration it reads
@@ -18,8 +21,8 @@
 #   --client NAME   auto (every installed client), claude, codex, gemini, agy, or print (only print the configuration).
 #                   gemini only prints the entry to add by hand.
 #   --background    Register the server with --background: tools run without opening the desktop window.
-#   --build         Build from source even when a package exists (also with --client print).
-#   --dry-run       Print the commands without running them (nothing is built, started or changed).
+#   --build         Build from source instead of using or downloading a package (also with --client print).
+#   --dry-run       Print the commands without running them (nothing is downloaded, built, started or changed).
 #
 # Examples:
 #   ./install.sh
@@ -44,7 +47,7 @@ while [ $# -gt 0 ]; do
         --background) BACKGROUND=1; shift ;;
         --build) FORCE_BUILD=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
-        -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
 done
@@ -62,17 +65,74 @@ case "$(uname -m)" in
 esac
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-VERSION="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -n 1)"
+VERSION="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' "$ROOT/Cargo.toml" | tr -d '\r' | head -n 1)"
 [ -n "$VERSION" ] || die "cannot read the version from Cargo.toml"
 PACKAGE_NAME="DesignLLMTool-$VERSION-mcp-$OS-$ARCH"
 PACKAGED="$ROOT/release/$PACKAGE_NAME/DesignLLMTool"
 LOCAL_PACKAGE="$ROOT/target/package/$PACKAGE_NAME"
+RELEASE_URL="${DESIGNLLM_RELEASE_URL:-https://github.com/KIMY0UNGGON/DesignLLMTool/releases/download/v$VERSION}"
+ARCHIVE_URL="$RELEASE_URL/$PACKAGE_NAME.tar.gz"
 PREVIEW=0
 if [ "$DRY_RUN" = 1 ] || [ "$CLIENT" = "print" ]; then PREVIEW=1; fi
 
+# Saves the file at URL $1 to path $2, with curl or else wget.
+fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --retry 2 -o "$2" "$1"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$2" "$1"
+    else
+        warn "neither curl nor wget is installed, so the package cannot be downloaded."
+        return 1
+    fi
+}
+
+# The SHA-256 of file $1, in lower-case hex.
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d ' ' -f 1
+    else
+        shasum -a 256 "$1" | cut -d ' ' -f 1
+    fi
+}
+
+# Downloads the release package for this platform, checks its SHA-256 and unpacks it into release/. Returns 1 (and leaves
+# release/ unchanged) when any step fails.
+download_package() {
+    local tmp archive expected actual
+    tmp="$(mktemp -d)"
+    archive="$tmp/$PACKAGE_NAME.tar.gz"
+    echo "Downloading $ARCHIVE_URL..."
+    if ! fetch "$ARCHIVE_URL" "$archive" || ! fetch "$ARCHIVE_URL.sha256" "$archive.sha256"; then
+        warn "could not download the package for $OS-$ARCH from $RELEASE_URL."
+        rm -rf "$tmp"; return 1
+    fi
+    expected="$(cut -d ' ' -f 1 < "$archive.sha256" | tr 'A-F' 'a-f')"
+    actual="$(sha256_of "$archive")"
+    if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+        warn "the downloaded package does not match its SHA-256 ($actual, expected $expected)."
+        rm -rf "$tmp"; return 1
+    fi
+    # Every entry must lie inside the package folder.
+    if ! tar -tzf "$archive" > "$tmp/entries" \
+        || awk -v top="$PACKAGE_NAME/" 'index($0, top) != 1 || index($0, "/../") || $0 ~ /\/\.\.$/ { bad = 1 } END { exit !bad }' "$tmp/entries"; then
+        warn "the downloaded package holds files outside $PACKAGE_NAME/."
+        rm -rf "$tmp"; return 1
+    fi
+    if ! tar -xzf "$archive" -C "$tmp" || [ ! -x "$tmp/$PACKAGE_NAME/DesignLLMTool" ]; then
+        warn "the downloaded package could not be unpacked."
+        rm -rf "$tmp"; return 1
+    fi
+    mkdir -p "$ROOT/release"
+    rm -rf "${ROOT:?}/release/$PACKAGE_NAME"
+    mv "$tmp/$PACKAGE_NAME" "$ROOT/release/$PACKAGE_NAME"
+    rm -rf "$tmp"
+    echo "Unpacked $PACKAGE_NAME into release/."
+}
+
 # Builds the application and lays out a package next to it: the executable and the fonts it loads at run time.
 build_package() {
-    command -v cargo >/dev/null 2>&1 || die "no package for $OS-$ARCH in release/ and no cargo on PATH. Install Rust (https://rustup.rs), then run this script again."
+    command -v cargo >/dev/null 2>&1 || die "no package for $OS-$ARCH in release/ (the download did not succeed) and no cargo on PATH. Install Rust (https://rustup.rs), then run this script again."
     local toolchain=()
     if command -v rustup >/dev/null 2>&1; then
         if ! rustup toolchain list | grep -q '^1\.93\.1'; then
@@ -97,9 +157,17 @@ if [ "$FORCE_BUILD" = 0 ] && [ -x "$PACKAGED" ]; then
     EXE="$PACKAGED"
 elif [ "$FORCE_BUILD" = 0 ] && [ -x "$LOCAL_PACKAGE/DesignLLMTool" ]; then
     EXE="$LOCAL_PACKAGE/DesignLLMTool"
-elif [ "$DRY_RUN" = 1 ] || { [ "$PREVIEW" = 1 ] && [ "$FORCE_BUILD" = 0 ]; }; then
+elif [ "$DRY_RUN" = 1 ] && [ "$FORCE_BUILD" = 0 ]; then
+    EXE="$PACKAGED"
+    echo "$EXE is not there yet; ./install.sh downloads it from $ARCHIVE_URL (or builds from source if that fails)."
+elif [ "$DRY_RUN" = 1 ]; then
     EXE="$LOCAL_PACKAGE/DesignLLMTool"
-    echo "$EXE is not built yet; run ./install.sh (or add --build) to build it."
+    echo "$EXE is not built yet; ./install.sh --build builds it."
+elif [ "$FORCE_BUILD" = 0 ] && download_package; then
+    EXE="$PACKAGED"
+elif [ "$PREVIEW" = 1 ] && [ "$FORCE_BUILD" = 0 ]; then
+    EXE="$LOCAL_PACKAGE/DesignLLMTool"
+    echo "$EXE is not built yet; ./install.sh builds it (or add --build)."
 else
     build_package
     EXE="$LOCAL_PACKAGE/DesignLLMTool"

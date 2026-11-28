@@ -64,7 +64,9 @@ jobs:
           cp -R assets/fonts "dist/$name/assets/fonts"
           cp release/DesignLLMTool-*-mcp-win-x64/THIRD_PARTY_LICENSES.txt release/DesignLLMTool-*-mcp-win-x64/THIRD_PARTY_NOTICES.txt "dist/$name/" || true
           "dist/$name/DesignLLMTool" --version
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          # COPYFILE_DISABLE: macOS tar adds no ._ metadata files. install.sh checks the download against the .sha256 file.
+          COPYFILE_DISABLE=1 tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
           echo "PACKAGE=dist/$name.tar.gz" >> "$GITHUB_ENV"
           echo "PACKAGE_EXE=dist/$name/DesignLLMTool" >> "$GITHUB_ENV"
 
@@ -106,9 +108,13 @@ jobs:
         if: matrix.platform != 'win-x64'
         with:
           name: DesignLLMTool-${{ matrix.platform }}
-          path: ${{ env.PACKAGE }}
+          path: |
+            ${{ env.PACKAGE }}
+            ${{ env.PACKAGE }}.sha256
 
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v') && matrix.platform != 'win-x64'
         with:
-          files: ${{ env.PACKAGE }}
+          files: |
+            ${{ env.PACKAGE }}
+            ${{ env.PACKAGE }}.sha256

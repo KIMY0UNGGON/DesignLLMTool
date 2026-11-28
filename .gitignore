@@ -5,3 +5,6 @@
 /probes/
 /design/icons/**/_sheet*
 /design/icons/**/_preview*
+# macOS and Linux packages that install.sh downloads from the GitHub release.
+/release/DesignLLMTool-*-mcp-macos-*/
+/release/DesignLLMTool-*-mcp-linux-*/

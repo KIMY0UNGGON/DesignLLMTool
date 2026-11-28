@@ -75,10 +75,9 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
   - Optional (Windows-only): Microsoft Edge WebView2 Runtime (included in Windows 11), for the web-code preview and automatic video poster extraction.
 - **macOS and Linux**:
   - macOS 11 or later (Apple silicon and Intel), or Linux (`x64` and `arm64`) with an X11 or Wayland desktop.
-  - Git, to clone the repository (there is no packaged binary in the repository for macOS or Linux).
-  - Rust toolchain (`1.93.1`, from [rustup.rs](https://rustup.rs)) for the source build.
-  - A C compiler, because SQLite is compiled from source: Xcode Command Line Tools on macOS (`xcode-select --install`), or `build-essential` (or equivalent) on Linux.
-  - Linux at run time: an X11 or Wayland session with OpenGL or Vulkan drivers, `zenity` or `kdialog` for file open/save dialogs, and the keyboard library `libxkbcommon-x11` (and `libxkbcommon` on Wayland), which the desktop window loads at run time and without which the window cannot open; desktop installs of Ubuntu, Fedora, and similar include it, a minimal install can add it with the distribution package (`libxkbcommon-x11-0` on Debian and Ubuntu), and it is needed only for the window (`--mcp --background` runs without it).
+  - Git, to clone the repository (there is no packaged binary in the repository for macOS or Linux; `install.sh` downloads the release package), plus `curl` or `wget`, `tar`, and `sha256sum` or `shasum` (all present on macOS and on desktop Linux distributions).
+  - Needed only for a source build (`--build`, or when the download fails): Rust toolchain (`1.93.1`, from [rustup.rs](https://rustup.rs)) and a C compiler because SQLite is compiled from source (Xcode Command Line Tools on macOS via `xcode-select --install`, or `build-essential` or equivalent on Linux).
+  - Linux at run time: glibc 2.35 or later (Ubuntu 22.04 or later, Debian 12 or later, Fedora 36 or later) for the downloaded executable (on an older system the downloaded executable does not start; use `./install.sh --build`), an X11 or Wayland session with OpenGL or Vulkan drivers, `zenity` or `kdialog` for file open/save dialogs, and the keyboard library `libxkbcommon-x11` (and `libxkbcommon` on Wayland), which the desktop window loads at run time and without which the window cannot open; desktop installs of Ubuntu, Fedora, and similar include it, a minimal install can add it with the distribution package (`libxkbcommon-x11-0` on Debian and Ubuntu), and it is needed only for the window (`--mcp --background` runs without it).
 
 ## Quick start
 
@@ -105,7 +104,7 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
    ./install.sh
    ```
 
-   `install.sh` builds from source with Rust `1.93.1` (through `rustup` when present, otherwise the `cargo` on `PATH`) into `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` (`<os>` is `macos` or `linux`; `<arch>` is `x64` or `arm64`), or uses `release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool` if that folder exists (for example, an unpacked GitHub Actions build). It verifies that it starts and registers the MCP server `designllm` with every installed client among `Claude Code`, `Codex CLI`, and `AGY`, exiting with code `1` when a requested registration fails. On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, it warns to use `--background`.
+   `install.sh` works without Rust: when `release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool` (`<os>` is `macos` or `linux`; `<arch>` is `x64` or `arm64`) is not in the clone, it downloads `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz` from the GitHub release [`v0.1.1`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.1) (with `curl`, or `wget`), checks it against `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz.sha256`, refuses an archive with files outside the package folder, and unpacks it into `release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` (ignored by git; later runs reuse it without downloading; `DESIGNLLM_RELEASE_URL` replaces the download folder, defaulting to `https://github.com/KIMY0UNGGON/DesignLLMTool/releases/download/v<version>` where `<version>` is the version in `Cargo.toml`). Only when the download fails (no network, no release for that version, checksum mismatch), or with `--build`, `install.sh` builds from source with Rust `1.93.1` (through `rustup` when present, otherwise `cargo` on `PATH`) into `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`; with `--client print`, a failed download prints the build hint instead of building. It verifies that it starts and registers the MCP server `designllm` with every installed client among `Claude Code`, `Codex CLI`, and `AGY`, exiting with code `1` when a requested registration fails. On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, it warns to use `--background`.
 
 3. Restart your AI client and ask it to call the `design_guide` tool.
 
@@ -127,8 +126,8 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
 | `-Project "<existing folder>"` | `--project DIR` | Keep the workspace in that folder. |
 | `-Client claude\|codex\|gemini\|agy\|print` | `--client auto\|claude\|codex\|gemini\|agy\|print` | Register one client, or only print the configuration. |
 | `-Background` | `--background` | Tools run without opening the window. |
-| `-DryRun` | `--dry-run` | Print the commands without running or changing anything. |
-| — | `--build` | Force a source build even if a packaged binary exists under `release/`. |
+| `-DryRun` | `--dry-run` | Print the commands without running or changing anything (`--dry-run` downloads nothing). |
+| — | `--build` | Build from source into `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` instead of downloading or reusing a packaged binary under `release/`. |
 
 ### Client configuration overview
 
@@ -147,6 +146,7 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
 - **`Gemini CLI`**: The installer skips `gemini mcp add` because it rewrites the entire Gemini settings file (including other servers) and can report success without saving. It prints the `mcpServers` entry instead; check `gemini mcp list` first because an extension can provide `designllm`.
 - **Batch shims**: On Windows, when a client runs through a `.cmd` or `.bat` shim and a path contains a character `cmd.exe` would interpret, the installer leaves that client unregistered, reports it as not registered, and prints the configuration. For `Codex CLI`, it also prints a `[mcp_servers.designllm]` TOML entry and the Codex settings path (`%USERPROFILE%\.codex\config.toml`, or `config.toml` in `CODEX_HOME`).
 - **Printed configurations**: For `Gemini CLI`, `Claude Desktop`, `Cursor`, and `VS Code`, the installer prints the JSON entry to paste (`mcpServers` for the first three; `servers` for `VS Code`).
+- **macOS notarization**: The macOS executables are not notarized. `install.sh` downloads with `curl` or `wget`, which sets no quarantine flag, so they start. If you download the archive in a web browser instead, macOS blocks the executable until you remove the flag with `xattr -d com.apple.quarantine DesignLLMTool`.
 
 </details>
 
@@ -204,12 +204,16 @@ VS Code (`.vscode/mcp.json`):
 
 **macOS and Linux** (`<os>` is `macos` or `linux`; `<arch>` is `x64` or `arm64`):
 
+The paths below use `<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool` (the folder `install.sh` downloads into); a source build is at `<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool`.
+
+Manual install without `install.sh`: download `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz` and `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz.sha256` from the GitHub release [`v0.1.1`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.1), verify the checksum (`shasum -a 256 -c DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz.sha256`), unpack it (`tar -xzf DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz`), and register `<folder>/DesignLLMTool --mcp` with the client. The archive holds `DesignLLMTool-0.1.1-mcp-<os>-<arch>/` with `DesignLLMTool`, `assets/fonts`, `THIRD_PARTY_LICENSES.txt`, and `THIRD_PARTY_NOTICES.txt`; keep the unpacked folder together because the executable needs `assets/fonts` next to it. On macOS, if downloaded in a web browser, run `xattr -d com.apple.quarantine DesignLLMTool` before starting it.
+
 Claude Code, Codex CLI (no `codex.cmd` needed), and AGY:
 
 ```bash
-claude mcp add --scope user designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
-codex mcp add designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
-agy mcp add designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+claude mcp add --scope user designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+codex mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+agy mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
 ```
 
 `Gemini CLI` (`~/.gemini/settings.json`), `Claude Desktop`, and `Cursor` (`mcpServers` JSON):
@@ -218,7 +222,7 @@ agy mcp add designllm -- "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<ar
 {
   "mcpServers": {
     "designllm": {
-      "command": "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
+      "command": "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
       "args": ["--mcp"]
     }
   }
@@ -232,7 +236,7 @@ VS Code (`.vscode/mcp.json`):
   "servers": {
     "designllm": {
       "type": "stdio",
-      "command": "<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
+      "command": "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
       "args": ["--mcp"]
     }
   }
@@ -270,11 +274,11 @@ Windows:
 .\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe --project "<existing folder>"
 ```
 
-macOS and Linux:
+macOS and Linux (for a source build, replace `release` with `target/package`):
 
 ```bash
-./target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool
-./target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool --project "<existing folder>"
+./release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool
+./release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool --project "<existing folder>"
 ```
 
 - **Switch interface language**: On the home screen, open the workspace menu (workspace name at the top left) and choose `한국어` or `English`. The setting applies immediately and is saved in `.gui\settings.json` in the workspace.
@@ -288,9 +292,9 @@ cargo +1.93.1 build --release -p designllm-application
 cargo +1.93.1 test -p designllm-bridge -p designllm-contracts -p designllm-canvas -p designllm-runtimes
 ```
 
-The release build outputs `target\release\DesignLLMTool.exe` on Windows (copy it over `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe` to update the packaged build) and `target/release/DesignLLMTool` on macOS and Linux, which needs `assets/fonts` next to the executable (`install.sh` lays out `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`).
+The release build outputs `target\release\DesignLLMTool.exe` on Windows (copy it over `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe` to update the packaged build) and `target/release/DesignLLMTool` on macOS and Linux, which needs `assets/fonts` next to the executable (`install.sh --build`, or `install.sh` when the download fails, lays out `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`).
 
-The GitHub Actions workflow (`.github/workflows/build.yml`) builds and tests on Windows, macOS (`arm64` and `x64`), and Linux (`x64` and `arm64`), uploads `DesignLLMTool-<version>-mcp-<platform>.tar.gz` packages as workflow artifacts, and attaches them to the GitHub release when a `v*` tag is pushed.
+The GitHub Actions workflow (`.github/workflows/build.yml`) builds and tests on Windows, macOS (`arm64` and `x64`), and Linux (`x64` and `arm64`), uploads `DesignLLMTool-<version>-mcp-<platform>.tar.gz` packages as workflow artifacts, writes the `.sha256` file, and attaches both files to the GitHub release when a `v*` tag is pushed. Workflow `.github/workflows/install-check.yml` (run by hand, or when a release is published) installs from a fresh clone on macOS (`arm64`, `x64`) and Linux (`x64`, `arm64`) with `cargo` and `rustup` removed from `PATH`, checks that `install.sh` unpacked the release package and built nothing, and runs an MCP session against it.
 
 ## Licences
 
