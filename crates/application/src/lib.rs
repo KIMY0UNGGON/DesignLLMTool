@@ -3,6 +3,8 @@ use std::{path::{Path, PathBuf}, sync::Arc};
 
 /// The PDF reader worker (task 34c): the product's `source.extract_pdf` read runs in a child process of this executable.
 pub mod pdf_worker;
+/// The daily check for a newer release, in the background of `--mcp` (the agent is told; nothing is replaced).
+pub mod update_check;
 #[cfg(windows)]
 #[path = "pdf_edit_windows.rs"]
 mod pdf_edit;

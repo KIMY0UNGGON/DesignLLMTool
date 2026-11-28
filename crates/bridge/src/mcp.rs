@@ -10,6 +10,7 @@
 
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -23,6 +24,7 @@ use crate::assets::{base64_encode, fetch_asset};
 use crate::catalog::{find, tools_for, validate_arguments, Post, Scope, ToolSpec};
 use crate::client::{Client, ClientRole};
 use crate::manual;
+use crate::update_notice::UpdateSlot;
 
 /// Latest MCP revision this server implements.
 pub const LATEST_PROTOCOL_VERSION: &str = "2025-11-25";
@@ -212,6 +214,10 @@ pub struct McpServer {
     /// connection does not: the job's prompt already carries the guide (`manual::job_design_guidance`).
     guide_gate: bool,
     guides: Mutex<GuideState>,
+    /// A newer release found by the background update check (`--mcp` workspace connections only).
+    update: Option<UpdateSlot>,
+    /// Whether this connection has told the agent about it: once per connection.
+    update_told: AtomicBool,
 }
 
 impl McpServer {
@@ -234,6 +240,8 @@ impl McpServer {
             startup: None,
             guide_gate: false,
             guides: Mutex::new(GuideState::default()),
+            update: None,
+            update_told: AtomicBool::new(false),
         }
     }
 
@@ -241,6 +249,29 @@ impl McpServer {
     pub fn without_guide_gate(mut self) -> Self {
         self.guide_gate = false;
         self
+    }
+
+    /// The same server, telling the agent once about a newer release when `slot` holds one.
+    pub fn with_update_notice(mut self, slot: UpdateSlot) -> Self {
+        self.update = Some(slot);
+        self
+    }
+
+    /// Adds the update notice to the first successful tool result that completes once the slot is filled: a text block, and
+    /// `update_available` in the structured content. Error results never carry it, so it does not mix with a refusal.
+    fn attach_update_notice(&self, result: &mut Value) {
+        let Some(info) = self.update.as_ref().and_then(|slot| slot.get()) else { return };
+        if result.get("isError") == Some(&Value::Bool(true)) {
+            return;
+        }
+        let Some(content) = result.get_mut("content").and_then(Value::as_array_mut) else { return };
+        if self.update_told.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        content.push(json!({ "type": "text", "text": info.notice_text() }));
+        if let Some(structured) = result.get_mut("structuredContent").and_then(Value::as_object_mut) {
+            structured.insert("update_available".to_string(), info.structured());
+        }
     }
 
     /// Kind and title of `artifact_id`: from what this connection has seen, else from `workspace.list`. `Ok(None)` when the
@@ -655,10 +686,11 @@ impl McpServer {
     pub fn execute_unacknowledged(&self, call: &PendingCall) -> (Value, Vec<&'static str>) {
         self.permits.acquire();
         let mut delivered = Vec::new();
-        let result = match self.prepare_call(call.background).and_then(|()| self.run(call, &mut delivered)) {
+        let mut result = match self.prepare_call(call.background).and_then(|()| self.run(call, &mut delivered)) {
             Ok(result) => result,
             Err(error) => tool_failure(&error),
         };
+        self.attach_update_notice(&mut result);
         self.permits.release();
         (result, delivered)
     }
@@ -958,24 +990,27 @@ pub fn serve_stdio<R: BufRead, W: Write + Send + 'static>(input: R, output: W, s
 /// `bound_job` = `Some` for the MCP server a runtime starts for an app job. That connection is bound to
 /// the job's attempt on the host, and only job-scope tools are listed.
 pub fn run_stdio(workspace: &Path, bound_job: Option<JobRef>) -> DltResult<()> {
-    run_stdio_backend(workspace, bound_job, None)
+    run_stdio_backend(workspace, bound_job, None, None)
 }
 
-/// Starts the app on the first workspace tool call that needs the host.
+/// Starts the app on the first workspace tool call that needs the host. `update` is filled by the background update check
+/// when a newer release exists; the agent is told about it once on this connection.
 pub fn run_stdio_with_startup(
     workspace: &Path,
     start: impl Fn(bool) -> DltResult<()> + Send + Sync + 'static,
+    update: Option<UpdateSlot>,
 ) -> DltResult<()> {
-    run_stdio_backend(workspace, None, Some(Startup { start: Box::new(start), gate: Mutex::new(()) }))
+    run_stdio_backend(workspace, None, Some(Startup { start: Box::new(start), gate: Mutex::new(()) }), update)
 }
 
-fn run_stdio_backend(workspace: &Path, bound_job: Option<JobRef>, startup: Option<Startup>) -> DltResult<()> {
+fn run_stdio_backend(workspace: &Path, bound_job: Option<JobRef>, startup: Option<Startup>, update: Option<UpdateSlot>) -> DltResult<()> {
     let (scope, client) = match bound_job {
         Some(job) => (Scope::JobBound, Client::with_job(workspace, job)),
         None => (Scope::Workspace, Client::with_role(workspace, ClientRole::Bridge)),
     };
     let mut server = McpServer::new(Arc::new(ClientBackend::new(client)), scope);
     server.startup = startup;
+    server.update = update;
     let stdin = io::stdin();
     serve_stdio(stdin.lock(), io::stdout(), Arc::new(server)).map_err(DltError::from)
 }
@@ -1503,5 +1538,80 @@ mod tests {
         writer.join().unwrap().unwrap();
         let reply = second.join().unwrap();
         assert_eq!(reply["isError"], false, "the write recorded the guide before the waiting change looked: {reply}");
+    }
+
+    fn update_info() -> crate::update_notice::UpdateInfo {
+        crate::update_notice::UpdateInfo {
+            latest: "0.2.0".into(),
+            current: "0.1.1".into(),
+            html_url: "https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.2.0".into(),
+        }
+    }
+
+    fn notices(result: &Value) -> usize {
+        result["content"].as_array().unwrap().iter().filter(|b| b["text"].as_str().is_some_and(|t| t.contains("is available (this is"))).count()
+    }
+
+    #[test]
+    fn the_update_notice_text_names_both_versions_the_steps_and_the_page() {
+        let text = update_info().notice_text();
+        assert_eq!(
+            text,
+            "DesignLLMTool 0.2.0 is available (this is 0.1.1). To update: in the DesignLLMTool clone run \"git pull\" then \"./install.sh\" (macOS/Linux) or \"powershell -ExecutionPolicy Bypass -File .\\install.ps1\" (Windows), and restart the AI client. https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.2.0"
+        );
+    }
+
+    #[test]
+    fn a_known_newer_release_is_told_once_per_connection_on_the_first_successful_result() {
+        let slot = crate::update_notice::UpdateSlot::default();
+        let (_fake, s) = server_with(Fake::default(), Scope::Workspace);
+        let s = s.with_update_notice(slot.clone());
+        ready(&s);
+        let before = run_tool(&s, "workspace_list", json!({}));
+        assert_eq!(notices(&before), 0, "nothing is known yet: {before}");
+        assert!(before["structuredContent"].get("update_available").is_none());
+
+        slot.set(update_info()).unwrap();
+        let refused = run_tool(&s, "design_guide", json!({"topic":"no-such-topic"}));
+        assert_eq!(refused["isError"], true);
+        assert_eq!(notices(&refused), 0, "an error result does not carry the notice: {refused}");
+
+        let first = run_tool(&s, "workspace_list", json!({}));
+        assert_eq!(first["isError"], false);
+        assert_eq!(notices(&first), 1, "{first}");
+        assert_eq!(first["structuredContent"]["update_available"]["latest_version"], "0.2.0");
+        assert_eq!(first["structuredContent"]["update_available"]["current_version"], "0.1.1");
+        assert_eq!(first["content"][0]["text"], json!({"ok": true}).to_string(), "the result's own text block is unchanged");
+
+        let second = run_tool(&s, "workspace_list", json!({}));
+        assert_eq!(notices(&second), 0, "told once per connection: {second}");
+        assert!(second["structuredContent"].get("update_available").is_none());
+
+        // A new connection (a new server over the same slot) tells it again, once.
+        let (_fake, other) = server_with(Fake::default(), Scope::Workspace);
+        let other = other.with_update_notice(slot);
+        ready(&other);
+        assert_eq!(notices(&run_tool(&other, "workspace_list", json!({}))), 1);
+        assert_eq!(notices(&run_tool(&other, "workspace_list", json!({}))), 0);
+    }
+
+    #[test]
+    fn concurrent_calls_tell_the_update_once() {
+        let slot = crate::update_notice::UpdateSlot::default();
+        slot.set(update_info()).unwrap();
+        let (_fake, s) = server_with(Fake::default(), Scope::Workspace);
+        let s = Arc::new(s.with_update_notice(slot));
+        ready(&s);
+        let workers: Vec<_> = (0..8).map(|_| { let s = Arc::clone(&s); thread::spawn(move || notices(&run_tool(&s, "workspace_list", json!({})))) }).collect();
+        let told: usize = workers.into_iter().map(|w| w.join().unwrap()).sum();
+        assert_eq!(told, 1);
+    }
+
+    #[test]
+    fn a_server_without_an_update_slot_never_adds_a_notice() {
+        let (_fake, s) = server_with(Fake::default(), Scope::Workspace);
+        ready(&s);
+        let result = run_tool(&s, "workspace_list", json!({}));
+        assert_eq!(result["content"].as_array().unwrap().len(), 1);
     }
 }

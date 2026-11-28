@@ -7,11 +7,14 @@
 # download fails, or with --build, it builds from source (Rust toolchain 1.93.1 through rustup, or the cargo on PATH) into
 # target/package/DesignLLMTool-<version>-mcp-<os>-<arch>/. DESIGNLLM_RELEASE_URL replaces the download folder
 # (https://github.com/KIMY0UNGGON/DesignLLMTool/releases/download/v<version>). It checks that the executable starts and registers it as the
-# MCP server "designllm" with Claude Code, Codex CLI and AGY when they are installed. It never removes or changes an
-# existing registration: a client that already has a "designllm" server keeps it; to register this copy, change or remove
-# that entry where it is defined (user or project settings), then run the script again. After each registration it reads
-# the entry back and counts it only when its command is this copy's executable. For Gemini CLI and other clients (Claude
-# Desktop, Cursor, VS Code) it prints the configuration to paste.
+# MCP server "designllm" with Claude Code, Codex CLI and AGY when they are installed. An existing "designllm" server that
+# runs another package of this clone (release/DesignLLMTool-*-mcp-*/DesignLLMTool or
+# target/package/DesignLLMTool-*-mcp-*/DesignLLMTool, such as the previous version after "git pull") with the same arguments
+# is replaced by this copy (for Claude Code only in its user settings): that is how an update reaches the clients. Any other
+# existing registration is never removed or changed: to register this copy, change or remove that entry where it is
+# defined (user or project settings), then run the script again. After each registration it reads the entry back and
+# counts it only when its command is this copy's executable. For Gemini CLI and other clients (Claude Desktop, Cursor,
+# VS Code) it prints the configuration to paste.
 #
 # Options:
 #   --project DIR   Existing folder. The workspace is kept in DIR/.designllm and saved files go to DIR/artifacts. Without
@@ -47,7 +50,7 @@ while [ $# -gt 0 ]; do
         --background) BACKGROUND=1; shift ;;
         --build) FORCE_BUILD=1; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
-        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "unknown option: $1 (see --help)" ;;
     esac
 done
@@ -250,7 +253,56 @@ runs_this_copy() {
     [ "$rest" = "$EXE $ARGS_TEXT" ]
 }
 
-DONE=(); KEPT=(); FAILED=(); MANUAL=()
+# Whether $1 starts with the executable of a package of this clone, $ROOT/release/DesignLLMTool-*-mcp-*/DesignLLMTool or
+# $ROOT/target/package/DesignLLMTool-*-mcp-*/DesignLLMTool (the package folder one path component), followed by nothing or
+# a space. Sets OWN_EXE to that executable and OWN_REST to what follows the space.
+OWN_EXE=""
+OWN_REST=""
+own_package_prefix() {
+    local text="$1" base rest dir after
+    OWN_EXE=""; OWN_REST=""
+    for base in "$ROOT/release/" "$ROOT/target/package/"; do
+        case "$text" in "$base"*) ;; *) continue ;; esac
+        rest="${text#"$base"}"
+        dir="${rest%%/*}"
+        [ "$dir" != "$rest" ] || continue
+        case "$dir" in DesignLLMTool-*-mcp-*) ;; *) continue ;; esac
+        after="${rest#"$dir"/}"
+        case "$after" in
+            DesignLLMTool) OWN_EXE="$base$dir/DesignLLMTool"; return 0 ;;
+            "DesignLLMTool "*) OWN_EXE="$base$dir/DesignLLMTool"; OWN_REST="${after#DesignLLMTool }"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Whether REGISTRATION_TEXT runs a package of this clone (an older version after "git pull", or another build of it).
+# Sets OWN_EXE to its command and OWN_ARGS to its arguments as the client shows them (joined by spaces).
+OWN_ARGS=""
+runs_own_package() {
+    local text="$REGISTRATION_TEXT" command
+    OWN_ARGS=""
+    command="$(printf '%s\n' "$text" | sed -n 's/^[[:space:]]*[Cc]ommand:[[:space:]]*//p' | head -n 1 | sed 's/[[:space:]]*$//')"
+    if [ -n "$command" ]; then
+        command="${command#\"}"; command="${command%\"}"
+        own_package_prefix "$command" || return 1
+        # The whole command must be the executable.
+        [ -z "$OWN_REST" ] || return 1
+        OWN_ARGS="$(printf '%s\n' "$text" | sed -n 's/^[[:space:]]*[Aa]rgs:[ ]\{0,1\}//p' | head -n 1)"
+        return 0
+    fi
+    local rest
+    rest="$(printf '%s\n' "$text" | sed -En 's/^[^[:space:]]+[[:space:]]+(stdio|sse|http)[[:space:]]+(enabled|disabled)[[:space:]]+//p' | sed 's/[[:space:]]*$//')"
+    own_package_prefix "$rest" || return 1
+    OWN_ARGS="$OWN_REST"
+}
+
+# Whether REGISTRATION_TEXT (Claude Code's `mcp get`) is an entry of the user settings, the scope this script registers in.
+in_user_scope() {
+    printf '%s\n' "$REGISTRATION_TEXT" | grep -Eiq '^[[:space:]]*Scope:[[:space:]]*User([[:space:]]|$)'
+}
+
+DONE=(); UPDATED=(); KEPT=(); FAILED=(); MANUAL=()
 if [ "$CLIENT" != "print" ]; then
     if [ "$CLIENT" = "auto" ]; then TARGETS=(claude codex gemini agy); else TARGETS=("$CLIENT"); fi
     for name in "${TARGETS[@]}"; do
@@ -267,9 +319,10 @@ if [ "$CLIENT" != "print" ]; then
             continue
         fi
         case "$name" in
-            claude) ADD=(mcp add --scope user "$SERVER_NAME" -- "$EXE" "${SERVER_ARGS[@]}") ;;
-            *) ADD=(mcp add "$SERVER_NAME" -- "$EXE" "${SERVER_ARGS[@]}") ;;
+            claude) ADD=(mcp add --scope user "$SERVER_NAME" -- "$EXE" "${SERVER_ARGS[@]}"); REMOVE=(mcp remove --scope user "$SERVER_NAME") ;;
+            *) ADD=(mcp add "$SERVER_NAME" -- "$EXE" "${SERVER_ARGS[@]}"); REMOVE=(mcp remove "$SERVER_NAME") ;;
         esac
+        replace=0
         if [ "$DRY_RUN" = 0 ]; then
             registration_state "$name" "$cli"
             if [ "$STATE" = "failed" ]; then
@@ -279,10 +332,29 @@ if [ "$CLIENT" != "print" ]; then
             if [ "$STATE" = "present" ]; then
                 if runs_this_copy; then
                     echo "$name already has a '$SERVER_NAME' server that runs this copy; kept as it is."
-                else
-                    echo "$name already has a '$SERVER_NAME' server; kept as it is. To point it at this copy, change or remove that entry in the $name settings where it is defined, then run install.sh again."
+                    KEPT+=("$name"); continue
                 fi
-                KEPT+=("$name"); continue
+                if ! runs_own_package; then
+                    echo "$name already has a '$SERVER_NAME' server; kept as it is. To point it at this copy, change or remove that entry in the $name settings where it is defined, then run install.sh again."
+                    KEPT+=("$name"); continue
+                fi
+                # A package of this clone: replaced by this copy, unless that would change its arguments (they can name the
+                # project folder) or the entry is not in the settings this script registers in.
+                if [ "$OWN_ARGS" != "$ARGS_TEXT" ]; then
+                    echo "$name has a '$SERVER_NAME' server that runs $OWN_EXE with the arguments '$OWN_ARGS', not '$ARGS_TEXT'; kept as it is. To update it, run install.sh again with the options it was registered with (--background, --project)."
+                    KEPT+=("$name"); continue
+                fi
+                if [ "$name" = "claude" ] && ! in_user_scope; then
+                    echo "$name has a '$SERVER_NAME' server that runs $OWN_EXE outside its user settings; kept as it is. To point it at this copy, change or remove that entry where it is defined, then run install.sh again."
+                    KEPT+=("$name"); continue
+                fi
+                replace=1
+                echo "$name has a '$SERVER_NAME' server that runs $OWN_EXE; replacing it with this copy."
+                echo "> $(show_command "$cli" "${REMOVE[@]}")"
+                if ! "$cli" "${REMOVE[@]}"; then
+                    warn "$name did not remove its '$SERVER_NAME' server, so it still runs $OWN_EXE. Remove it by hand, then run install.sh again: $(show_command "$cli" "${REMOVE[@]}")"
+                    FAILED+=("$name"); continue
+                fi
             fi
         fi
         echo "> $(show_command "$cli" "${ADD[@]}")"
@@ -293,8 +365,13 @@ if [ "$CLIENT" != "print" ]; then
             registration_state "$name" "$cli"
             if [ "$STATE" = "present" ] && runs_this_copy; then added=1; fi
         fi
-        if [ "$added" = 1 ]; then
+        if [ "$added" = 1 ] && [ "$replace" = 1 ]; then
+            UPDATED+=("$name")
+        elif [ "$added" = 1 ]; then
             DONE+=("$name")
+        elif [ "$replace" = 1 ]; then
+            warn "$name removed its old '$SERVER_NAME' server but did not register this copy. Check its settings, or register it by hand: $(show_command "$cli" "${ADD[@]}")"
+            FAILED+=("$name")
         else
             warn "$name did not register '$SERVER_NAME' for this copy. Check its settings, or register it by hand: $(show_command "$cli" "${ADD[@]}")"
             FAILED+=("$name")
@@ -339,13 +416,14 @@ echo ""
 
 join() { local IFS=","; echo "$*" | sed 's/,/, /g'; }
 if [ "$DRY_RUN" = 1 ]; then
-    if [ ${#DONE[@]} -gt 0 ]; then echo "Dry run: would register '$SERVER_NAME' with: $(join "${DONE[@]}") (each one only if it has no '$SERVER_NAME' server yet)."; fi
+    if [ ${#DONE[@]} -gt 0 ]; then echo "Dry run: would register '$SERVER_NAME' with: $(join "${DONE[@]}") (each one only if it has no '$SERVER_NAME' server yet, or one that runs another package of this clone with the same arguments, which is removed first)."; fi
 else
     if [ ${#DONE[@]} -gt 0 ]; then echo "Registered '$SERVER_NAME' with: $(join "${DONE[@]}"). Restart the client, then ask it to call the design_guide tool to check the connection."; fi
+    if [ ${#UPDATED[@]} -gt 0 ]; then echo "Updated '$SERVER_NAME' to this copy in: $(join "${UPDATED[@]}"). Restart the client to use it."; fi
     if [ ${#KEPT[@]} -gt 0 ]; then echo "Kept the existing '$SERVER_NAME' server of: $(join "${KEPT[@]}")."; fi
 fi
 if [ ${#MANUAL[@]} -gt 0 ]; then echo "Add '$SERVER_NAME' by hand to: $(join "${MANUAL[@]}") (the mcpServers entry above)."; fi
-if [ "$DRY_RUN" = 0 ] && [ "$CLIENT" != "print" ] && [ ${#DONE[@]} -eq 0 ] && [ ${#KEPT[@]} -eq 0 ] && [ ${#FAILED[@]} -eq 0 ] && [ ${#MANUAL[@]} -eq 0 ]; then
+if [ "$DRY_RUN" = 0 ] && [ "$CLIENT" != "print" ] && [ ${#DONE[@]} -eq 0 ] && [ ${#UPDATED[@]} -eq 0 ] && [ ${#KEPT[@]} -eq 0 ] && [ ${#FAILED[@]} -eq 0 ] && [ ${#MANUAL[@]} -eq 0 ]; then
     echo "No client was registered. Install Claude Code, Codex CLI, Gemini CLI or AGY, or use the configuration above."
 fi
 if [ ${#FAILED[@]} -gt 0 ]; then

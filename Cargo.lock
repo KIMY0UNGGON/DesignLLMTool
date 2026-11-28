@@ -855,8 +855,10 @@ dependencies = [
  "designllm-web-preview",
  "libc",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
+ "ureq",
  "windows-sys 0.61.2",
 ]
 

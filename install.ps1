@@ -4,9 +4,12 @@
 
 .DESCRIPTION
     Uses release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe in this repository, checks that it starts, and registers
-    it as the MCP server "designllm" with Claude Code, Codex CLI and AGY when they are installed. It never removes or
-    changes an existing registration: a client that already has a "designllm" server keeps it; to register this copy,
-    change or remove that entry where it is defined (user or project settings), then run the script again. After each
+    it as the MCP server "designllm" with Claude Code, Codex CLI and AGY when they are installed. An existing "designllm"
+    server that runs another package of this clone (release\DesignLLMTool-*-mcp-*\DesignLLMTool.exe or
+    target\package\DesignLLMTool-*-mcp-*\DesignLLMTool.exe, such as the previous version after "git pull") with the same
+    arguments is replaced by this copy (for Claude Code only in its user settings): that is how an update reaches the
+    clients. Any other existing registration is never removed or changed: to register this copy, change or remove that
+    entry where it is defined (user or project settings), then run the script again. After each
     registration it reads the entry back and counts it only when its command is this copy's executable. For Gemini CLI
     and other clients (Claude Desktop, Cursor, VS Code) it prints the configuration to paste. A client behind a batch
     shim with a cmd.exe character in a path is not registered and is left to that configuration (for Codex CLI, a
@@ -200,17 +203,53 @@ function Test-RunsThisCopy($registration) {
     return $false
 }
 
+# Whether $text starts with the executable of a package of this clone, <root>\release\DesignLLMTool-*-mcp-*\DesignLLMTool.exe
+# or <root>\target\package\DesignLLMTool-*-mcp-*\DesignLLMTool.exe (the package folder one path component, the path compared
+# without regard to case), followed by nothing or a space. Returns the executable and what follows the space, or $null.
+function Get-OwnPackagePrefix([string]$text) {
+    foreach ($base in @("release", "target\package")) {
+        $pattern = '^(' + [regex]::Escape((Join-Path $root $base) + "\") + 'DesignLLMTool-[^\\/]*-mcp-[^\\/]*\\DesignLLMTool\.exe)(?: (.*))?$'
+        $match = [regex]::Match($text, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($match.Success) {
+            return [pscustomobject]@{ Exe = $match.Groups[1].Value; HasRest = $match.Groups[2].Success; Rest = $match.Groups[2].Value }
+        }
+    }
+    return $null
+}
+
+# Whether a registration runs a package of this clone (an older version after "git pull", or another build of it): returns
+# its executable and its arguments as the client shows them (joined by spaces), or $null.
+function Get-OwnPackageEntry($registration) {
+    if ($registration.State -ne "present") { return $null }
+    $commandLine = [regex]::Match($registration.Text, '(?im)^\s*command:\s*(.+?)\s*$')
+    $argsLine = [regex]::Match($registration.Text, '(?im)^\s*args:[ ]?([^\r\n]*)')
+    if ($commandLine.Success) {
+        $own = Get-OwnPackagePrefix $commandLine.Groups[1].Value.Trim().Trim('"')
+        # The whole command must be the executable.
+        if (-not $own -or $own.HasRest) { return $null }
+        $arguments = ""
+        if ($argsLine.Success) { $arguments = $argsLine.Groups[1].Value }
+        return [pscustomobject]@{ Exe = $own.Exe; Arguments = $arguments }
+    }
+    $row = [regex]::Match($registration.Text, '^\S+\s+(stdio|sse|http)\s+(enabled|disabled)\s+(.+?)\s*$')
+    if ($row.Success) {
+        $own = Get-OwnPackagePrefix $row.Groups[3].Value
+        if ($own) { return [pscustomobject]@{ Exe = $own.Exe; Arguments = $own.Rest } }
+    }
+    return $null
+}
+
 $registrations = [ordered]@{
-    claude = @{ Add = @("mcp", "add", "--scope", "user", $ServerName, "--", $exePath) + $serverArgs }
-    codex  = @{ Add = @("mcp", "add", $ServerName, "--", $exePath) + $serverArgs }
+    claude = @{ Add = @("mcp", "add", "--scope", "user", $ServerName, "--", $exePath) + $serverArgs; Remove = @("mcp", "remove", "--scope", "user", $ServerName) }
+    codex  = @{ Add = @("mcp", "add", $ServerName, "--", $exePath) + $serverArgs; Remove = @("mcp", "remove", $ServerName) }
     # Gemini CLI is not registered automatically: its `mcp add` rewrites the whole settings file (other servers' entries
     # included), replaces an existing key, and can report success when the file could not be written. The entry to add by
     # hand is printed below.
     gemini = $null
-    agy    = @{ Add = @("mcp", "add", $ServerName, "--", $exePath) + $serverArgs }
+    agy    = @{ Add = @("mcp", "add", $ServerName, "--", $exePath) + $serverArgs; Remove = @("mcp", "remove", $ServerName) }
 }
 
-$done = @(); $kept = @(); $failed = @(); $manual = @(); $codexToml = $false
+$done = @(); $updated = @(); $kept = @(); $failed = @(); $manual = @(); $codexToml = $false
 if ($Client -ne "print") {
     $targets = if ($Client -eq "auto") { $registrations.Keys } else { @($Client) }
     foreach ($name in $targets) {
@@ -232,6 +271,7 @@ if ($Client -ne "print") {
             $failed += $name
             continue
         }
+        $replace = $false
         if (-not $DryRun) {
             $current = Get-Registration $name $cli $ServerName
             if ($current.State -eq "failed") {
@@ -240,15 +280,39 @@ if ($Client -ne "print") {
                 continue
             }
             if ($current.State -eq "present") {
-                # An existing registration is never removed or changed here: it may hold settings this script cannot restore,
-                # and it may come from a project's settings rather than the user's.
+                # An existing registration is removed only when it runs another package of this clone with the same
+                # arguments, in the settings this script registers in: any other entry may hold settings this script
+                # cannot restore, and it may come from a project's settings rather than the user's.
                 if (Test-RunsThisCopy $current) {
                     Write-Host "$name already has a '$ServerName' server that runs this copy; kept as it is."
-                } else {
-                    Write-Host "$name already has a '$ServerName' server; kept as it is. To point it at this copy, change or remove that entry in the $name settings where it is defined, then run install.ps1 again."
+                    $kept += $name
+                    continue
                 }
-                $kept += $name
-                continue
+                $own = Get-OwnPackageEntry $current
+                if (-not $own) {
+                    Write-Host "$name already has a '$ServerName' server; kept as it is. To point it at this copy, change or remove that entry in the $name settings where it is defined, then run install.ps1 again."
+                    $kept += $name
+                    continue
+                }
+                # The arguments can name the project folder: an entry is not given other ones.
+                $arguments = $serverArgs -join ' '
+                if (-not [string]::Equals($own.Arguments, $arguments, [System.StringComparison]::Ordinal)) {
+                    Write-Host "$name has a '$ServerName' server that runs $($own.Exe) with the arguments '$($own.Arguments)', not '$arguments'; kept as it is. To update it, run install.ps1 again with the options it was registered with (-Background, -Project)."
+                    $kept += $name
+                    continue
+                }
+                if ($name -eq "claude" -and $current.Text -notmatch '(?im)^\s*Scope:\s*User(\s|$)') {
+                    Write-Host "$name has a '$ServerName' server that runs $($own.Exe) outside its user settings; kept as it is. To point it at this copy, change or remove that entry where it is defined, then run install.ps1 again."
+                    $kept += $name
+                    continue
+                }
+                $replace = $true
+                Write-Host "$name has a '$ServerName' server that runs $($own.Exe); replacing it with this copy."
+                if (-not (Invoke-Cli $cli $steps.Remove)) {
+                    Write-Warning "$name did not remove its '$ServerName' server, so it still runs $($own.Exe). Remove it by hand, then run install.ps1 again: $(Format-Command $cli $steps.Remove)"
+                    $failed += $name
+                    continue
+                }
             }
         }
         $added = Invoke-Cli $cli $steps.Add
@@ -256,12 +320,15 @@ if ($Client -ne "print") {
         # read it back and check that it runs this copy.
         if ($added -and -not $DryRun) { $added = Test-RunsThisCopy (Get-Registration $name $cli $ServerName) }
         if ($added) {
-            $done += $name
+            if ($replace) { $updated += $name } else { $done += $name }
             # The clients print arguments joined by spaces, so a project path with a space cannot be told from two
             # arguments there.
             if (-not $DryRun -and ($serverArgs | Where-Object { $_ -match '\s' })) {
                 Write-Warning "$name shows the arguments joined by spaces, so this script could not check that the project path stayed one argument. If the server does not start, register it by hand with the JSON configuration printed below."
             }
+        } elseif ($replace) {
+            Write-Warning "$name removed its old '$ServerName' server but did not register this copy. Check its settings, or register it by hand: $(Format-Command $cli $steps.Add)"
+            $failed += $name
         } else {
             Write-Warning "$name did not register '$ServerName' for this copy. Check its settings, or register it by hand: $(Format-Command $cli $steps.Add)"
             $failed += $name
@@ -290,18 +357,19 @@ $vscodeEntry = [ordered]@{ type = "stdio"; command = $exePath; args = $serverArg
 Write-Host (([ordered]@{ servers = [ordered]@{ $ServerName = $vscodeEntry } }) | ConvertTo-Json -Depth 5)
 Write-Host ""
 if ($DryRun) {
-    if ($done.Count -gt 0) { Write-Host ("Dry run: would register '{0}' with: {1} (each one only if it has no '{0}' server yet)." -f $ServerName, ($done -join ", ")) }
+    if ($done.Count -gt 0) { Write-Host ("Dry run: would register '{0}' with: {1} (each one only if it has no '{0}' server yet, or one that runs another package of this clone with the same arguments, which is removed first)." -f $ServerName, ($done -join ", ")) }
 } else {
     if ($done.Count -gt 0) {
         Write-Host ("Registered '{0}' with: {1}. Restart the client, then ask it to call the design_guide tool to check the connection." -f $ServerName, ($done -join ", "))
     }
+    if ($updated.Count -gt 0) { Write-Host ("Updated '{0}' to this copy in: {1}. Restart the client to use it." -f $ServerName, ($updated -join ", ")) }
     if ($kept.Count -gt 0) { Write-Host ("Kept the existing '{0}' server of: {1}." -f $ServerName, ($kept -join ", ")) }
 }
 if ($manual.Count -gt 0) {
     Write-Host ("Add '{0}' by hand to: {1} (the mcpServers entry above)." -f $ServerName, ($manual -join ", "))
 }
 if (-not $DryRun) {
-    if ($Client -ne "print" -and $done.Count -eq 0 -and $kept.Count -eq 0 -and $failed.Count -eq 0 -and $manual.Count -eq 0) {
+    if ($Client -ne "print" -and $done.Count -eq 0 -and $updated.Count -eq 0 -and $kept.Count -eq 0 -and $failed.Count -eq 0 -and $manual.Count -eq 0) {
         Write-Host "No client was registered. Install Claude Code, Codex CLI, Gemini CLI or AGY, or use the configuration above."
     }
 }
