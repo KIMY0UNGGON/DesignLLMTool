@@ -31,6 +31,12 @@ pub fn lint_label(code: &str) -> Option<&'static str> {
         "LAYOUT_ALL_CENTERED" => "글이 모두 가운데 정렬",
         "TEXT_SIZE_SPREAD" => "글 크기 종류가 많음",
         "SLIDE_PLAIN_CLOSING" => "마지막 쪽이 인사말뿐",
+        "SHADOW_HARD_OFFSET" => "흐림 없는 블록 그림자",
+        "SHADOW_GLOW" => "색 후광 그림자",
+        "CARD_GHOST" => "테두리와 넓은 그림자를 함께 씀",
+        "CARD_NESTED" => "카드 안의 카드",
+        "TEXT_EYEBROW" => "제목 위 꼬리표",
+        "TEXT_SECTION_NUMBER" => "장식용 번호(01·02·03)",
         _ => return None,
     })
 }
@@ -49,6 +55,7 @@ mod tests {
             "TOUCH_TARGET", "CONTRAST", "CLIPPED", "CHILD_OUTSIDE_PARENT", "OUT_OF_PAGE", "TEMPLATE_FIT", "TABLE_OVERFLOW", "ICON_EMOJI",
             "TEXT_PLACEHOLDER", "TEXT_VAGUE_WORDING", "FILL_STOCK_GRADIENT", "SHADOW_HEAVY", "LAYOUT_REPEATED_CARDS", "LAYOUT_ALL_CENTERED",
             "TEXT_SIZE_SPREAD", "SLIDE_PLAIN_CLOSING", "BACKGROUND_CREAM", "TEXT_EXTRA_LABEL", "TITLE_LINE_BREAKS", "COLOR_STOCK_DEFAULT", "ACCENT_BAR",
+            "SHADOW_HARD_OFFSET", "SHADOW_GLOW", "CARD_GHOST", "CARD_NESTED", "TEXT_EYEBROW", "TEXT_SECTION_NUMBER",
         ] {
             assert_eq!(lint_label(code), rules[code]["label"].as_str(), "{code}");
         }
