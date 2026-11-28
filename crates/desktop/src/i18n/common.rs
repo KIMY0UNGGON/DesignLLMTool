@@ -36,6 +36,12 @@ pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("글이 모두 가운데 정렬", "All text centered"),
     ("글 크기 종류가 많음", "Too many text sizes"),
     ("마지막 쪽이 인사말뿐", "Closing slide is only a greeting"),
+    ("흐림 없는 블록 그림자", "Hard offset shadow"),
+    ("색 후광 그림자", "Colored glow shadow"),
+    ("테두리와 넓은 그림자를 함께 씀", "Outline under a wide shadow"),
+    ("카드 안의 카드", "Card inside a card"),
+    ("제목 위 꼬리표", "Eyebrow above heading"),
+    ("장식용 번호(01·02·03)", "Decorative numbers (01, 02, 03)"),
     ("1 줄이기", "Decrease by 1"),
     ("1 늘리기", "Increase by 1"),
 ];

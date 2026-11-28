@@ -54,8 +54,37 @@ const NAVY_SATURATION_MIN: f64 = 0.25;
 const NAVY_CHROMA_MIN: f64 = 0.05;
 /// A navy fill counts from this share of its page: a dot or a thin rule is not a navy surface.
 const NAVY_SHARE: f64 = 0.01;
-/// A coloured bar along the top or left edge of a box (the blog-callout stripe of generated designs).
+/// A coloured bar along one edge of a box (the blog-callout stripe of generated designs).
 pub const ACCENT_BAR: &str = "ACCENT_BAR";
+/// A shadow with no blur cast at an offset: the hard block shadow of a neobrutalist costume, worn without that world.
+pub const SHADOW_HARD_OFFSET: &str = "SHADOW_HARD_OFFSET";
+/// A coloured shadow with no offset: a glow around the shape, decoration rather than depth.
+pub const SHADOW_GLOW: &str = "SHADOW_GLOW";
+/// A box with an outline and a wide soft shadow at once: two elevation cues on one card (the ghost card).
+pub const CARD_GHOST: &str = "CARD_GHOST";
+/// A shadowed card drawn inside another shadowed card.
+pub const CARD_NESTED: &str = "CARD_NESTED";
+/// A short upper-case or letter-spaced label right above a heading: an eyebrow (kicker) instead of a heading that speaks for itself.
+pub const TEXT_EYEBROW: &str = "TEXT_EYEBROW";
+/// Zero-padded section numbers (01, 02, 03) used as decoration.
+pub const TEXT_SECTION_NUMBER: &str = "TEXT_SECTION_NUMBER";
+
+/// A hard shadow is offset at least this far (EMU, 2 CSS px) and at least this opaque.
+const HARD_OFFSET_MIN: i64 = 2 * EMU_PER_CSS_PX;
+const HARD_OPACITY: f64 = 0.25;
+/// A glow blurs at least this much (EMU, 4 CSS px), is at least this opaque, and has at least `ACCENT_CHROMA_MIN` chroma.
+const GLOW_BLUR_MIN: i64 = 4 * EMU_PER_CSS_PX;
+const GLOW_OPACITY: f64 = 0.2;
+/// A ghost card: an outline of at most this width (EMU, 2 CSS px) under a shadow blurred at least `GHOST_BLUR` (16 CSS px).
+const GHOST_STROKE_MAX: i64 = 2 * EMU_PER_CSS_PX;
+const GHOST_BLUR: i64 = 16 * EMU_PER_CSS_PX;
+/// A shadow counts as a card's from this opacity.
+const CARD_SHADOW_OPACITY: f64 = 0.02;
+/// An eyebrow: at most this many words and characters, at most 60 % of the heading's size, at most one heading font size above it.
+const EYEBROW_WORDS: usize = 4;
+const EYEBROW_CHARS: usize = 32;
+/// Section numbers on one page, from this count (01, 02 and 03 all present).
+const SECTION_NUMBERS: u32 = 3;
 /// An accent bar is at most this thick (EMU, 8 CSS px) and at least this many times as long as it is thick.
 const ACCENT_BAR_MAX: i64 = 8 * EMU_PER_CSS_PX;
 const ACCENT_BAR_RATIO: i64 = 4;
@@ -155,7 +184,7 @@ fn flatten(nodes: &[Node]) -> Vec<&Node> {
 fn node_warnings(node: &Node, page: &Page, frames: &BTreeMap<String, Rect>, above: &[&Node]) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     if live_text(node) && emoji_as_icon(&node.text) {
-        out.push(warning(ICON_EMOJI, &node.id, format!("text {} starts with an emoji or is only emoji, so it reads as an icon", node.id)));
+        out.push(warning(ICON_EMOJI, &node.id, format!("text {} starts with an emoji or a symbol glyph (a check, star or arrow before its text), or is only emoji, so it reads as an icon", node.id)));
     }
     if live_text(node) && placeholder(&node.text) {
         out.push(warning(TEXT_PLACEHOLDER, &node.id, format!("text {} is placeholder copy", node.id)));
@@ -176,6 +205,26 @@ fn node_warnings(node: &Node, page: &Page, frames: &BTreeMap<String, Rect>, abov
     }
     if matches!(node.kind, NodeKind::Rectangle | NodeKind::Ellipse) && heavy_shadow(&node.style) {
         out.push(warning(SHADOW_HEAVY, &node.id, format!("the shadow on {} blurs at least 32 px and is at least 0.25 opaque", node.id)));
+    }
+    if matches!(node.kind, NodeKind::Rectangle | NodeKind::Ellipse | NodeKind::Image) {
+        if node.style.shadows.iter().any(|shadow| hard_offset_shadow(shadow, &node.style)) {
+            out.push(warning(SHADOW_HARD_OFFSET, &node.id, format!(
+                "the shadow on {} has no blur and is cast at an offset, the hard block shadow of a neobrutalist costume; give it a soft blur or remove it",
+                node.id
+            )));
+        }
+        if node.style.shadows.iter().any(|shadow| glow_shadow(shadow, &node.style)) {
+            out.push(warning(SHADOW_GLOW, &node.id, format!(
+                "the shadow on {} is a coloured glow with no offset, decoration rather than depth; use a neutral shadow with an offset, or none",
+                node.id
+            )));
+        }
+    }
+    if node.kind == NodeKind::Rectangle && ghost_card(&node.style) {
+        out.push(warning(CARD_GHOST, &node.id, format!(
+            "{} has both an outline and a wide soft shadow; show its elevation once, with the outline or with the shadow",
+            node.id
+        )));
     }
     if let Some(message) = stock_color_message(node, page, frames) {
         out.push(warning(COLOR_STOCK_DEFAULT, &node.id, message));
@@ -235,6 +284,7 @@ fn stock_color_message(node: &Node, page: &Page, frames: &BTreeMap<String, Rect>
 fn page_warnings(nodes: &[&Node], frames: &BTreeMap<String, Rect>) -> Vec<Diagnostic> {
     let texts: Vec<&Node> = nodes.iter().copied().filter(|node| live_text(node)).collect();
     let mut out = Vec::new();
+    let mut labelled: BTreeSet<&str> = BTreeSet::new();
 
     // Use a uniquely largest short text as the title; compare measured frames and font sizes for labels.
     let heading = texts.iter().copied().find(|node| node.kind == NodeKind::Text && node.style.font_size > 0
@@ -246,7 +296,31 @@ fn page_warnings(nodes: &[&Node], frames: &BTreeMap<String, Rect>) -> Vec<Diagno
         }
         if let Some(label) = texts.iter().copied().find(|node| extra_label(node, heading, frames)) {
             out.push(warning(TEXT_EXTRA_LABEL, &label.id, "short auxiliary label is close to the title".into()));
+            labelled.insert(label.id.as_str());
         }
+    }
+
+    for (label, heading) in eyebrows(&texts, frames) {
+        if labelled.insert(label.id.as_str()) {
+            out.push(warning(TEXT_EYEBROW, &label.id, format!(
+                "{} is a short upper-case or letter-spaced label right above the heading {}, an eyebrow of generated designs; delete it and let the heading speak",
+                label.id, heading.id
+            )));
+        }
+    }
+
+    if let Some(first) = section_numbers(&texts) {
+        out.push(warning(TEXT_SECTION_NUMBER, &first.id, format!(
+            "{} starts a run of section numbers (01, 02, 03) used as decoration; remove them unless the reader needs the order",
+            first.id
+        )));
+    }
+
+    for (inner, outer) in nested_cards(nodes, frames) {
+        out.push(warning(CARD_NESTED, &inner.id, format!(
+            "{} is a shadowed card inside the shadowed card {}; keep one card and group the inner content with spacing or a hairline",
+            inner.id, outer.id
+        )));
     }
 
     // A title must be short and uniquely larger than the other text on the page.
@@ -291,7 +365,7 @@ fn page_warnings(nodes: &[&Node], frames: &BTreeMap<String, Rect>) -> Vec<Diagno
     out
 }
 
-/// ACCENT_BAR: a thin coloured rectangle (or a thick line) lying along the top or left edge of a larger filled or outlined
+/// ACCENT_BAR: a thin coloured rectangle (or a thick line) lying along one edge (top, bottom, left or right) of a larger filled or outlined
 /// rectangle, inside it or touching it from outside, and covering at least half of that edge: the coloured stripe of a
 /// blog callout. Each bar is reported once, against the first box it marks.
 fn accent_bars<'a>(nodes: &[&'a Node], frames: &BTreeMap<String, Rect>) -> Vec<(&'a Node, &'a Node, &'static str)> {
@@ -367,15 +441,27 @@ fn accent_bars<'a>(nodes: &[&'a Node], frames: &BTreeMap<String, Rect>) -> Vec<(
             // The painted band reaches the edge: it lies on it, just inside it or just outside it, or straddles it.
             let touches = |start: i64, size: i64, edge: i64| start - ACCENT_BAR_SLACK <= edge && edge <= start + size + ACCENT_BAR_SLACK;
             if horizontal {
-                // Along the top edge.
-                let on_top = touches(b.y, b.height, c.y);
+                // Along the top or the bottom edge.
                 let spans = b.x >= c.x - ACCENT_BAR_SLACK && b.x + b.width <= c.x + c.width + ACCENT_BAR_SLACK && b.width * 2 >= c.width;
-                (on_top && spans && c.height > thickness * 3).then_some((card, "top"))
+                let edge = if touches(b.y, b.height, c.y) {
+                    Some("top")
+                } else if touches(b.y, b.height, c.y + c.height) {
+                    Some("bottom")
+                } else {
+                    None
+                };
+                edge.filter(|_| spans && c.height > thickness * 3).map(|edge| (card, edge))
             } else {
-                // Along the left edge.
-                let on_left = touches(b.x, b.width, c.x);
+                // Along the left or the right edge.
                 let spans = b.y >= c.y - ACCENT_BAR_SLACK && b.y + b.height <= c.y + c.height + ACCENT_BAR_SLACK && b.height * 2 >= c.height;
-                (on_left && spans && c.width > thickness * 3).then_some((card, "left"))
+                let edge = if touches(b.x, b.width, c.x) {
+                    Some("left")
+                } else if touches(b.x, b.width, c.x + c.width) {
+                    Some("right")
+                } else {
+                    None
+                };
+                edge.filter(|_| spans && c.width > thickness * 3).map(|edge| (card, edge))
             }
         });
         if let Some((card, edge)) = marked {
@@ -413,7 +499,7 @@ fn is_body(text: &str) -> bool {
     text.lines().filter(|line| !line.trim().is_empty()).count() >= BODY_LINES || text.chars().count() >= BODY_CHARS
 }
 
-/// Whether a text node starts with an emoji, or is made of emoji and spaces only: an emoji in place of an icon.
+/// Whether a text node starts with an emoji or a symbol glyph used as a bullet, or is made of emoji and spaces only: an emoji in place of an icon.
 fn emoji_as_icon(text: &str) -> bool {
     let mut chars = text.trim_start().chars();
     let Some(first) = chars.next() else { return false };
@@ -431,7 +517,11 @@ fn emoji_as_icon(text: &str) -> bool {
         | 0x26B0..=0x26B1 | 0x26C8 | 0x26CF | 0x26D1 | 0x26D3 | 0x26E9 | 0x26F0..=0x26F1 | 0x26F4 | 0x26F7..=0x26F9
         | 0x2702 | 0x2708..=0x2709 | 0x270C..=0x270D | 0x270F | 0x2712 | 0x2714 | 0x2716 | 0x271D | 0x2721 | 0x2733..=0x2734
         | 0x2744 | 0x2747 | 0x2763..=0x2764 | 0x27A1 | 0x2934..=0x2935 | 0x2B05..=0x2B07 | 0x1F5A5 | 0x1F6E0 | 0x1F5D3);
-    flag || keycap || emoji_variant || (is_emoji(first) && second != Some('\u{FE0E}'))
+    // A check, cross, star, sparkle or arrow glyph before a space and more text: a list bullet drawn as a symbol in place of an icon.
+    let glyph = matches!(u32::from(first), 0x2192 | 0x2605..=0x2606 | 0x25B8 | 0x2713..=0x2714 | 0x2717..=0x2718 | 0x2726..=0x2727 | 0x2756 | 0x279C | 0x27A4)
+        && second.is_some_and(char::is_whitespace)
+        && !text.trim_start().chars().skip(2).collect::<String>().trim().is_empty();
+    flag || keycap || emoji_variant || glyph || (is_emoji(first) && second != Some('\u{FE0E}'))
 }
 
 /// Pictographs that show as emoji by default, in the common Unicode ranges.
@@ -611,6 +701,106 @@ fn heavy_shadow(style: &Style) -> bool {
     style.shadows.iter().any(|shadow| shadow.blur >= HEAVY_BLUR && shadow_opacity(shadow, style).is_some_and(|opacity| opacity >= HEAVY_OPACITY))
 }
 
+/// SHADOW_HARD_OFFSET: no blur, cast at least `HARD_OFFSET_MIN` away, at least `HARD_OPACITY` opaque.
+fn hard_offset_shadow(shadow: &Shadow, style: &Style) -> bool {
+    let offset = i128::from(shadow.x) * i128::from(shadow.x) + i128::from(shadow.y) * i128::from(shadow.y);
+    shadow.blur == 0
+        && offset >= i128::from(HARD_OFFSET_MIN) * i128::from(HARD_OFFSET_MIN)
+        && shadow_opacity(shadow, style).is_some_and(|opacity| opacity >= HARD_OPACITY)
+}
+
+/// SHADOW_GLOW: no offset, a blur of at least `GLOW_BLUR_MIN`, a clearly chromatic colour at least `GLOW_OPACITY` opaque.
+fn glow_shadow(shadow: &Shadow, style: &Style) -> bool {
+    shadow.x == 0
+        && shadow.y == 0
+        && shadow.blur >= GLOW_BLUR_MIN
+        && hue_and_chroma(&shadow.color).is_some_and(|(_, chroma)| chroma >= ACCENT_CHROMA_MIN)
+        && shadow_opacity(shadow, style).is_some_and(|opacity| opacity >= GLOW_OPACITY)
+}
+
+/// A visible shadow of a card (at least `CARD_SHADOW_OPACITY` opaque).
+fn card_shadow(style: &Style) -> bool {
+    style.shadows.iter().any(|shadow| shadow_opacity(shadow, style).is_some_and(|opacity| opacity >= CARD_SHADOW_OPACITY))
+}
+
+/// CARD_GHOST: a visible solid outline of at most `GHOST_STROKE_MAX` under a visible shadow blurred at least `GHOST_BLUR`.
+fn ghost_card(style: &Style) -> bool {
+    let solid = style.stroke_dash.as_ref().is_none_or(|dash| *dash == crate::StrokeDash::Solid);
+    let outlined = style.stroke_width > 0 && style.stroke_width <= GHOST_STROKE_MAX && solid && visible_color(&style.stroke, style);
+    outlined
+        && style.shadows.iter().any(|shadow| {
+            shadow.blur >= GHOST_BLUR && shadow_opacity(shadow, style).is_some_and(|opacity| opacity >= CARD_SHADOW_OPACITY)
+        })
+}
+
+/// CARD_NESTED: each shadowed, filled rectangle drawn inside a larger shadowed, filled rectangle drawn before it, with the outer card.
+fn nested_cards<'a>(nodes: &[&'a Node], frames: &BTreeMap<String, Rect>) -> Vec<(&'a Node, &'a Node)> {
+    let cards: Vec<(usize, &'a Node, Rect)> = nodes
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, node)| node.kind == NodeKind::Rectangle && visible_color(&node.style.fill, &node.style) && card_shadow(&node.style))
+        .filter_map(|(index, node)| frames.get(&node.id).filter(|frame| frame.width > 0 && frame.height > 0).map(|frame| (index, node, *frame)))
+        .collect();
+    let mut out = Vec::new();
+    for &(inner_index, inner, i) in &cards {
+        let outer = cards.iter().find(|&&(outer_index, _, o)| {
+            outer_index < inner_index
+                && i.x >= o.x && i.y >= o.y && i.x + i.width <= o.x + o.width && i.y + i.height <= o.y + o.height
+                && i128::from(i.width) * i128::from(i.height) < i128::from(o.width) * i128::from(o.height)
+        });
+        if let Some(&(_, outer, _)) = outer {
+            out.push((inner, outer));
+        }
+    }
+    out
+}
+
+/// TEXT_EYEBROW: each short text label styled as an eyebrow (upper case with at least two letters and no lower case, or
+/// positive letter spacing), at most 60 % of a heading's size, right above that heading (overlapping it across, at most one
+/// heading font size above it), with that heading. A heading is a text node that is not a body paragraph.
+fn eyebrows<'a>(texts: &[&'a Node], frames: &BTreeMap<String, Rect>) -> Vec<(&'a Node, &'a Node)> {
+    let styled = |node: &Node| {
+        let letters = node.text.chars().filter(|c| c.is_alphabetic()).count();
+        let upper = node.text.chars().filter(|c| c.is_ascii_uppercase()).count() >= 2 && !node.text.chars().any(|c| c.is_lowercase());
+        letters >= 2 && (upper || node.style.letter_spacing.is_some_and(|spacing| spacing > 0))
+    };
+    let mut out = Vec::new();
+    for label in texts.iter().copied().filter(|node| node.kind == NodeKind::Text && node.style.font_size > 0) {
+        let text = label.text.trim();
+        if text.contains('\n') || text.chars().count() > EYEBROW_CHARS || text.split_whitespace().count() > EYEBROW_WORDS || !styled(label) {
+            continue;
+        }
+        let Some(a) = frames.get(&label.id).filter(|frame| frame.width > 0 && frame.height > 0) else { continue };
+        let heading = texts.iter().copied().find(|heading| {
+            if std::ptr::eq(*heading, label) || heading.kind != NodeKind::Text || is_body(&heading.text)
+                || i128::from(label.style.font_size) * 5 > i128::from(heading.style.font_size) * 3
+            {
+                return false;
+            }
+            let Some(b) = frames.get(&heading.id).filter(|frame| frame.width > 0 && frame.height > 0) else { return false };
+            let across = a.x < b.x + b.width && b.x < a.x + a.width;
+            let gap = i128::from(b.y) - (i128::from(a.y) + i128::from(a.height));
+            across && gap >= 0 && gap <= i128::from(heading.style.font_size)
+        });
+        if let Some(heading) = heading {
+            out.push((label, heading));
+        }
+    }
+    out
+}
+
+/// TEXT_SECTION_NUMBER: the first of the page's zero-padded section numbers (`01`, `02.`, `03)`) when 01, 02 and 03 are all there.
+fn section_numbers<'a>(texts: &[&'a Node]) -> Option<&'a Node> {
+    let number = |node: &Node| -> Option<u32> {
+        let text = node.text.trim().trim_end_matches(['.', ')']);
+        let digits = text.strip_prefix('0').filter(|rest| rest.len() == 1)?;
+        digits.parse::<u32>().ok().filter(|n| *n >= 1)
+    };
+    let found: BTreeMap<u32, &Node> = texts.iter().copied().filter_map(|node| number(node).map(|n| (n, node))).rev().collect();
+    (1..=SECTION_NUMBERS).all(|n| found.contains_key(&n)).then(|| found[&1])
+}
+
 /// The first card of a row of `CARD_ROW` or more identical shadowed rectangles: the same size and corner radius (12 to 24 px),
 /// the same top edge, and non-overlapping positions.
 fn card_row<'a>(nodes: &[&'a Node], frames: &BTreeMap<String, Rect>) -> Option<&'a Node> {
@@ -687,7 +877,7 @@ mod tests {
     }
 
     fn shadowed(id: &str, blur_px: i64, color: &str) -> Node {
-        node(id, NodeKind::Rectangle, "", Style { shadows: vec![Shadow { x: 0, y: 0, blur: px(blur_px), spread: 0, color: color.into() }], ..Style::default() })
+        node(id, NodeKind::Rectangle, "", Style { stroke_width: 0, shadows: vec![Shadow { x: 0, y: 0, blur: px(blur_px), spread: 0, color: color.into() }], ..Style::default() })
     }
 
     /// One 1920 x 1080 px page with the given nodes.
@@ -1331,5 +1521,100 @@ mod tests {
         // A stripe along the straight part of a rounded cover's top edge is hidden.
         let rounded = node("cover", NodeKind::Rectangle, "", Style { fill: "#FFFFFF".into(), corner_radius: Some(px(16)), ..Style::default() });
         assert_eq!(found(vec![card(), bar(), rounded], vec![("card", rect(120, 100, 240, 240)), ("bar", rect(120, 100, 240, 4)), ("cover", rect(100, 100, 280, 260))]), 0, "under the straight part of a rounded cover");
+        // The bottom and right edges count too.
+        assert_eq!(found(vec![card(), bar()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(100, 336, 400, 4))]), 1, "bottom stripe");
+        assert_eq!(found(vec![card(), bar()], vec![("card", rect(100, 100, 400, 240)), ("bar", rect(496, 100, 4, 240))]), 1, "right stripe");
+        let message = design_quality_warnings(&pages(vec![card(), bar()]), &BTreeMap::from([("card".into(), rect(100, 100, 400, 240)), ("bar".into(), rect(496, 100, 4, 240))]));
+        assert!(message.iter().any(|d| d.code == ACCENT_BAR && d.message.contains("right edge")), "{message:?}");
+    }
+
+    fn with_shadow(id: &str, x: i64, y: i64, blur: i64, color: &str) -> Node {
+        node(id, NodeKind::Rectangle, "", Style { fill: "#FFFFFF".into(), stroke_width: 0, shadows: vec![Shadow { x: px(x), y: px(y), blur: px(blur), spread: 0, color: color.into() }], ..Style::default() })
+    }
+
+    fn count(nodes: Vec<Node>, frames: Vec<(&str, Rect)>, code: &str) -> usize {
+        let frames: BTreeMap<String, Rect> = frames.into_iter().map(|(id, r)| (id.to_owned(), r)).collect();
+        codes(&pages(nodes), &frames).iter().filter(|found| *found == code).count()
+    }
+
+    #[test]
+    fn a_hard_offset_block_shadow_and_a_coloured_glow_are_costume_and_a_soft_offset_shadow_is_not() {
+        let at = || vec![("card", rect(100, 100, 300, 200))];
+        assert_eq!(count(vec![with_shadow("card", 4, 4, 0, "#1C1C1C")], at(), SHADOW_HARD_OFFSET), 1, "zero blur at 4 px");
+        assert_eq!(count(vec![with_shadow("card", 0, 6, 0, "#1C1C1CFF")], at(), SHADOW_HARD_OFFSET), 1, "straight down");
+        assert_eq!(count(vec![with_shadow("card", 1, 1, 0, "#1C1C1C")], at(), SHADOW_HARD_OFFSET), 0, "a 1 px hairline offset");
+        assert_eq!(count(vec![with_shadow("card", 4, 4, 0, "#1C1C1C20")], at(), SHADOW_HARD_OFFSET), 0, "too faint");
+        assert_eq!(count(vec![with_shadow("card", 0, 4, 12, "#1C1C1C33")], at(), SHADOW_HARD_OFFSET), 0, "a soft drop shadow");
+        assert_eq!(count(vec![with_shadow("card", 0, 0, 24, "#B4532A80")], at(), SHADOW_GLOW), 1, "a coloured halo");
+        assert_eq!(count(vec![with_shadow("card", 0, 0, 24, "#1C1C1C40")], at(), SHADOW_GLOW), 0, "a grey halo has no colour");
+        assert_eq!(count(vec![with_shadow("card", 0, 4, 24, "#B4532A80")], at(), SHADOW_GLOW), 0, "a coloured shadow with an offset");
+        assert_eq!(count(vec![with_shadow("card", 0, 0, 24, "#B4532A10")], at(), SHADOW_GLOW), 0, "too faint");
+    }
+
+    #[test]
+    fn an_outline_under_a_wide_soft_shadow_is_a_ghost_card() {
+        let outlined = |stroke_px: i64, blur: i64| {
+            let mut card = with_shadow("card", 0, 8, blur, "#1C1C1C1A");
+            card.style.stroke = "#E5E5E5".into();
+            card.style.stroke_width = px(stroke_px);
+            card
+        };
+        let at = || vec![("card", rect(100, 100, 300, 200))];
+        assert_eq!(count(vec![outlined(1, 24)], at(), CARD_GHOST), 1, "1 px border under a 24 px shadow");
+        assert_eq!(count(vec![outlined(1, 8)], at(), CARD_GHOST), 0, "a tight shadow");
+        assert_eq!(count(vec![outlined(4, 24)], at(), CARD_GHOST), 0, "a heavy frame is not a hairline");
+        assert_eq!(count(vec![with_shadow("card", 0, 8, 24, "#1C1C1C1A")], at(), CARD_GHOST), 0, "shadow only");
+    }
+
+    #[test]
+    fn a_shadowed_card_inside_a_shadowed_card_is_nested() {
+        let card = |id: &str| with_shadow(id, 0, 4, 12, "#1C1C1C26");
+        assert_eq!(count(vec![card("outer"), card("inner")], vec![("outer", rect(100, 100, 600, 400)), ("inner", rect(140, 140, 200, 120))], CARD_NESTED), 1);
+        assert_eq!(count(vec![card("outer"), card("inner")], vec![("outer", rect(100, 100, 600, 400)), ("inner", rect(800, 140, 200, 120))], CARD_NESTED), 0, "side by side");
+        let flat = node("inner", NodeKind::Rectangle, "", Style { fill: "#F2F2F2".into(), ..Style::default() });
+        assert_eq!(count(vec![card("outer"), flat], vec![("outer", rect(100, 100, 600, 400)), ("inner", rect(140, 140, 200, 120))], CARD_NESTED), 0, "a flat tint inside a card");
+        assert_eq!(count(vec![card("inner"), card("outer")], vec![("outer", rect(100, 100, 600, 400)), ("inner", rect(140, 140, 200, 120))], CARD_NESTED), 0, "drawn under the larger card");
+    }
+
+    #[test]
+    fn an_upper_case_or_letter_spaced_label_right_above_a_heading_is_an_eyebrow() {
+        let heading = || text("heading", "Plan a quiet week", 40, "left");
+        let label = |copy: &str| text("label", copy, 12, "left");
+        let at = |label_y: i64| vec![("label", rect(100, label_y, 200, 16)), ("heading", rect(100, 120, 700, 52))];
+        assert_eq!(count(vec![label("NEW FEATURE"), heading()], at(92), TEXT_EYEBROW), 1, "upper case just above");
+        let mut spaced = label("새 기능");
+        spaced.style.letter_spacing = Some(px(2));
+        assert_eq!(count(vec![spaced, heading()], at(92), TEXT_EYEBROW), 1, "letter-spaced Korean label");
+        assert_eq!(count(vec![label("New feature"), heading()], at(92), TEXT_EYEBROW), 0, "sentence case without spacing");
+        assert_eq!(count(vec![label("NEW FEATURE"), heading()], at(20), TEXT_EYEBROW), 0, "far above");
+        assert_eq!(count(vec![label("NEW FEATURE"), heading()], at(200), TEXT_EYEBROW), 0, "below the heading");
+        let big = text("label", "NEW FEATURE", 30, "left");
+        assert_eq!(count(vec![big, heading()], at(92), TEXT_EYEBROW), 0, "nearly the heading's size");
+        // One warning per label: the generic category label the title rule reports is not reported again.
+        let found = codes(&pages(vec![label("OVERVIEW"), heading()]), &at(92).into_iter().map(|(id, r)| (id.to_owned(), r)).collect());
+        assert_eq!(found.iter().filter(|code| *code == TEXT_EXTRA_LABEL || *code == TEXT_EYEBROW).count(), 1, "{found:?}");
+    }
+
+    #[test]
+    fn zero_padded_section_numbers_01_02_03_are_decoration() {
+        let numbers = |copies: &[&str]| copies.iter().enumerate().map(|(i, copy)| text(&format!("n{i}"), copy, 14, "left")).collect::<Vec<_>>();
+        let frames = |n: usize| (0..n).map(|i| (format!("n{i}"), rect(100, 100 + 80 * i as i64, 40, 20))).collect::<BTreeMap<String, Rect>>();
+        let found = |copies: &[&str]| codes(&pages(numbers(copies)), &frames(copies.len())).iter().filter(|code| *code == TEXT_SECTION_NUMBER).count();
+        assert_eq!(found(&["01", "02", "03"]), 1);
+        assert_eq!(found(&["01.", "02.", "03.", "04."]), 1);
+        assert_eq!(found(&["01", "02"]), 0, "two are a pair");
+        assert_eq!(found(&["1", "2", "3"]), 0, "plain numbers are not padded");
+        assert_eq!(found(&["01", "03", "05"]), 0, "not a run");
+    }
+
+    #[test]
+    fn a_check_star_or_arrow_glyph_before_text_is_an_icon_and_a_lone_glyph_or_rating_is_not() {
+        let found = |copy: &str| codes(&pages(vec![text("t", copy, 14, "left")]), &BTreeMap::new()).iter().filter(|code| *code == ICON_EMOJI).count();
+        for copy in ["✓ Fast setup", "✗ No lock-in", "★ Featured", "→ Learn more", "✦ New"] {
+            assert_eq!(found(copy), 1, "{copy}");
+        }
+        for copy in ["✓", "★★★★☆", "A → B", "Learn more →", "✓✓ done"] {
+            assert_eq!(found(copy), 0, "{copy}");
+        }
     }
 }

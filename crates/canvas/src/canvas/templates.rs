@@ -12,7 +12,7 @@
 
 use designllm_contracts::{
     ArtifactKind, CanvasDocument, Diagnostic, FRAME_PRESETS, Gradient, GradientStop, IconRef, LayoutSpec, Node, NodeExt, NodeKind,
-    CONTRAST_MIN, EMU_PER_CSS_PX, PathSpec, Page, Primitive, RenderScene, Rect, Shadow, Size, StrokeCap, StrokeJoin, Style, TemplateInfo, TOUCH_MIN_PX,
+    CONTRAST_MIN, EMU_PER_CSS_PX, PathSpec, Page, Primitive, RenderScene, Rect, Size, StrokeCap, StrokeJoin, Style, TemplateInfo, TOUCH_MIN_PX,
 };
 use std::collections::BTreeMap;
 
@@ -179,11 +179,6 @@ fn graded(from: &str, to: &str, angle_millideg: i32) -> Style {
 /// A style with a corner radius in EMU.
 fn rounded(style: Style, radius: i64) -> Style {
     Style { corner_radius: Some(radius), ..style }
-}
-
-/// The shadow of a card: 4 px down, 16 px blur, 10% black.
-fn card_shadow() -> Shadow {
-    Shadow { x: 0, y: px(4), blur: px(16), spread: 0, color: "#0F172A1A".into() }
 }
 
 fn resume_heading(id: &str, text: &str) -> Node {
@@ -869,7 +864,8 @@ fn landing_page() -> CanvasDocument {
             container(
                 &format!("feature-{n}"),
                 px_rect(0, 0, 1, 328),
-                Style { shadows: vec![card_shadow()], ..bordered("#F8FAFC", "#E2E8F0") },
+                // One elevation cue: the hairline and the tint, no shadow under the outline (CARD_GHOST).
+                bordered("#F8FAFC", "#E2E8F0"),
                 LayoutSpec { mode: "column".into(), gap: px(16), padding_sides: Some([px(32); 4]), align: "start".into(), width_mode: "fill".into(), ..Default::default() },
                 vec![
                     container(
