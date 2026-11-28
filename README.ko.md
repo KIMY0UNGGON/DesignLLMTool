@@ -100,7 +100,7 @@ DesignLLMTool은 MCP 서버가 내장된 Windows, macOS, Linux용 데스크톱 �
    powershell -ExecutionPolicy Bypass -File .\install.ps1
    ```
 
-   `install.ps1`은 `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`를 사용하여 정상 실행 여부를 확인한 뒤, `Claude Code`, `Codex CLI`, `AGY` 중 설치되어 있는 모든 클라이언트에 `designllm` MCP 서버를 등록합니다. 요청된 등록에 실패하면 종료 코드 `1`로 종료합니다.
+   `install.ps1`은 `release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe`를 사용하여 정상 실행 여부를 확인한 뒤, `Claude Code`, `Codex CLI`, `AGY` 중 설치되어 있는 모든 클라이언트에 `designllm` MCP 서버를 등록합니다. 요청된 등록에 실패하면 종료 코드 `1`로 종료합니다.
 
    macOS 및 Linux(`install.sh`):
 
@@ -108,7 +108,7 @@ DesignLLMTool은 MCP 서버가 내장된 Windows, macOS, Linux용 데스크톱 �
    ./install.sh
    ```
 
-   `install.sh`는 Rust 없이 동작합니다. 복제한 폴더에 `release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool`(`<os>`는 `macos` 또는 `linux`, `<arch>`는 `x64` 또는 `arm64`)이 없으면 GitHub 릴리스 [`v0.1.1`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.1)에서 해당 플랫폼의 `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz`를 `curl` 또는 `wget`으로 내려받고 `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz.sha256` 파일로 검사한 뒤, 패키지 폴더 바깥의 파일이 포함된 아카이브는 거부하고 `release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`에 압축을 풉니다(내려받은 폴더는 git에서 무시되며 이후 실행 시에는 다시 내려받지 않고 재사용합니다. `DESIGNLLM_RELEASE_URL`로 다운로드 폴더 URL을 바꿀 수 있으며 기본값은 `https://github.com/KIMY0UNGGON/DesignLLMTool/releases/download/v<version>`이고 `<version>`은 `Cargo.toml`의 버전입니다). 다운로드에 실패한 경우(네트워크 없음, 해당 버전의 릴리스 없음, 체크섬 불일치) 또는 `--build`를 지정한 경우에만 이전처럼 Rust `1.93.1`(`rustup`이 있으면 이를 사용하고, 없으면 `PATH`의 `cargo` 사용)로 소스에서 빌드하여 `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`에 생성합니다(`--client print`에서는 다운로드 실패 시 빌드하는 대신 빌드 안내를 출력합니다). 정상 실행 여부를 확인한 뒤 `Claude Code`, `Codex CLI`, `AGY` 중 설치되어 있는 모든 클라이언트에 `designllm` MCP 서버를 등록하며, 요청된 등록에 실패하면 종료 코드 `1`로 종료합니다. `DISPLAY`나 `WAYLAND_DISPLAY`가 없는 Linux 환경에서는 `--background`를 사용하라는 경고를 표시합니다.
+   `install.sh`는 Rust 없이 동작합니다. 복제한 폴더에 `release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool`(`<os>`는 `macos` 또는 `linux`, `<arch>`는 `x64` 또는 `arm64`)이 없으면 GitHub 릴리스 [`v0.1.2`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.2)에서 해당 플랫폼의 `DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz`를 `curl` 또는 `wget`으로 내려받고 `DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz.sha256` 파일로 검사한 뒤, 패키지 폴더 바깥의 파일이 포함된 아카이브는 거부하고 `release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/`에 압축을 풉니다(내려받은 폴더는 git에서 무시되며 이후 실행 시에는 다시 내려받지 않고 재사용합니다. `DESIGNLLM_RELEASE_URL`로 다운로드 폴더 URL을 바꿀 수 있으며 기본값은 `https://github.com/KIMY0UNGGON/DesignLLMTool/releases/download/v<version>`이고 `<version>`은 `Cargo.toml`의 버전입니다). 다운로드에 실패한 경우(네트워크 없음, 해당 버전의 릴리스 없음, 체크섬 불일치) 또는 `--build`를 지정한 경우에만 이전처럼 Rust `1.93.1`(`rustup`이 있으면 이를 사용하고, 없으면 `PATH`의 `cargo` 사용)로 소스에서 빌드하여 `target/package/DesignLLMTool-0.1.2-mcp-<os>-<arch>/`에 생성합니다(`--client print`에서는 다운로드 실패 시 빌드하는 대신 빌드 안내를 출력합니다). 정상 실행 여부를 확인한 뒤 `Claude Code`, `Codex CLI`, `AGY` 중 설치되어 있는 모든 클라이언트에 `designllm` MCP 서버를 등록하며, 요청된 등록에 실패하면 종료 코드 `1`로 종료합니다. `DISPLAY`나 `WAYLAND_DISPLAY`가 없는 Linux 환경에서는 `--background`를 사용하라는 경고를 표시합니다.
 
 3. AI 클라이언트를 다시 시작하고 `design_guide` 도구를 호출하도록 요청합니다.
 
@@ -131,7 +131,7 @@ DesignLLMTool은 MCP 서버가 내장된 Windows, macOS, Linux용 데스크톱 �
 | `-Client claude\|codex\|gemini\|agy\|print` | `--client auto\|claude\|codex\|gemini\|agy\|print` | 클라이언트 하나만 등록하거나 설정만 출력합니다. |
 | `-Background` | `--background` | 창을 열지 않고 도구를 실행합니다. |
 | `-DryRun` | `--dry-run` | 아무것도 실행하거나 변경하지 않고 명령어만 출력합니다(`--dry-run`은 아무것도 내려받지 않습니다). |
-| — | `--build` | 내려받거나 `release/` 아래의 패키지 바이너리를 재사용하는 대신 소스에서 `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`로 빌드합니다. |
+| — | `--build` | 내려받거나 `release/` 아래의 패키지 바이너리를 재사용하는 대신 소스에서 `target/package/DesignLLMTool-0.1.2-mcp-<os>-<arch>/`로 빌드합니다. |
 
 ### 클라이언트 설정 개요
 
@@ -164,19 +164,19 @@ DesignLLMTool은 MCP 서버가 내장된 Windows, macOS, Linux용 데스크톱 �
 Claude Code:
 
 ```powershell
-claude mcp add --scope user designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe" --mcp
+claude mcp add --scope user designllm -- "<repo>\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe" --mcp
 ```
 
 Codex CLI(PowerShell에서 `codex.ps1`을 실행하면 단독 `--`가 누락되므로 `codex.cmd`를 입력합니다):
 
 ```powershell
-codex.cmd mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe" --mcp
+codex.cmd mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe" --mcp
 ```
 
 AGY:
 
 ```powershell
-agy mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe" --mcp
+agy mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe" --mcp
 ```
 
 `Gemini CLI`(`%USERPROFILE%\.gemini\settings.json`), `Claude Desktop`, `Cursor`(`mcpServers` JSON):
@@ -185,7 +185,7 @@ agy mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignL
 {
   "mcpServers": {
     "designllm": {
-      "command": "<repo>\\release\\DesignLLMTool-0.1.1-mcp-win-x64\\DesignLLMTool.exe",
+      "command": "<repo>\\release\\DesignLLMTool-0.1.2-mcp-win-x64\\DesignLLMTool.exe",
       "args": ["--mcp"]
     }
   }
@@ -199,7 +199,7 @@ VS Code(`.vscode/mcp.json`):
   "servers": {
     "designllm": {
       "type": "stdio",
-      "command": "<repo>\\release\\DesignLLMTool-0.1.1-mcp-win-x64\\DesignLLMTool.exe",
+      "command": "<repo>\\release\\DesignLLMTool-0.1.2-mcp-win-x64\\DesignLLMTool.exe",
       "args": ["--mcp"]
     }
   }
@@ -208,16 +208,16 @@ VS Code(`.vscode/mcp.json`):
 
 **macOS 및 Linux**(`<os>`는 `macos` 또는 `linux`, `<arch>`는 `x64` 또는 `arm64`):
 
-아래 경로는 `install.sh`가 내려받아 푸는 폴더인 `<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool`을 가리킵니다. 소스 빌드는 `<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool`에 생성됩니다.
+아래 경로는 `install.sh`가 내려받아 푸는 폴더인 `<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool`을 가리킵니다. 소스 빌드는 `<repo>/target/package/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool`에 생성됩니다.
 
-`install.sh` 없이 수동으로 설치하려면 GitHub 릴리스 [`v0.1.1`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.1)에서 `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz`와 `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz.sha256`을 내려받아 체크섬을 검증하고(`shasum -a 256 -c DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz.sha256`), 압축을 푼 뒤(`tar -xzf DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz`) `<folder>/DesignLLMTool --mcp`를 클라이언트에 등록합니다. 아카이브에는 `DesignLLMTool-0.1.1-mcp-<os>-<arch>/` 폴더 안에 `DesignLLMTool`, `assets/fonts`, `THIRD_PARTY_LICENSES.txt`, `THIRD_PARTY_NOTICES.txt`가 들어 있으며, 실행 파일은 같은 위치의 `assets/fonts`가 필요하므로 압축을 푼 폴더 구성을 그대로 유지해야 합니다. macOS에서 웹 브라우저로 내려받은 경우에는 실행 전에 `xattr -d com.apple.quarantine DesignLLMTool`을 실행합니다.
+`install.sh` 없이 수동으로 설치하려면 GitHub 릴리스 [`v0.1.2`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.2)에서 `DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz`와 `DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz.sha256`을 내려받아 체크섬을 검증하고(`shasum -a 256 -c DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz.sha256`), 압축을 푼 뒤(`tar -xzf DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz`) `<folder>/DesignLLMTool --mcp`를 클라이언트에 등록합니다. 아카이브에는 `DesignLLMTool-0.1.2-mcp-<os>-<arch>/` 폴더 안에 `DesignLLMTool`, `assets/fonts`, `THIRD_PARTY_LICENSES.txt`, `THIRD_PARTY_NOTICES.txt`가 들어 있으며, 실행 파일은 같은 위치의 `assets/fonts`가 필요하므로 압축을 푼 폴더 구성을 그대로 유지해야 합니다. macOS에서 웹 브라우저로 내려받은 경우에는 실행 전에 `xattr -d com.apple.quarantine DesignLLMTool`을 실행합니다.
 
 Claude Code, Codex CLI(`codex.cmd` 불필요), AGY:
 
 ```bash
-claude mcp add --scope user designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
-codex mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
-agy mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+claude mcp add --scope user designllm -- "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool" --mcp
+codex mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool" --mcp
+agy mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool" --mcp
 ```
 
 `Gemini CLI`(`~/.gemini/settings.json`), `Claude Desktop`, `Cursor`(`mcpServers` JSON):
@@ -226,7 +226,7 @@ agy mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/Des
 {
   "mcpServers": {
     "designllm": {
-      "command": "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
+      "command": "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool",
       "args": ["--mcp"]
     }
   }
@@ -240,7 +240,7 @@ VS Code(`.vscode/mcp.json`):
   "servers": {
     "designllm": {
       "type": "stdio",
-      "command": "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
+      "command": "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool",
       "args": ["--mcp"]
     }
   }
@@ -280,15 +280,15 @@ AI 없이 앱을 사용하려면 앱을 직접 실행하거나 프로젝트 폴�
 Windows:
 
 ```powershell
-.\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe
-.\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe --project "<existing folder>"
+.\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe
+.\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe --project "<existing folder>"
 ```
 
 macOS 및 Linux(소스 빌드의 경우 `release` 대신 `target/package`를 사용합니다):
 
 ```bash
-./release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool
-./release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool --project "<existing folder>"
+./release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool
+./release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool --project "<existing folder>"
 ```
 
 - **인터페이스 언어 전환**: 홈 화면에서 작업 공간 메뉴(왼쪽 위 작업 공간 이름)를 열고 `한국어` 또는 `English`를 선택합니다. 설정은 즉시 적용되며 작업 공간의 `.gui\settings.json`에 저장됩니다.
@@ -302,10 +302,10 @@ cargo +1.93.1 build --release -p designllm-application
 cargo +1.93.1 test -p designllm-bridge -p designllm-contracts -p designllm-canvas -p designllm-runtimes
 ```
 
-릴리스 빌드는 Windows에서 `target\release\DesignLLMTool.exe`를 생성하며(패키지된 빌드를 업데이트하려면 `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`에 덮어씁니다), macOS 및 Linux에서는 `target/release/DesignLLMTool`을 생성합니다. 이 실행 파일은 같은 디렉터리에 `assets/fonts`가 필요합니다(`install.sh --build` 또는 다운로드 실패 시 `install.sh`가 `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` 구성을 생성합니다).
+릴리스 빌드는 Windows에서 `target\release\DesignLLMTool.exe`를 생성하며(패키지된 빌드를 업데이트하려면 `release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe`에 덮어씁니다), macOS 및 Linux에서는 `target/release/DesignLLMTool`을 생성합니다. 이 실행 파일은 같은 디렉터리에 `assets/fonts`가 필요합니다(`install.sh --build` 또는 다운로드 실패 시 `install.sh`가 `target/package/DesignLLMTool-0.1.2-mcp-<os>-<arch>/` 구성을 생성합니다).
 
 GitHub Actions 워크플로(`.github/workflows/build.yml`)는 Windows, macOS(`arm64` 및 `x64`), Linux(`x64` 및 `arm64`)에서 빌드와 테스트를 수행하고, 모든 빌드마다 각 `DesignLLMTool-<version>-mcp-<platform>.tar.gz` 패키지 옆에 `.sha256` 파일을 작성하고 두 파일을 모두 워크플로 아티팩트로 업로드하며, `v*` 태그를 푸시할 때는 두 파일을 GitHub 릴리스에 첨부합니다. `.github/workflows/install-check.yml` 워크플로(수동 실행 또는 릴리스 게시 시 실행)는 macOS(`arm64`, `x64`)와 Linux(`x64`, `arm64`)의 새 클론에서 `PATH`로부터 `cargo`와 `rustup`을 제거한 상태로 `install.sh`가 릴리스 패키지의 압축을 풀고 빌드는 수행하지 않았는지 확인한 뒤 `DESIGNLLM_NO_UPDATE_CHECK=1`로 MCP 세션을 실행합니다.
 
 ## 라이선스
 
-서드파티 라이선스와 고지 사항은 `release\DesignLLMTool-0.1.1-mcp-win-x64\THIRD_PARTY_LICENSES.txt` 및 `release\DesignLLMTool-0.1.1-mcp-win-x64\THIRD_PARTY_NOTICES.txt`에 있습니다. Pretendard 글꼴은 SIL Open Font License(`assets\fonts\OFL-Pretendard.txt`)를 따릅니다.
+서드파티 라이선스와 고지 사항은 `release\DesignLLMTool-0.1.2-mcp-win-x64\THIRD_PARTY_LICENSES.txt` 및 `release\DesignLLMTool-0.1.2-mcp-win-x64\THIRD_PARTY_NOTICES.txt`에 있습니다. Pretendard 글꼴은 SIL Open Font License(`assets\fonts\OFL-Pretendard.txt`)를 따릅니다.

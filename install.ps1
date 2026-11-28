@@ -3,7 +3,7 @@
     Registers DesignLLMTool as an MCP server for the AI coding clients installed on this PC.
 
 .DESCRIPTION
-    Uses release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe in this repository, checks that it starts, and registers
+    Uses release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe in this repository, checks that it starts, and registers
     it as the MCP server "designllm" with Claude Code, Codex CLI and AGY when they are installed. An existing "designllm"
     server that runs another package of this clone (release\DesignLLMTool-*-mcp-*\DesignLLMTool.exe or
     target\package\DesignLLMTool-*-mcp-*\DesignLLMTool.exe, such as the previous version after "git pull") with the same
@@ -53,14 +53,14 @@ if ($env:OS -ne "Windows_NT" -or -not [Environment]::Is64BitOperatingSystem) {
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 # The documented package first; any other build under release only when that one is missing.
-$packaged = Join-Path $root "release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe"
+$packaged = Join-Path $root "release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe"
 if (Test-Path -LiteralPath $packaged) {
     $exePath = $packaged
 } else {
     $exe = Get-ChildItem -Path (Join-Path $root "release") -Recurse -Filter "DesignLLMTool.exe" -ErrorAction SilentlyContinue |
         Sort-Object FullName | Select-Object -First 1
     if (-not $exe) {
-        throw "release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe was not found. Clone the whole repository: git clone https://github.com/KIMY0UNGGON/DesignLLMTool.git"
+        throw "release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe was not found. Clone the whole repository: git clone https://github.com/KIMY0UNGGON/DesignLLMTool.git"
     }
     $exePath = $exe.FullName
 }
