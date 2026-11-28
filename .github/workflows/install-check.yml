@@ -1,0 +1,44 @@
+# Installs DesignLLMTool on macOS and Linux the way a person does from a fresh clone: install.sh downloads the release
+# package for the platform (no Rust build), and an MCP session runs against the installed executable.
+# Run it by hand after a release is published (Actions > install-check > Run workflow, or `gh workflow run install-check`).
+name: install-check
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-22.04, platform: linux-x64 }
+          - { runner: ubuntu-22.04-arm, platform: linux-arm64 }
+          - { runner: macos-15, platform: macos-arm64 }
+          - { runner: macos-15-intel, platform: macos-x64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install from the release
+        shell: bash
+        run: |
+          # cargo and rustup are taken off PATH: the install must not need Rust.
+          clean_path="$(echo "$PATH" | tr ':' '\n' | grep -v -e '\.cargo' -e 'rustup' | paste -sd ':' -)"
+          PATH="$clean_path" ./install.sh --client print 2>&1 | tee install.log
+          grep -q '^Unpacked DesignLLMTool-.*-mcp-${{ matrix.platform }} into release/' install.log
+          test ! -e target
+          exe="$(ls -d release/DesignLLMTool-*-mcp-${{ matrix.platform }})/DesignLLMTool"
+          "$exe" --version
+          echo "EXE=$PWD/$exe" >> "$GITHUB_ENV"
+
+      - name: MCP probe
+        shell: bash
+        run: |
+          python3 .github/scripts/mcp_probe.py "$EXE" "$RUNNER_TEMP/probe-ws"
+          "$EXE" --command --workspace "$RUNNER_TEMP/probe-ws" <<< '{"method":"host.stop","params":{}}'
