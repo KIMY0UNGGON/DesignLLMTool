@@ -100,7 +100,7 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
    powershell -ExecutionPolicy Bypass -File .\install.ps1
    ```
 
-   `install.ps1` uses `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe`, verifies that it starts, and registers the MCP server `designllm` with every installed client among `Claude Code`, `Codex CLI`, and `AGY`. It exits with code `1` when a requested registration fails.
+   `install.ps1` uses `release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe`, verifies that it starts, and registers the MCP server `designllm` with every installed client among `Claude Code`, `Codex CLI`, and `AGY`. It exits with code `1` when a requested registration fails.
 
    macOS and Linux (`install.sh`):
 
@@ -108,7 +108,7 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
    ./install.sh
    ```
 
-   `install.sh` works without Rust: when `release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool` (`<os>` is `macos` or `linux`; `<arch>` is `x64` or `arm64`) is not in the clone, it downloads `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz` from the GitHub release [`v0.1.1`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.1) (with `curl`, or `wget`), checks it against `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz.sha256`, refuses an archive with files outside the package folder, and unpacks it into `release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` (ignored by git; later runs reuse it without downloading; `DESIGNLLM_RELEASE_URL` replaces the download folder, defaulting to `https://github.com/KIMY0UNGGON/DesignLLMTool/releases/download/v<version>` where `<version>` is the version in `Cargo.toml`). Only when the download fails (no network, no release for that version, checksum mismatch), or with `--build`, `install.sh` builds from source with Rust `1.93.1` (through `rustup` when present, otherwise `cargo` on `PATH`) into `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`; with `--client print`, a failed download prints the build hint instead of building. It verifies that it starts and registers the MCP server `designllm` with every installed client among `Claude Code`, `Codex CLI`, and `AGY`, exiting with code `1` when a requested registration fails. On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, it warns to use `--background`.
+   `install.sh` works without Rust: when `release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool` (`<os>` is `macos` or `linux`; `<arch>` is `x64` or `arm64`) is not in the clone, it downloads `DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz` from the GitHub release [`v0.1.2`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.2) (with `curl`, or `wget`), checks it against `DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz.sha256`, refuses an archive with files outside the package folder, and unpacks it into `release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/` (ignored by git; later runs reuse it without downloading; `DESIGNLLM_RELEASE_URL` replaces the download folder, defaulting to `https://github.com/KIMY0UNGGON/DesignLLMTool/releases/download/v<version>` where `<version>` is the version in `Cargo.toml`). Only when the download fails (no network, no release for that version, checksum mismatch), or with `--build`, `install.sh` builds from source with Rust `1.93.1` (through `rustup` when present, otherwise `cargo` on `PATH`) into `target/package/DesignLLMTool-0.1.2-mcp-<os>-<arch>/`; with `--client print`, a failed download prints the build hint instead of building. It verifies that it starts and registers the MCP server `designllm` with every installed client among `Claude Code`, `Codex CLI`, and `AGY`, exiting with code `1` when a requested registration fails. On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, it warns to use `--background`.
 
 3. Restart your AI client and ask it to call the `design_guide` tool.
 
@@ -131,7 +131,7 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
 | `-Client claude\|codex\|gemini\|agy\|print` | `--client auto\|claude\|codex\|gemini\|agy\|print` | Register one client, or only print the configuration. |
 | `-Background` | `--background` | Tools run without opening the window. |
 | `-DryRun` | `--dry-run` | Print the commands without running or changing anything (`--dry-run` downloads nothing). |
-| — | `--build` | Build from source into `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/` instead of downloading or reusing a packaged binary under `release/`. |
+| — | `--build` | Build from source into `target/package/DesignLLMTool-0.1.2-mcp-<os>-<arch>/` instead of downloading or reusing a packaged binary under `release/`. |
 
 ### Client configuration overview
 
@@ -164,19 +164,19 @@ Replace `<repo>` with the clone folder path.
 Claude Code:
 
 ```powershell
-claude mcp add --scope user designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe" --mcp
+claude mcp add --scope user designllm -- "<repo>\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe" --mcp
 ```
 
 Codex CLI (type `codex.cmd` in PowerShell, because PowerShell drops the bare `--` when it runs `codex.ps1`):
 
 ```powershell
-codex.cmd mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe" --mcp
+codex.cmd mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe" --mcp
 ```
 
 AGY:
 
 ```powershell
-agy mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe" --mcp
+agy mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe" --mcp
 ```
 
 `Gemini CLI` (`%USERPROFILE%\.gemini\settings.json`), `Claude Desktop`, and `Cursor` (`mcpServers` JSON):
@@ -185,7 +185,7 @@ agy mcp add designllm -- "<repo>\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignL
 {
   "mcpServers": {
     "designllm": {
-      "command": "<repo>\\release\\DesignLLMTool-0.1.1-mcp-win-x64\\DesignLLMTool.exe",
+      "command": "<repo>\\release\\DesignLLMTool-0.1.2-mcp-win-x64\\DesignLLMTool.exe",
       "args": ["--mcp"]
     }
   }
@@ -199,7 +199,7 @@ VS Code (`.vscode/mcp.json`):
   "servers": {
     "designllm": {
       "type": "stdio",
-      "command": "<repo>\\release\\DesignLLMTool-0.1.1-mcp-win-x64\\DesignLLMTool.exe",
+      "command": "<repo>\\release\\DesignLLMTool-0.1.2-mcp-win-x64\\DesignLLMTool.exe",
       "args": ["--mcp"]
     }
   }
@@ -208,16 +208,16 @@ VS Code (`.vscode/mcp.json`):
 
 **macOS and Linux** (`<os>` is `macos` or `linux`; `<arch>` is `x64` or `arm64`):
 
-The paths below use `<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool` (the folder `install.sh` downloads into); a source build is at `<repo>/target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool`.
+The paths below use `<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool` (the folder `install.sh` downloads into); a source build is at `<repo>/target/package/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool`.
 
-Manual install without `install.sh`: download `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz` and `DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz.sha256` from the GitHub release [`v0.1.1`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.1), verify the checksum (`shasum -a 256 -c DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz.sha256`), unpack it (`tar -xzf DesignLLMTool-0.1.1-mcp-<os>-<arch>.tar.gz`), and register `<folder>/DesignLLMTool --mcp` with the client. The archive holds `DesignLLMTool-0.1.1-mcp-<os>-<arch>/` with `DesignLLMTool`, `assets/fonts`, `THIRD_PARTY_LICENSES.txt`, and `THIRD_PARTY_NOTICES.txt`; keep the unpacked folder together because the executable needs `assets/fonts` next to it. On macOS, if downloaded in a web browser, run `xattr -d com.apple.quarantine DesignLLMTool` before starting it.
+Manual install without `install.sh`: download `DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz` and `DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz.sha256` from the GitHub release [`v0.1.2`](https://github.com/KIMY0UNGGON/DesignLLMTool/releases/tag/v0.1.2), verify the checksum (`shasum -a 256 -c DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz.sha256`), unpack it (`tar -xzf DesignLLMTool-0.1.2-mcp-<os>-<arch>.tar.gz`), and register `<folder>/DesignLLMTool --mcp` with the client. The archive holds `DesignLLMTool-0.1.2-mcp-<os>-<arch>/` with `DesignLLMTool`, `assets/fonts`, `THIRD_PARTY_LICENSES.txt`, and `THIRD_PARTY_NOTICES.txt`; keep the unpacked folder together because the executable needs `assets/fonts` next to it. On macOS, if downloaded in a web browser, run `xattr -d com.apple.quarantine DesignLLMTool` before starting it.
 
 Claude Code, Codex CLI (no `codex.cmd` needed), and AGY:
 
 ```bash
-claude mcp add --scope user designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
-codex mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
-agy mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool" --mcp
+claude mcp add --scope user designllm -- "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool" --mcp
+codex mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool" --mcp
+agy mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool" --mcp
 ```
 
 `Gemini CLI` (`~/.gemini/settings.json`), `Claude Desktop`, and `Cursor` (`mcpServers` JSON):
@@ -226,7 +226,7 @@ agy mcp add designllm -- "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/Des
 {
   "mcpServers": {
     "designllm": {
-      "command": "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
+      "command": "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool",
       "args": ["--mcp"]
     }
   }
@@ -240,7 +240,7 @@ VS Code (`.vscode/mcp.json`):
   "servers": {
     "designllm": {
       "type": "stdio",
-      "command": "<repo>/release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool",
+      "command": "<repo>/release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool",
       "args": ["--mcp"]
     }
   }
@@ -280,15 +280,15 @@ Run the app directly or pass a project folder to use the app without AI:
 Windows:
 
 ```powershell
-.\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe
-.\release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe --project "<existing folder>"
+.\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe
+.\release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe --project "<existing folder>"
 ```
 
 macOS and Linux (for a source build, replace `release` with `target/package`):
 
 ```bash
-./release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool
-./release/DesignLLMTool-0.1.1-mcp-<os>-<arch>/DesignLLMTool --project "<existing folder>"
+./release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool
+./release/DesignLLMTool-0.1.2-mcp-<os>-<arch>/DesignLLMTool --project "<existing folder>"
 ```
 
 - **Switch interface language**: On the home screen, open the workspace menu (workspace name at the top left) and choose `한국어` or `English`. The setting applies immediately and is saved in `.gui\settings.json` in the workspace.
@@ -302,10 +302,10 @@ cargo +1.93.1 build --release -p designllm-application
 cargo +1.93.1 test -p designllm-bridge -p designllm-contracts -p designllm-canvas -p designllm-runtimes
 ```
 
-The release build outputs `target\release\DesignLLMTool.exe` on Windows (copy it over `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe` to update the packaged build) and `target/release/DesignLLMTool` on macOS and Linux, which needs `assets/fonts` next to the executable (`install.sh --build`, or `install.sh` when the download fails, lays out `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`).
+The release build outputs `target\release\DesignLLMTool.exe` on Windows (copy it over `release\DesignLLMTool-0.1.2-mcp-win-x64\DesignLLMTool.exe` to update the packaged build) and `target/release/DesignLLMTool` on macOS and Linux, which needs `assets/fonts` next to the executable (`install.sh --build`, or `install.sh` when the download fails, lays out `target/package/DesignLLMTool-0.1.2-mcp-<os>-<arch>/`).
 
 The GitHub Actions workflow (`.github/workflows/build.yml`) builds and tests on Windows, macOS (`arm64` and `x64`), and Linux (`x64` and `arm64`), uploads `DesignLLMTool-<version>-mcp-<platform>.tar.gz` packages as workflow artifacts, writes the `.sha256` file, and attaches both files to the GitHub release when a `v*` tag is pushed. Workflow `.github/workflows/install-check.yml` (run by hand, or when a release is published) installs from a fresh clone on macOS (`arm64`, `x64`) and Linux (`x64`, `arm64`) with `cargo` and `rustup` removed from `PATH`, checks that `install.sh` unpacked the release package and built nothing, and runs an MCP session against it with `DESIGNLLM_NO_UPDATE_CHECK=1`.
 
 ## Licences
 
-Third-party licences and notices are in `release\DesignLLMTool-0.1.1-mcp-win-x64\THIRD_PARTY_LICENSES.txt` and `release\DesignLLMTool-0.1.1-mcp-win-x64\THIRD_PARTY_NOTICES.txt`. The Pretendard font is under the SIL Open Font License (`assets\fonts\OFL-Pretendard.txt`).
+Third-party licences and notices are in `release\DesignLLMTool-0.1.2-mcp-win-x64\THIRD_PARTY_LICENSES.txt` and `release\DesignLLMTool-0.1.2-mcp-win-x64\THIRD_PARTY_NOTICES.txt`. The Pretendard font is under the SIL Open Font License (`assets\fonts\OFL-Pretendard.txt`).

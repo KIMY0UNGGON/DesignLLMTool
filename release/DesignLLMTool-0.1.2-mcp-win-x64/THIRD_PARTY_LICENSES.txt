@@ -224,6 +224,7 @@ Each license text is included under third-party-licenses\<crate>-<version>\.
 - schemars 0.8.22: MIT (third-party-licenses\schemars-0.8.22\LICENSE)
 - schemars_derive 0.8.22: MIT (third-party-licenses\schemars_derive-0.8.22\LICENSE)
 - scopeguard 1.2.0: MIT OR Apache-2.0 (third-party-licenses\scopeguard-1.2.0\LICENSE-APACHE, third-party-licenses\scopeguard-1.2.0\LICENSE-MIT)
+- semver 1.0.28: MIT OR Apache-2.0 (third-party-licenses\semver-1.0.28\LICENSE-APACHE, third-party-licenses\semver-1.0.28\LICENSE-MIT)
 - serde 1.0.229: MIT OR Apache-2.0 (third-party-licenses\serde-1.0.229\LICENSE-APACHE, third-party-licenses\serde-1.0.229\LICENSE-MIT)
 - serde_core 1.0.229: MIT OR Apache-2.0 (third-party-licenses\serde_core-1.0.229\LICENSE-APACHE, third-party-licenses\serde_core-1.0.229\LICENSE-MIT)
 - serde_derive 1.0.229: MIT OR Apache-2.0 (third-party-licenses\serde_derive-1.0.229\LICENSE-APACHE, third-party-licenses\serde_derive-1.0.229\LICENSE-MIT)
