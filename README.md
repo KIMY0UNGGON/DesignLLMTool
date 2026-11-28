@@ -57,9 +57,13 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
 
 ### Design-quality rules
 
-- Layout explains structure and auxiliary labels are omitted. Top or left card/box accent bars (the blog-callout look) are reported as `ACCENT_BAR` unless requested.
-- Stock framework and assistant colours (Tailwind blue/indigo/emerald/red, Bootstrap, Material, Google blue, ChatGPT green, Claude orange, Gemini violet, dark navy surfaces) are reported by `COLOR_STOCK_DEFAULT`. Built-in `Canvas` templates use no stock framework colours.
-- Decks are always checked. A `Canvas` receives all design-quality warnings (including `ACCENT_BAR` and `COLOR_STOCK_DEFAULT`) only once it uses a v1.2 value (corner radius, opacity, shadow, gradient, or path), keeping older `Canvas` validation output unchanged.
+- Layout explains structure and auxiliary labels are omitted. Any coloured bar along one edge of a card or box (top, bottom, left, or right) is reported as `ACCENT_BAR` unless requested.
+- Stock framework and assistant colours (Tailwind blue/indigo/emerald/red, Bootstrap, Material, Google blue, ChatGPT green, Claude orange, Gemini violet, dark navy surfaces) are reported by `COLOR_STOCK_DEFAULT`. Built-in `Canvas` templates use no stock framework colours, and the built-in landing page template's feature cards have no shadow under their outline.
+- `ICON_EMOJI` now also reports a check, cross, star, sparkle, or arrow glyph (`✓ ✗ ★ ✦ →`) followed by a space and text, used in place of an icon.
+- Additional non-blocking warnings: `SHADOW_HARD_OFFSET` (a shadow with no blur cast 2 px or more away, at least 0.25 opaque: the neobrutalist block shadow), `SHADOW_GLOW` (a coloured shadow with no offset, a coloured halo), `CARD_GHOST` (an outline of 2 px or less under a shadow blurred 16 px or more; show elevation once—new shapes carry a 1 pt grey outline by default, so set `stroke_width` to 0 on a card that keeps its shadow), `CARD_NESTED` (a shadowed card inside a larger shadowed card), `TEXT_EYEBROW` (a short capitals or letter-spaced label right above a heading), and `TEXT_SECTION_NUMBER` (decorative `01`, `02`, `03` on one page).
+- Built-in design guidance tells agents to avoid, where the request allows: a big-number hero metric, monospace type as a costume for text that is not code or data, Impact or Arial Black as the display face, stripe or grid textures with no subject behind them, and invented numbers; to show elevation once; and to choose a light or dark page from where the work is used. The user's request wins over these defaults.
+- These rules paraphrase the anti-patterns of the open-source design skill [impeccable](https://github.com/pbakaus/impeccable) (Apache-2.0).
+- Decks are always checked. A `Canvas` receives all non-blocking design-quality warnings (including `ACCENT_BAR` and `COLOR_STOCK_DEFAULT`) only once it uses a v1.2 value (corner radius, opacity, shadow, gradient, or path), keeping older `Canvas` validation output unchanged.
 
 ### Diagram shapes
 
@@ -114,7 +118,7 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
 ## Installer and client setup
 
 > [!IMPORTANT]
-> The installer never removes or changes an existing `designllm` entry. Change or remove that entry in the client settings where it is defined, then run `install.ps1` (or `install.sh`) again.
+> When an existing `designllm` entry runs an executable from this same clone (`release/DesignLLMTool-*-mcp-*/` or `target/package/DesignLLMTool-*-mcp-*/`, for example an older version), the installer replaces it with the current executable and reports it as updated (unless its arguments differ from this run's options, or for `Claude Code` it is not in user scope). Entries pointing anywhere else (another clone, another program) are never changed; for those, change or remove that entry in the client settings where it is defined, then run `install.ps1` (or `install.sh`) again.
 
 > [!NOTE]
 > For `Gemini CLI`, `install.ps1` and `install.sh` print the `mcpServers` entry instead of registering it. Check `gemini mcp list` first because an extension can provide `designllm`.
@@ -141,7 +145,7 @@ Exports: `PDF`, `SVG`, `PNG`, `PPTX`, `HTML`, and `ZIP` (web code). An engine re
 <details>
 <summary>Installer behaviour details</summary>
 
-- **Existing registrations**: The installer never removes or changes an existing `designllm` entry, because it can hold settings the installer cannot restore or come from project settings. Change or remove that entry in the client settings where it is defined, then run `install.ps1` (or `install.sh`) again.
+- **Existing registrations**: An existing `designllm` entry whose command is an executable of this same clone (`release/DesignLLMTool-*-mcp-*/` or `target/package/DesignLLMTool-*-mcp-*/`, for example an older version) is replaced with the current executable and reported as updated; environment variables set by hand on a replaced entry are not carried over. It is kept, with a message, when its arguments differ from this run's options, or for `Claude Code` when the entry is not in user scope. Entries pointing anywhere else (another clone, another program) are never changed, because they can hold settings the installer cannot restore or come from project settings; for those, change or remove that entry in the client settings where it is defined, then run `install.ps1` (or `install.sh`) again.
 - **Verification and unreadable clients**: After each registration, the installer reads the entry back and counts it as registered only when it runs this copy's `DesignLLMTool.exe` (or `DesignLLMTool` on macOS and Linux). If a client does not report clearly or its server list cannot be read, the installer leaves it unchanged and reports it as not registered.
 - **`Gemini CLI`**: The installer skips `gemini mcp add` because it rewrites the entire Gemini settings file (including other servers) and can report success without saving. It prints the `mcpServers` entry instead; check `gemini mcp list` first because an extension can provide `designllm`.
 - **Batch shims**: On Windows, when a client runs through a `.cmd` or `.bat` shim and a path contains a character `cmd.exe` would interpret, the installer leaves that client unregistered, reports it as not registered, and prints the configuration. For `Codex CLI`, it also prints a `[mcp_servers.designllm]` TOML entry and the Codex settings path (`%USERPROFILE%\.codex\config.toml`, or `config.toml` in `CODEX_HOME`).
@@ -245,12 +249,18 @@ VS Code (`.vscode/mcp.json`):
 
 </details>
 
+### Updating
+
+In the clone, run `git pull`, then run the installer again (`install.ps1` on Windows, `./install.sh` on macOS and Linux) with the same options used for the first install (for example the same `-Project` / `--project` and `-Background` / `--background`), then restart the AI client.
+
 ## Server options
 
 | Flag | Effect |
 | --- | --- |
 | `--mcp` | Run as an MCP server over stdio. The desktop window opens on the first tool call; pass `background: true` on a call or start with `--background` to run without the window. |
 | `--project "<existing folder>"` | Store the workspace in `<folder>\.designllm` and save native files to `<folder>\artifacts`. Without it, the default workspace is `%LOCALAPPDATA%\DesignLLMTool\workspaces\default` on Windows, `~/Library/Application Support/DesignLLMTool/workspaces/default` on macOS, and `$XDG_DATA_HOME/DesignLLMTool/workspaces/default` (defaulting to `~/.local/share/DesignLLMTool/workspaces/default`) on Linux; `DESIGNLLM_WORKSPACE` overrides this on every platform. |
+
+- **Update check (`--mcp`)**: On `--mcp`, a background check asks the GitHub releases API for the latest release at most once every 24 hours and caches the answer in `DesignLLMTool/update-check.json` inside the per-user app data folder (`%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_DATA_HOME` or `~/.local/share` on Linux). It never delays the MCP handshake or tool calls, and a failed request is silent. When a newer release exists, the first successful tool result on a connection carries, once per connection, a notice naming both versions and how to update, plus `structuredContent.update_available` (`latest_version`, `current_version`, `url`, `how_to_update`). Set `DESIGNLLM_NO_UPDATE_CHECK=1` to turn it off.
 
 ### Platform differences
 
@@ -294,7 +304,7 @@ cargo +1.93.1 test -p designllm-bridge -p designllm-contracts -p designllm-canva
 
 The release build outputs `target\release\DesignLLMTool.exe` on Windows (copy it over `release\DesignLLMTool-0.1.1-mcp-win-x64\DesignLLMTool.exe` to update the packaged build) and `target/release/DesignLLMTool` on macOS and Linux, which needs `assets/fonts` next to the executable (`install.sh --build`, or `install.sh` when the download fails, lays out `target/package/DesignLLMTool-0.1.1-mcp-<os>-<arch>/`).
 
-The GitHub Actions workflow (`.github/workflows/build.yml`) builds and tests on Windows, macOS (`arm64` and `x64`), and Linux (`x64` and `arm64`), uploads `DesignLLMTool-<version>-mcp-<platform>.tar.gz` packages as workflow artifacts, writes the `.sha256` file, and attaches both files to the GitHub release when a `v*` tag is pushed. Workflow `.github/workflows/install-check.yml` (run by hand, or when a release is published) installs from a fresh clone on macOS (`arm64`, `x64`) and Linux (`x64`, `arm64`) with `cargo` and `rustup` removed from `PATH`, checks that `install.sh` unpacked the release package and built nothing, and runs an MCP session against it.
+The GitHub Actions workflow (`.github/workflows/build.yml`) builds and tests on Windows, macOS (`arm64` and `x64`), and Linux (`x64` and `arm64`), uploads `DesignLLMTool-<version>-mcp-<platform>.tar.gz` packages as workflow artifacts, writes the `.sha256` file, and attaches both files to the GitHub release when a `v*` tag is pushed. Workflow `.github/workflows/install-check.yml` (run by hand, or when a release is published) installs from a fresh clone on macOS (`arm64`, `x64`) and Linux (`x64`, `arm64`) with `cargo` and `rustup` removed from `PATH`, checks that `install.sh` unpacked the release package and built nothing, and runs an MCP session against it with `DESIGNLLM_NO_UPDATE_CHECK=1`.
 
 ## Licences
 
