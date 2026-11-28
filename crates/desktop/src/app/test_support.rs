@@ -576,6 +576,14 @@ impl Window {
         }
     }
 
+    /// `draw`, then the board's zoom made older than `board::SETTLE` and drawn again: the settled render, the zoom snap and the
+    /// page transform are asked for and answered here, so what a test counts after it is what its own input causes.
+    pub(super) fn settled_draw(&mut self, host: &mut Host, pixels_per_point: f32) {
+        self.draw(host, pixels_per_point);
+        self.app.view().zoom_changed = Some(f64::NEG_INFINITY);
+        self.draw(host, pixels_per_point);
+    }
+
     /// A click, or a double click (two clicks in consecutive frames), at `position`.
     pub(super) fn click(&mut self, host: &mut Host, pixels_per_point: f32, position: Pos2, double: bool) {
         self.frame(host, pixels_per_point, vec![Event::PointerMoved(position), primary_button(position, true), primary_button(position, false)]);

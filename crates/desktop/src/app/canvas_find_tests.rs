@@ -136,7 +136,7 @@ fn canvas_find_through_an_agent_run_matches_the_window() {
         // Page 1 fills the board, so that the match on page 2 has to be brought into view.
         window.step(&mut host, "view.zoom_page", json!({ "page_index": 0 })).expect("page 1 fills the board");
         // The zoom settles on a whole render dpi after a delay: settled now, so that the two paths' timing does not count.
-        window.app.view().zoom_changed = std::time::Instant::now() - std::time::Duration::from_secs(10);
+        window.app.view().zoom_changed = Some(f64::NEG_INFINITY);
         window.draw(&mut host, 1.0);
         let mut seen = Vec::new();
         let find = ("layer.find", json!({ "text": "alpha" }));
@@ -173,7 +173,7 @@ fn canvas_find_next_through_mcp_matches_the_window() {
     for window in [&mut gui, &mut agent] {
         window.draw(&mut host, 1.0);
         window.step(&mut host, "view.zoom_page", json!({ "page_index": 0 })).expect("page 1 fills the board");
-        window.app.view().zoom_changed = std::time::Instant::now() - std::time::Duration::from_secs(10);
+        window.app.view().zoom_changed = Some(f64::NEG_INFINITY);
         window.step(&mut host, "layer.find", json!({ "text": "끝" })).expect("the query is set");
         window.draw(&mut host, 1.0);
         assert!(!on_board(window, "m1"));

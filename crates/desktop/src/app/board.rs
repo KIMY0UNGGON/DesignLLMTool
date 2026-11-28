@@ -49,7 +49,9 @@ pub(super) struct EditorView {
     /// Screen offset of the board origin from the board's top-left corner.
     pub pan: Vec2,
     pub fitted: bool,
-    pub zoom_changed: std::time::Instant,
+    /// The egui time (`InputState::time`) of the last zoom change; `None` for a change the board has not drawn yet, which the
+    /// next board frame stamps with its own time. Frame time, not the wall clock: the settle follows the frames the window draws.
+    pub zoom_changed: Option<f64>,
     pub left_tab: LeftTab,
     pub left_open: bool,
     pub right_open: bool,
@@ -75,7 +77,7 @@ impl Default for EditorView {
             zoom: 1.0,
             pan: Vec2::ZERO,
             fitted: false,
-            zoom_changed: std::time::Instant::now(),
+            zoom_changed: None,
             left_tab: LeftTab::Layers,
             left_open: true,
             right_open: true,
@@ -298,7 +300,7 @@ impl DesktopApp {
         view.zoom = zoom;
         view.pan = origin - board_rect.min;
         view.fitted = true;
-        view.zoom_changed = std::time::Instant::now();
+        view.zoom_changed = None;
     }
 
     /// Moves or zooms the board from pointer and wheel input. Zoom keeps the point under the
@@ -391,7 +393,7 @@ impl DesktopApp {
         view.pan = new_origin - board_rect.min;
         view.zoom = new_zoom;
         view.fitted = true;
-        view.zoom_changed = std::time::Instant::now();
+        view.zoom_changed = None;
     }
 
     /// Sets the zoom to `zoom` around the board centre (menu commands).
@@ -476,7 +478,9 @@ impl DesktopApp {
         // drag's end, since the snap moves the page under the drag. A drag whose release will not come is ended first, so the
         // settle is not held back for good.
         self.drop_lost_board_memo_gesture(ctx);
-        let settle_due = self.view_ref().zoom_changed.elapsed() >= SETTLE && self.board_memo_gesture.is_none();
+        let now = ctx.input(|input| input.time);
+        let changed = *self.view().zoom_changed.get_or_insert(now);
+        let settle_due = now - changed >= SETTLE.as_secs_f64() && self.board_memo_gesture.is_none();
         if fitting || settle_due {
             let view = self.view();
             view.zoom = board::snapped_zoom(view.zoom, ppp);
@@ -718,7 +722,7 @@ impl DesktopApp {
         view.pan = origin - board_rect.min;
         view.fitted = true;
         view.page_index = page_index;
-        view.zoom_changed = std::time::Instant::now();
+        view.zoom_changed = None;
         self.page_index = page_index;
     }
 
@@ -1514,7 +1518,7 @@ mod input_tests {
         let mut host = Host::start();
         let id = canvas(&mut host, &[vec![node("n1", 1_000_000, 1_000_000, 3_000_000, 2_000_000)], vec![node("n2", 1_000_000, 1_000_000, 3_000_000, 2_000_000)]]);
         let mut window = Window::open_with_previews(&mut host, &id);
-        window.draw(&mut host, 1.0);
+        window.settled_draw(&mut host, 1.0);
         let (transforms, renders) = (sent(&window, "view.transform.set"), sent(&window, "render.get"));
         let empty = page_rect(&window, 0).right_bottom() - Vec2::splat(6.0);
         let to = empty + Vec2::new(60.0, 30.0);
@@ -1542,7 +1546,7 @@ mod input_tests {
         let mut host = Host::start();
         let id = canvas(&mut host, &[vec![node("n1", 1_000_000, 1_000_000, 3_000_000, 2_000_000)]]);
         let mut window = Window::open_with_previews(&mut host, &id);
-        window.draw(&mut host, 1.0);
+        window.settled_draw(&mut host, 1.0);
         let revision = host.artifact(&id).revision;
         let frame = frame_of(&window, "n1");
         let (from, to) = (frame.center(), frame.center() + Vec2::new(40.0, 20.0));
@@ -1860,7 +1864,7 @@ mod input_tests {
         let mut host = Host::start();
         let id = canvas(&mut host, &[vec![node("n1", 1_000_000, 1_000_000, 3_000_000, 2_000_000)]]);
         let mut window = Window::open_with_previews(&mut host, &id);
-        window.draw(&mut host, 1.0);
+        window.settled_draw(&mut host, 1.0);
         let refused = window.app.page_transforms[&0].id.clone();
         assert_eq!(window.app.core_transform_id.as_deref(), Some(refused.as_str()), "the core holds the page's transform");
         // The core refused it (the reply's error path).
