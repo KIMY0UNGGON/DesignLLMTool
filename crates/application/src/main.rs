@@ -122,10 +122,14 @@ fn run() -> DltResult<()> {
                 return designllm_bridge::run_stdio(&workspace, binding);
             }
             let root = workspace.clone();
+            // A newer release is looked up in the background (at most once a day, cached) and told to the agent once per
+            // connection; the handshake and the tool calls never wait for it. Off with DESIGNLLM_NO_UPDATE_CHECK.
+            let update = designllm_bridge::update_notice::UpdateSlot::default();
+            designllm_application::update_check::spawn(update.clone());
             designllm_bridge::mcp::run_stdio_with_startup(&workspace, move |background| {
                 if args.background || background { designllm_application::ensure_host(&root) }
                 else { designllm_application::ensure_visible_app(&root) }
-            })
+            }, Some(update))
         }
         "--command" => {
             let text = if let Some(path) = args.command { std::fs::read_to_string(path)? } else { let mut text=String::new(); std::io::stdin().read_to_string(&mut text)?; text };

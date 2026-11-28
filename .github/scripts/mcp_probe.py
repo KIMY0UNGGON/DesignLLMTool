@@ -5,6 +5,7 @@ Starts `--mcp --background`, so no window opens. Exits non-zero when any step fa
 """
 import base64
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -16,6 +17,8 @@ proc = subprocess.Popen(
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     stderr=sys.stderr,
+    # No release lookup from CI: the probe checks the tools, not GitHub (update_check).
+    env={**os.environ, "DESIGNLLM_NO_UPDATE_CHECK": "1"},
 )
 next_id = 0
 

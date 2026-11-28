@@ -27,6 +27,7 @@ pub mod pipe;
 pub mod pipe;
 pub mod protocol;
 pub mod review_gate;
+pub mod update_notice;
 
 pub use client::{Client, ClientOptions, ClientRole, DEFAULT_CALL_TIMEOUT, HEARTBEAT_INTERVAL};
 pub use designllm_contracts::{

@@ -28,6 +28,11 @@ designllm-runtimes.workspace = true
 designllm-desktop = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
+# The daily check for a newer release on `--mcp` (update_check): one HTTPS GET to the GitHub releases API. Already in the
+# build through rhwp (same version, rustls with ring), so no new crates. MIT OR Apache-2.0.
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
+# Release tag comparison (update_check). Already in the lock. MIT OR Apache-2.0.
+semver = "1.0"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
